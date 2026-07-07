@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button, Input, Label } from "@/components/ui";
 
 export function ChangePasswordForm({
@@ -11,7 +10,6 @@ export function ChangePasswordForm({
   required: boolean;
   destination: string;
 }) {
-  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -34,13 +32,16 @@ export function ChangePasswordForm({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ newPassword: pw }),
     });
-    setBusy(false);
     if (res.ok) {
-      router.push(destination);
-      router.refresh();
-    } else {
-      setError((await res.json()).error ?? "Failed to set password");
+      // Hard navigation, not router.push: the auth-guarded destination may have
+      // a cached "redirect back here" entry in the client Router Cache from the
+      // pre-change state. A full page load bypasses that cache and re-runs the
+      // layout guard against the now-updated DB flag.
+      window.location.assign(destination);
+      return;
     }
+    setBusy(false);
+    setError((await res.json()).error ?? "Failed to set password");
   }
 
   return (
