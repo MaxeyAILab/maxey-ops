@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "Maxey Construction — Operations Platform",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -16,6 +19,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
+    "@supabase/supabase-js": "^2.110.1",
     "bcryptjs": "^2.4.3",
     "next": "^14.2.15",
     "next-auth": "^4.24.10",

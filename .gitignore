@@ -15,3 +15,7 @@ Spec_1.md.txt
 
 # Claude Code local session config (machine-specific, not project config)
 .claude/settings.local.json
+
+# Supabase CLI local state
+supabase/.temp/
+supabase/.branches/
