@@ -1,0 +1,637 @@
+// Maxey Construction — Operations Platform
+// Core data model per Spec.md Section 7. Phase 1 modules use a subset;
+// later-phase models are defined now so migrations stay additive.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum Role {
+  OWNER
+  PM
+  FOREMAN
+  PURCHASING
+  ACCOUNTING
+  DRIVER
+  CLIENT
+  OFFICE
+}
+
+enum Department {
+  OFFICE
+  SITE
+  DRIVER
+}
+
+enum LeadSource {
+  WEBSITE
+  FACEBOOK
+  REFERRAL
+  WALK_IN
+  GOVERNMENT_BID
+  OTHER
+}
+
+enum LeadStatus {
+  NEW
+  UNDER_REVIEW
+  ESTIMATE_IN_PROGRESS
+  QUOTATION_SENT
+  WON
+  LOST
+}
+
+enum QuotationStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+}
+
+enum QuotationItemCategory {
+  MATERIAL
+  LABOR
+  EQUIPMENT
+  OTHER
+}
+
+// Construction lifecycle per the owner's workflow. TURNED_OVER projects move
+// to the "Completed/Turn-over" section; SITE_SURVEY and NOT_ACTIVE are
+// prospective; the rest count as on-going.
+enum ProjectStatus {
+  SITE_SURVEY
+  MOBILIZATION
+  ONGOING_CONSTRUCTION
+  NOT_ACTIVE
+  ON_HOLD
+  FOR_PUNCHLIST
+  TURNED_OVER
+}
+
+enum PaymentTermType {
+  DOWNPAYMENT
+  PARTIAL
+  RETENTION
+  FINAL
+}
+
+enum PaymentTermStatus {
+  PENDING
+  DUE
+  PAID
+}
+
+enum RequisitionStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  PO_ISSUED
+  DELIVERED
+}
+
+enum Urgency {
+  LOW
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
+enum POStatus {
+  OPEN
+  PARTIALLY_DELIVERED
+  DELIVERED
+  CANCELLED
+}
+
+enum ChangeOrderStatus {
+  PENDING_CLIENT
+  APPROVED
+  REJECTED
+}
+
+enum MovementType {
+  SITE_TO_WAREHOUSE
+  WAREHOUSE_TO_SITE
+  SITE_TO_SITE
+  CONSUMED_ON_SITE // material used up in construction — decrements on-site balance only
+  SUPPLIER_TO_SITE
+  SUPPLIER_TO_WAREHOUSE
+}
+
+enum InstructionStatus {
+  OPEN
+  ACKNOWLEDGED
+  IN_PROGRESS
+  DONE
+}
+
+enum PayrollStatus {
+  DRAFT
+  REVIEW
+  APPROVED
+  PAID
+}
+
+enum PermitStatus {
+  ACTIVE
+  EXPIRING_SOON
+  EXPIRED
+}
+
+// ---------- Core ----------
+
+model User {
+  id           String      @id @default(cuid())
+  name         String
+  email        String      @unique
+  phone        String?
+  passwordHash String
+  role         Role
+  department   Department?
+  position     String? // trade/position: Foreman, Mason, Carpenter, Welder, Driver, Office Admin…
+  dailyRate    Decimal?    @db.Decimal(12, 2)
+  hourlyRate   Decimal?    @db.Decimal(12, 2)
+  active       Boolean     @default(true)
+  mustChangePassword Boolean @default(false) // temp password issued — force change on first login
+  clientId     String? // portal accounts link to a Client
+  client       Client?     @relation(fields: [clientId], references: [id])
+  createdAt    DateTime    @default(now())
+
+  requisitionsSubmitted Requisition[]   @relation("ReqSubmitter")
+  requisitionsApproved  Requisition[]   @relation("ReqApprover")
+  purchaseOrders        PurchaseOrder[]
+  paymentsRecorded      Payment[]
+  progressEntries       ProgressEntry[]
+  instructionsPosted    SiteInstruction[]
+  changeOrdersCreated   ChangeOrder[]   @relation("COCreator")
+  changeOrdersResponded ChangeOrder[]   @relation("COResponder")
+  quotationsCreated     Quotation[]
+  attendance            Attendance[]
+  tripLogs              TripLog[]
+  auditLogs             AuditLog[]
+  assignments           ProjectAssignment[]
+}
+
+model Client {
+  id          String     @id @default(cuid())
+  name        String
+  contactName String?
+  email       String?
+  phone       String?
+  address     String?
+  source      LeadSource @default(OTHER)
+  createdAt   DateTime   @default(now())
+
+  users    User[]
+  leads    Lead[]
+  projects Project[]
+}
+
+model Lead {
+  id            String     @id @default(cuid())
+  clientId      String?
+  client        Client?    @relation(fields: [clientId], references: [id])
+  contactName   String
+  email         String?
+  phone         String?
+  address       String?
+  source        LeadSource @default(WEBSITE)
+  message       String?
+  planFileUrl   String?
+  status        LeadStatus @default(NEW)
+  estimateDueBy DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  quotations Quotation[]
+  projects   Project[]
+}
+
+model Quotation {
+  id          String          @id @default(cuid())
+  number      String          @unique
+  leadId      String
+  lead        Lead            @relation(fields: [leadId], references: [id])
+  markupPct   Decimal         @default(0) @db.Decimal(5, 2)
+  vatPct      Decimal         @default(12) @db.Decimal(5, 2)
+  notes       String?
+  status      QuotationStatus @default(DRAFT)
+  validUntil  DateTime?
+  createdById String
+  createdBy   User            @relation(fields: [createdById], references: [id])
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  lineItems QuotationLineItem[]
+}
+
+model QuotationLineItem {
+  id          String                @id @default(cuid())
+  quotationId String
+  quotation   Quotation             @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  category    QuotationItemCategory @default(MATERIAL)
+  description String
+  qty         Decimal               @db.Decimal(12, 2)
+  unit        String
+  unitPrice   Decimal               @db.Decimal(12, 2)
+  sortOrder   Int                   @default(0)
+}
+
+model Project {
+  id            String        @id @default(cuid())
+  clientId      String
+  client        Client        @relation(fields: [clientId], references: [id])
+  leadId        String?
+  lead          Lead?         @relation(fields: [leadId], references: [id])
+  name          String
+  address       String?
+  contractValue Decimal       @default(0) @db.Decimal(14, 2)
+  termsJson     Json?
+  status        ProjectStatus @default(SITE_SURVEY)
+  pcabRef       String?
+  startDate     DateTime?
+  targetEndDate DateTime?
+  createdAt     DateTime      @default(now())
+
+  paymentTerms    PaymentTerm[]
+  payments        Payment[]
+  requisitions    Requisition[]
+  changeOrders    ChangeOrder[]
+  progressEntries ProgressEntry[]
+  instructions    SiteInstruction[]
+  deliveries      Delivery[]
+  meetings        Meeting[]
+  logbookEntries  LogbookEntry[]
+  tripLogs        TripLog[]
+  attendance      Attendance[]
+  assignments     ProjectAssignment[]
+  payrollRuns     PayrollRun[]
+  materialStocks  ProjectMaterialStock[]
+  toolAssets      ToolAsset[]           @relation("ToolCurrentProject")
+  materialMovesFrom InventoryMovement[] @relation("MaterialMoveFrom")
+  materialMovesTo   InventoryMovement[] @relation("MaterialMoveTo")
+  toolMovesFrom     ToolMovement[]      @relation("ToolMoveFrom")
+  toolMovesTo       ToolMovement[]      @relation("ToolMoveTo")
+}
+
+model PaymentTerm {
+  id           String            @id @default(cuid())
+  projectId    String
+  project      Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type         PaymentTermType
+  label        String
+  amount       Decimal           @db.Decimal(14, 2)
+  dueCondition String?
+  status       PaymentTermStatus @default(PENDING)
+  sortOrder    Int               @default(0)
+
+  payments Payment[]
+}
+
+model Payment {
+  id            String       @id @default(cuid())
+  projectId     String
+  project       Project      @relation(fields: [projectId], references: [id])
+  paymentTermId String?
+  paymentTerm   PaymentTerm? @relation(fields: [paymentTermId], references: [id])
+  amount        Decimal      @db.Decimal(14, 2)
+  dateReceived  DateTime
+  method        String?
+  reference     String?
+  attachments   Json? // proof of payment: check photos, ARs, PO payment receipts
+  recordedById  String
+  recordedBy    User         @relation(fields: [recordedById], references: [id])
+  createdAt     DateTime     @default(now())
+}
+
+// ---------- Requisition → PO ----------
+
+model Requisition {
+  id             String            @id @default(cuid())
+  clientUuid     String            @unique // generated on the device; makes offline sync idempotent
+  projectId      String
+  project        Project           @relation(fields: [projectId], references: [id])
+  submittedById  String
+  submittedBy    User              @relation("ReqSubmitter", fields: [submittedById], references: [id])
+  submittedAt    DateTime // captured on-device at time of action, not sync time
+  urgency        Urgency           @default(NORMAL)
+  neededBy       DateTime?
+  notes          String?
+  status         RequisitionStatus @default(SUBMITTED)
+  estimatedCost  Decimal?          @db.Decimal(14, 2)
+  approvedById   String?
+  approvedBy     User?             @relation("ReqApprover", fields: [approvedById], references: [id])
+  approvedAt     DateTime?
+  rejectedReason String?
+  offlineSynced  Boolean           @default(false)
+  createdAt      DateTime          @default(now())
+
+  items         RequisitionItem[]
+  purchaseOrder PurchaseOrder?
+}
+
+model RequisitionItem {
+  id            String      @id @default(cuid())
+  requisitionId String
+  requisition   Requisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  name          String
+  spec          String?
+  qty           Decimal     @db.Decimal(12, 2)
+  unit          String
+  estUnitCost   Decimal?    @db.Decimal(12, 2)
+}
+
+model PurchaseOrder {
+  id            String      @id @default(cuid())
+  poNumber      String      @unique
+  requisitionId String      @unique
+  requisition   Requisition @relation(fields: [requisitionId], references: [id])
+  supplier      String
+  items         Json // [{ name, qty, unit, unitCost }]
+  totalCost     Decimal     @db.Decimal(14, 2)
+  deliveryDate  DateTime?
+  status        POStatus    @default(OPEN)
+  createdById   String
+  createdBy     User        @relation(fields: [createdById], references: [id])
+  createdAt     DateTime    @default(now())
+
+  deliveries Delivery[]
+}
+
+// ---------- Change orders & progress (portal) ----------
+
+model ChangeOrder {
+  id                 String            @id @default(cuid())
+  projectId          String
+  project            Project           @relation(fields: [projectId], references: [id])
+  title              String
+  description        String
+  costImpact         Decimal           @default(0) @db.Decimal(14, 2)
+  timeImpactDays     Int               @default(0)
+  photos             Json?
+  status             ChangeOrderStatus @default(PENDING_CLIENT)
+  clientResponseAt   DateTime?
+  clientResponseById String?
+  clientResponseBy   User?             @relation("COResponder", fields: [clientResponseById], references: [id])
+  createdById        String
+  createdBy          User              @relation("COCreator", fields: [createdById], references: [id])
+  createdAt          DateTime          @default(now())
+}
+
+model ProgressEntry {
+  id            String   @id @default(cuid())
+  clientUuid    String?  @unique // offline sync idempotency
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id])
+  submittedById String
+  submittedBy   User     @relation(fields: [submittedById], references: [id])
+  workItem      String?
+  pctComplete   Decimal  @db.Decimal(5, 2)
+  notes         String?
+  photos        Json?
+  visibleToClient Boolean @default(true)
+  createdAt     DateTime @default(now())
+  editedById    String?
+  editedAt      DateTime?
+}
+
+// ---------- Phase 2+ models (schema defined now, UI later) ----------
+
+model Delivery {
+  id            String        @id @default(cuid())
+  clientUuid    String?       @unique // offline sync idempotency
+  poId          String
+  po            PurchaseOrder @relation(fields: [poId], references: [id])
+  projectId     String
+  project       Project       @relation(fields: [projectId], references: [id])
+  checklist     Json // [{ item, orderedQty, receivedQty, ok, remarks }]
+  verifiedById  String
+  verifiedAt    DateTime? // device time at moment of verification
+  discrepancies String?
+  photos        Json?
+  gps           String?
+  createdAt     DateTime      @default(now())
+}
+
+model WarehouseItem {
+  id         String   @id @default(cuid())
+  name       String
+  unit       String
+  currentQty Decimal  @default(0) @db.Decimal(12, 2) // company-wide warehouse balance
+  createdAt  DateTime @default(now())
+
+  movements     InventoryMovement[]
+  projectStocks ProjectMaterialStock[]
+}
+
+// Materialized on-site material balance per (project, item) — updated
+// atomically alongside every InventoryMovement, mirroring the
+// WarehouseItem.currentQty pattern already used company-wide. Lets the
+// Inventory tab show "what's on site right now" per project without summing
+// the full movement history on every page load.
+model ProjectMaterialStock {
+  id        String        @id @default(cuid())
+  projectId String
+  project   Project       @relation(fields: [projectId], references: [id])
+  itemId    String
+  item      WarehouseItem @relation(fields: [itemId], references: [id])
+  qty       Decimal       @default(0) @db.Decimal(12, 2)
+  updatedAt DateTime      @updatedAt
+
+  @@unique([projectId, itemId])
+}
+
+model InventoryMovement {
+  id            String        @id @default(cuid())
+  clientUuid    String?       @unique // offline sync idempotency
+  itemId        String
+  item          WarehouseItem @relation(fields: [itemId], references: [id])
+  type          MovementType
+  qty           Decimal       @db.Decimal(12, 2)
+  fromLoc       String // display label: "Warehouse" | "Supplier" | project name snapshot
+  toLoc         String
+  fromProjectId String? // set when the source is a project's on-site stock
+  fromProject   Project?      @relation("MaterialMoveFrom", fields: [fromProjectId], references: [id])
+  toProjectId   String? // set when the destination is a project's on-site stock
+  toProject     Project?      @relation("MaterialMoveTo", fields: [toProjectId], references: [id])
+  actorId       String
+  createdAt     DateTime      @default(now())
+}
+
+enum ToolStatus {
+  IN_WAREHOUSE
+  ON_SITE
+  UNDER_REPAIR
+  LOST
+}
+
+enum ToolMovementType {
+  CHECKOUT_TO_SITE
+  RETURN_TO_WAREHOUSE
+  TRANSFER_SITE_TO_SITE
+  MARK_UNDER_REPAIR
+  MARK_LOST
+  MARK_AVAILABLE // repaired / found — returns to warehouse availability
+}
+
+// Individual tool/equipment asset (Spec 6.4 extension, owner's request
+// 2026-07-07): tracked as one unit per row — e.g. "Welding Machine #2" — not
+// a bulk quantity, so at any time you know exactly which project holds which
+// unit and its condition.
+model ToolAsset {
+  id                String     @id @default(cuid())
+  name              String // e.g. "Welding Machine"
+  assetTag          String? // e.g. "WM-002", optional serial/tag
+  category          String? // e.g. Power Tool, Heavy Equipment, Hand Tool
+  condition         String? // latest condition note
+  status            ToolStatus @default(IN_WAREHOUSE)
+  currentProjectId  String? // null = in warehouse
+  currentProject    Project?   @relation("ToolCurrentProject", fields: [currentProjectId], references: [id])
+  createdAt         DateTime   @default(now())
+
+  movements ToolMovement[]
+}
+
+model ToolMovement {
+  id            String           @id @default(cuid())
+  clientUuid    String?          @unique // offline sync idempotency
+  toolId        String
+  tool          ToolAsset        @relation(fields: [toolId], references: [id])
+  type          ToolMovementType
+  fromProjectId String?
+  fromProject   Project?         @relation("ToolMoveFrom", fields: [fromProjectId], references: [id])
+  toProjectId   String?
+  toProject     Project?         @relation("ToolMoveTo", fields: [toProjectId], references: [id])
+  condition     String? // condition note at time of movement (e.g. damage report)
+  photoUrl      String?
+  actorId       String
+  createdAt     DateTime         @default(now())
+}
+
+model Attendance {
+  id         String   @id @default(cuid())
+  clientUuid String?  @unique // offline sync idempotency
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  projectId String? // null = office
+  project   Project?  @relation(fields: [projectId], references: [id])
+  timeIn    DateTime
+  timeOut   DateTime?
+  gpsIn     String?
+  gpsOut    String?
+  source    String    @default("online") // online | offline_synced
+  createdAt DateTime  @default(now())
+}
+
+// Employee roster per project: who works on it, since when, at what rate.
+// Drives per-project payroll runs (rate here overrides the user's profile).
+model ProjectAssignment {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id])
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  startDate  DateTime // date the employee started on this project
+  hourlyRate Decimal  @db.Decimal(12, 2)
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  @@unique([projectId, userId])
+}
+
+model PayrollRun {
+  id          String        @id @default(cuid())
+  // Exactly one of the two: project payroll (site crew per project) or a
+  // department run (office staff / drivers, who have no project).
+  projectId   String?
+  project     Project?      @relation(fields: [projectId], references: [id])
+  department  Department?
+  periodStart DateTime
+  periodEnd   DateTime
+  entries     Json // [{ userId, hours, ot, gross, deductions, net }]
+  status      PayrollStatus @default(DRAFT)
+  createdAt   DateTime      @default(now())
+}
+
+model SiteInstruction {
+  id         String            @id @default(cuid())
+  projectId  String
+  project    Project           @relation(fields: [projectId], references: [id])
+  postedById String
+  postedBy   User              @relation(fields: [postedById], references: [id])
+  text       String
+  photoUrl   String?
+  status     InstructionStatus @default(OPEN)
+  createdAt  DateTime          @default(now())
+}
+
+model Meeting {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id])
+  date        DateTime
+  attendees   Json
+  notes       String?
+  actionItems Json?
+  createdAt   DateTime @default(now())
+}
+
+model LogbookEntry {
+  id             String   @id @default(cuid())
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id])
+  date           DateTime
+  sourcePhotoUrl String?
+  ocrJson        Json?
+  confirmedById  String?
+  createdAt      DateTime @default(now())
+}
+
+model Permit {
+  id          String       @id @default(cuid())
+  name        String
+  issuingBody String?
+  issueDate   DateTime?
+  expiryDate  DateTime
+  documentUrl String?
+  status      PermitStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now())
+}
+
+model TripLog {
+  id          String    @id @default(cuid())
+  driverId    String
+  driver      User      @relation(fields: [driverId], references: [id])
+  projectId   String?
+  project     Project?  @relation(fields: [projectId], references: [id])
+  origin      String
+  destination String
+  items       Json?
+  departTime  DateTime
+  arriveTime  DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+// ---------- Audit (append-only) ----------
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  entityType String
+  entityId   String
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id])
+  actorName  String
+  action     String
+  diff       Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+}

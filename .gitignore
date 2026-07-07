@@ -1,0 +1,17 @@
+node_modules/
+.next/
+out/
+.env
+.env*.local
+*.tsbuildinfo
+next-env.d.ts
+.pgdata/
+.vercel
+public/uploads/
+
+# Not yet reviewed for public disclosure — remove these lines to include them
+Prompt Maxey Claude.docx
+Spec_1.md.txt
+
+# Claude Code local session config (machine-specific, not project config)
+.claude/settings.local.json
