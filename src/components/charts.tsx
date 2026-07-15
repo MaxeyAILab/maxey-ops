@@ -21,7 +21,7 @@ export function CashflowChart({
     <div className="h-72 w-full">
       <ResponsiveContainer>
         <BarChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#eceef2" />
+          <CartesianGrid strokeDasharray="3 3" stroke="#edebe9" />
           <XAxis dataKey="month" tick={{ fontSize: 12 }} />
           <YAxis tickFormatter={(v: number) => phpCompact(v)} tick={{ fontSize: 11 }} width={70} />
           <Tooltip
@@ -36,7 +36,7 @@ export function CashflowChart({
             }
           />
           <Bar dataKey="inflow" fill="#10b981" radius={[3, 3, 0, 0]} />
-          <Bar dataKey="outflow" fill="#f5820b" radius={[3, 3, 0, 0]} />
+          <Bar dataKey="outflow" fill="#7a2532" radius={[3, 3, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>

@@ -90,7 +90,7 @@ export default function HomePage() {
           className="absolute inset-0 opacity-30"
           style={{
             backgroundImage:
-              "linear-gradient(135deg, #f5820b22 25%, transparent 25%), linear-gradient(225deg, #f5820b22 25%, transparent 25%), linear-gradient(45deg, #f5820b11 25%, transparent 25%), linear-gradient(315deg, #f5820b11 25%, transparent 25%)",
+              "linear-gradient(135deg, #7a253222 25%, transparent 25%), linear-gradient(225deg, #7a253222 25%, transparent 25%), linear-gradient(45deg, #7a253211 25%, transparent 25%), linear-gradient(315deg, #7a253211 25%, transparent 25%)",
             backgroundSize: "120px 120px",
           }}
         />

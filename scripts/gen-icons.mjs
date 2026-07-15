@@ -32,10 +32,10 @@ function chunk(type, data) {
 }
 
 function makePng(size) {
-  // Brand orange square with a darker "M" band motif drawn per-pixel.
+  // Burgundy square with a white "M" band motif drawn per-pixel.
   const px = Buffer.alloc(size * size * 3);
-  const orange = [0xf5, 0x82, 0x0b];
-  const dark = [0x22, 0x25, 0x2e];
+  const burgundy = [0x7a, 0x25, 0x32];
+  const white = [0xff, 0xff, 0xff];
   const t = size / 12; // stroke thickness
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
@@ -52,7 +52,7 @@ function makePng(size) {
         const dr = rx - prog * (rx - size / 2) * 1.0;
         if (prog <= 0.6 && (Math.abs(x - dl) < t || Math.abs(x - dr) < t)) isM = true;
       }
-      const c = isM ? dark : orange;
+      const c = isM ? white : burgundy;
       const i = (y * size + x) * 3;
       px[i] = c[0];
       px[i + 1] = c[1];
