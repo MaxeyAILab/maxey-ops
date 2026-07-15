@@ -84,14 +84,32 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* Hero — full-width banner, centered headline + subheading + CTA */}
+      {/* Hero — full-width banner, centered headline + subheading + CTA.
+          Background reads as a poured-concrete wall: fine grain noise (SVG
+          feTurbulence, no image request), soft uneven tonal blotches, and
+          faint horizontal form-board seams — the marks real poured concrete
+          takes from wooden formwork panels. */}
       <section className="relative overflow-hidden bg-ink-950">
         <div
-          className="absolute inset-0 opacity-30"
+          className="absolute inset-0"
           style={{
-            backgroundImage:
-              "linear-gradient(135deg, #6e142022 25%, transparent 25%), linear-gradient(225deg, #6e142022 25%, transparent 25%), linear-gradient(45deg, #6e142011 25%, transparent 25%), linear-gradient(315deg, #6e142011 25%, transparent 25%)",
-            backgroundSize: "120px 120px",
+            backgroundImage: [
+              // fine grain — blended with mix-blend-mode below for a printed-on-the-surface look
+              "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E\")",
+              // uneven poured-concrete blotches
+              "radial-gradient(ellipse 480px 380px at 12% 18%, rgba(56,51,46,0.55), transparent 60%)",
+              "radial-gradient(ellipse 520px 420px at 88% 72%, rgba(38,35,32,0.55), transparent 60%)",
+              "radial-gradient(ellipse 420px 340px at 55% 10%, rgba(76,70,63,0.35), transparent 65%)",
+              "radial-gradient(ellipse 460px 380px at 28% 88%, rgba(20,18,17,0.6), transparent 60%)",
+              "radial-gradient(ellipse 380px 320px at 75% 30%, rgba(110,20,32,0.12), transparent 65%)",
+              // horizontal form-board seams (concrete formwork panel lines)
+              "repeating-linear-gradient(to bottom, transparent 0, transparent 158px, rgba(0,0,0,0.35) 159px, rgba(0,0,0,0.35) 160px, transparent 161px)",
+              // faint vertical panel joints
+              "repeating-linear-gradient(to right, transparent 0, transparent 238px, rgba(0,0,0,0.22) 239px, transparent 240px)",
+            ].join(", "),
+            backgroundSize: "180px 180px, auto, auto, auto, auto, auto, auto, auto",
+            mixBlendMode: "overlay",
+            opacity: 0.9,
           }}
         />
         <div className="relative mx-auto max-w-4xl px-4 py-28 text-center sm:py-36">
