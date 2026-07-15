@@ -76,10 +76,17 @@ Photos are stored locally in `public/uploads/` for development — swap
 
 ## Production notes
 
-- **Database/hosting are not provisioned yet** — per the spec this is confirmed
-  with the owner first. Recommended: Vercel + **Supabase** Postgres (also covers
-  file storage for Phase 2 photos). Set `DATABASE_URL`, `NEXTAUTH_URL`,
-  `NEXTAUTH_SECRET` and run `prisma migrate deploy`.
+- **Live**: https://maxey-ops.vercel.app — Vercel (functions pinned to Tokyo
+  `hnd1`) + Supabase Postgres/Storage (`hnd1`-region friendly), auto-deploys
+  from `main`. `DATABASE_URL`/`DIRECT_URL`/`NEXTAUTH_URL`/`NEXTAUTH_SECRET` and
+  the `SUPABASE_*` vars are set in the Vercel project's env settings.
+- **After provisioning any new database** (fresh Supabase project, staging
+  env, etc.), run `npx tsx scripts/enable-rls.ts` once `prisma db push` has
+  created the tables. Prisma never manages Row-Level Security, and Supabase
+  publishes every public-schema table over its REST API by default — without
+  this step, anyone with the project's `anon` key can read/write every table.
+  Safe to re-run anytime; doesn't affect the app (Prisma connects as the
+  table owner, which bypasses RLS).
 - SMS (Semaphore) and email (Resend) senders are stubbed in
   `src/lib/notify.ts` — call sites are wired; add API keys and implement.
 - Replace the placeholder "M" PWA icons in `public/icons/` with real branding
