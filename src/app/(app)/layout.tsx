@@ -9,20 +9,37 @@ interface NavItem {
   href: string;
   label: string;
   icon: string;
+  chip: keyof typeof CHIP_TONES;
 }
 
+// Full literal class strings (never built via string interpolation) so
+// Tailwind's JIT scanner picks them up.
+const CHIP_TONES = {
+  sky: "bg-sky-100",
+  violet: "bg-violet-100",
+  amber: "bg-amber-100",
+  indigo: "bg-indigo-100",
+  orange: "bg-orange-100",
+  blue: "bg-blue-100",
+  teal: "bg-teal-100",
+  slate: "bg-slate-100",
+  emerald: "bg-emerald-100",
+  pink: "bg-pink-100",
+  cyan: "bg-cyan-100",
+} as const;
+
 const nav: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: "📊" },
-  { href: "/leads", label: "Leads / CRM", icon: "📥" },
-  { href: "/projects", label: "Projects", icon: "🏗️" },
-  { href: "/requisitions", label: "Requisitions", icon: "📝" },
-  { href: "/purchasing", label: "Purchasing", icon: "🛒" },
-  { href: "/deliveries", label: "Deliveries", icon: "🚚" },
-  { href: "/inventory", label: "Inventory", icon: "📦" },
-  { href: "/instructions", label: "Instructions", icon: "📋" },
-  { href: "/attendance", label: "Attendance", icon: "⏱️" },
-  { href: "/payroll", label: "Payroll", icon: "💰" },
-  { href: "/people", label: "People", icon: "👥" },
+  { href: "/dashboard", label: "Dashboard", icon: "📊", chip: "sky" },
+  { href: "/leads", label: "Leads / CRM", icon: "📥", chip: "violet" },
+  { href: "/projects", label: "Projects", icon: "🏗️", chip: "amber" },
+  { href: "/requisitions", label: "Requisitions", icon: "📝", chip: "indigo" },
+  { href: "/purchasing", label: "Purchasing", icon: "🛒", chip: "orange" },
+  { href: "/deliveries", label: "Deliveries", icon: "🚚", chip: "blue" },
+  { href: "/inventory", label: "Inventory", icon: "📦", chip: "teal" },
+  { href: "/instructions", label: "Instructions", icon: "📋", chip: "slate" },
+  { href: "/attendance", label: "Attendance", icon: "⏱️", chip: "emerald" },
+  { href: "/payroll", label: "Payroll", icon: "💰", chip: "pink" },
+  { href: "/people", label: "People", icon: "👥", chip: "cyan" },
 ];
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -55,9 +72,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <Link
                 key={n.href}
                 href={n.href}
-                className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-ink-600 hover:bg-brand-50 hover:text-brand-700"
+                className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-ink-600 hover:bg-brand-50 hover:text-brand-700"
               >
-                <span aria-hidden>{n.icon}</span>
+                <span
+                  aria-hidden
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-base ${CHIP_TONES[n.chip]}`}
+                >
+                  {n.icon}
+                </span>
                 {n.label}
               </Link>
             ))}
