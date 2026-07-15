@@ -107,7 +107,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                 <Link
                   key={n.href}
                   href={n.href}
-                  className="whitespace-nowrap rounded-lg px-3 py-2 font-medium text-ink-600 hover:bg-ink-100"
+                  className="whitespace-nowrap rounded-lg px-3 py-2 font-medium text-ink-900 hover:bg-ink-100"
                 >
                   {n.label}
                 </Link>
