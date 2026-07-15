@@ -2,13 +2,27 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getMonthlyCashflow, getProjectFinances } from "@/lib/finance";
+import { getMonthlyCashflow, getProjectFinances, type ProjectFinance } from "@/lib/finance";
 import { php, phpCompact } from "@/lib/format";
+import { COMPLETED_STATUSES } from "@/lib/project-status";
 import { Badge, Card, CardBody, CardHeader, Stat, Table, Td, Th } from "@/components/ui";
 import { CashflowChart } from "@/components/charts";
 
 export const metadata = { title: "Dashboard" };
 export const dynamic = "force-dynamic";
+
+function sumFinances(rows: ProjectFinance[]) {
+  return rows.reduce(
+    (acc, f) => ({
+      contract: acc.contract + f.contractValue,
+      received: acc.received + f.received,
+      committed: acc.committed + f.committedCost,
+      retention: acc.retention + f.retentionHeld,
+      margin: acc.margin + f.grossMargin,
+    }),
+    { contract: 0, received: 0, committed: 0, retention: 0, margin: 0 }
+  );
+}
 
 export default async function DashboardPage() {
   const user = await getSessionUser();
@@ -22,16 +36,10 @@ export default async function DashboardPage() {
     prisma.changeOrder.count({ where: { status: "PENDING_CLIENT" } }),
   ]);
 
-  const total = finances.reduce(
-    (acc, f) => ({
-      contract: acc.contract + f.contractValue,
-      received: acc.received + f.received,
-      committed: acc.committed + f.committedCost,
-      retention: acc.retention + f.retentionHeld,
-      margin: acc.margin + f.grossMargin,
-    }),
-    { contract: 0, received: 0, committed: 0, retention: 0, margin: 0 }
-  );
+  const doneFinances = finances.filter((f) => (COMPLETED_STATUSES as string[]).includes(f.status));
+  const activeFinances = finances.filter((f) => !(COMPLETED_STATUSES as string[]).includes(f.status));
+  const active = sumFinances(activeFinances);
+  const done = sumFinances(doneFinances);
 
   return (
     <div className="space-y-6">
@@ -62,23 +70,54 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Stat label="Contract value" value={phpCompact(total.contract)} sub="active projects" />
-        <Stat label="Received" value={phpCompact(total.received)} tone="good" sub="client payments" />
-        <Stat label="Committed cost" value={phpCompact(total.committed)} sub="approved reqs + POs" />
-        <Stat
-          label="Est. gross margin"
-          value={phpCompact(total.margin)}
-          tone={total.margin >= 0 ? "good" : "bad"}
-          sub={total.contract > 0 ? `${((total.margin / total.contract) * 100).toFixed(1)}% of contract` : undefined}
-        />
-        <Stat label="Retention held" value={phpCompact(total.retention)} tone="brand" sub="by clients" />
+      <div>
+        <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-500">
+          Active projects ({activeFinances.length})
+        </h2>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <Stat label="Contract value" value={phpCompact(active.contract)} sub="active projects" />
+          <Stat label="Received" value={phpCompact(active.received)} tone="good" sub="client payments" />
+          <Stat
+            label="Committed cost"
+            value={phpCompact(active.committed)}
+            sub="approved reqs + POs + payroll"
+          />
+          <Stat
+            label="Est. gross margin"
+            value={phpCompact(active.margin)}
+            tone={active.margin >= 0 ? "good" : "bad"}
+            sub={active.contract > 0 ? `${((active.margin / active.contract) * 100).toFixed(1)}% of contract` : undefined}
+          />
+          <Stat label="Retention held" value={phpCompact(active.retention)} tone="brand" sub="by clients" />
+        </div>
+      </div>
+
+      <div>
+        <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-500">
+          Completed / turned-over projects ({doneFinances.length})
+        </h2>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <Stat label="Contract value" value={phpCompact(done.contract)} sub="done projects" />
+          <Stat label="Received" value={phpCompact(done.received)} tone="good" sub="client payments" />
+          <Stat
+            label="Committed cost"
+            value={phpCompact(done.committed)}
+            sub="approved reqs + POs + payroll"
+          />
+          <Stat
+            label="Est. gross margin"
+            value={phpCompact(done.margin)}
+            tone={done.margin >= 0 ? "good" : "bad"}
+            sub={done.contract > 0 ? `${((done.margin / done.contract) * 100).toFixed(1)}% of contract` : undefined}
+          />
+          <Stat label="Retention held" value={phpCompact(done.retention)} tone="brand" sub="by clients" />
+        </div>
       </div>
 
       <Card>
         <CardHeader
           title="Company cashflow"
-          subtitle="Client payments received vs. purchase-order commitments, last 6 months"
+          subtitle="Client payments received vs. committed cost (POs + payroll), last 6 months"
         />
         <CardBody>
           <CashflowChart data={cashflow} />

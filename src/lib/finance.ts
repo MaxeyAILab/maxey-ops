@@ -30,8 +30,10 @@ export function runGross(entries: unknown): number {
 
 export async function getProjectFinances(): Promise<ProjectFinance[]> {
   const projects = await prisma.project.findMany({
-    // running-business view: exclude shelved and turned-over projects
-    where: { status: { notIn: ["NOT_ACTIVE", "TURNED_OVER"] } },
+    // Active + completed/turned-over projects — everything except shelved
+    // prospects. Callers split by status (see ONGOING_STATUSES/
+    // COMPLETED_STATUSES) to report active vs. done separately.
+    where: { status: { not: "NOT_ACTIVE" } },
     include: {
       client: { select: { name: true } },
       payments: true,
@@ -81,7 +83,7 @@ export async function getProjectFinances(): Promise<ProjectFinance[]> {
 export interface MonthlyCashflow {
   month: string; // "Jan 2026"
   inflow: number; // client payments received
-  outflow: number; // PO commitments issued
+  outflow: number; // committed cost: PO totals + approved/paid payroll
 }
 
 export async function getMonthlyCashflow(months = 6): Promise<MonthlyCashflow[]> {
@@ -90,9 +92,12 @@ export async function getMonthlyCashflow(months = 6): Promise<MonthlyCashflow[]>
   since.setDate(1);
   since.setHours(0, 0, 0, 0);
 
-  const [payments, pos] = await Promise.all([
+  const [payments, pos, payrollRuns] = await Promise.all([
     prisma.payment.findMany({ where: { dateReceived: { gte: since } } }),
     prisma.purchaseOrder.findMany({ where: { createdAt: { gte: since } } }),
+    prisma.payrollRun.findMany({
+      where: { status: { in: ["APPROVED", "PAID"] }, createdAt: { gte: since } },
+    }),
   ]);
 
   const fmt = new Intl.DateTimeFormat("en-PH", {
@@ -116,6 +121,10 @@ export async function getMonthlyCashflow(months = 6): Promise<MonthlyCashflow[]>
   for (const po of pos) {
     const i = idx(new Date(po.createdAt));
     if (i >= 0) buckets[i].outflow += Number(po.totalCost);
+  }
+  for (const run of payrollRuns) {
+    const i = idx(new Date(run.createdAt));
+    if (i >= 0) buckets[i].outflow += runGross(run.entries);
   }
   return buckets;
 }
