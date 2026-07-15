@@ -34,7 +34,7 @@ function chunk(type, data) {
 function makePng(size) {
   // Burgundy square with a white "M" band motif drawn per-pixel.
   const px = Buffer.alloc(size * size * 3);
-  const burgundy = [0x7a, 0x25, 0x32];
+  const burgundy = [0x6e, 0x14, 0x20];
   const white = [0xff, 0xff, 0xff];
   const t = size / 12; // stroke thickness
   for (let y = 0; y < size; y++) {

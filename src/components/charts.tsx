@@ -36,7 +36,7 @@ export function CashflowChart({
             }
           />
           <Bar dataKey="inflow" fill="#10b981" radius={[3, 3, 0, 0]} />
-          <Bar dataKey="outflow" fill="#7a2532" radius={[3, 3, 0, 0]} />
+          <Bar dataKey="outflow" fill="#6e1420" radius={[3, 3, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>

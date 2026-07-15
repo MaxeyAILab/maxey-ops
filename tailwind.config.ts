@@ -7,17 +7,18 @@ const config: Config = {
       colors: {
         // Maxey Construction brand palette — white / burgundy / cement grey
         brand: {
-          50: "#fbf1f2",
-          100: "#f5dee1",
-          200: "#eabdc3",
-          300: "#d8919b",
-          400: "#bf6270",
-          500: "#9f3f4f",
-          600: "#7a2532", // primary burgundy — buttons, links, accents
-          700: "#611d28",
-          800: "#4a161f",
-          900: "#371019",
-          950: "#240a11",
+          // Darker, more saturated wine-red burgundy (2nd pass — less rose/mauve)
+          50: "#fbebed",
+          100: "#f4ccd1",
+          200: "#e59ba3",
+          300: "#d06672",
+          400: "#b23d49",
+          500: "#8a1a28", // primary burgundy — buttons, links, accents
+          600: "#6e1420", // hover / darker accent
+          700: "#560f19",
+          800: "#3f0a12",
+          900: "#2c060c",
+          950: "#1c0407",
         },
         ink: {
           // "cement grey" neutrals — warm-neutral stone tones, not blue-tinted
