@@ -12,6 +12,12 @@ export function ContactForm() {
     e.preventDefault();
     setStatus("sending");
     const fd = new FormData(e.currentTarget);
+    // Tracked inquiry links (e.g. the Messenger auto-reply sends
+    // https://maxey-ops.vercel.app/?src=fb#contact) tag the lead's source in
+    // the CRM. Read at submit time — no hook, so the page stays static.
+    const src = new URLSearchParams(window.location.search).get("src")?.toLowerCase();
+    const source =
+      src === "fb" || src === "facebook" ? "FACEBOOK" : src === "ref" ? "REFERRAL" : "WEBSITE";
     const res = await fetch("/api/leads", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -21,7 +27,7 @@ export function ContactForm() {
         phone: fd.get("phone"),
         address: fd.get("address"),
         message: fd.get("message"),
-        source: "WEBSITE",
+        source,
       }),
     }).catch(() => null);
 
