@@ -179,6 +179,23 @@ model User {
   tripLogs              TripLog[]
   auditLogs             AuditLog[]
   assignments           ProjectAssignment[]
+  resetTokens           PasswordResetToken[]
+}
+
+// Self-service "forgot password" (Spec §8-adjacent hardening). Only the
+// hash is stored — the raw token exists only in the emailed/texted link and
+// is never persisted. Single-use: usedAt is set on redemption and the token
+// is rejected afterward even if not yet expired.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model Client {

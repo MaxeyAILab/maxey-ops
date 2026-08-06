@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Input, Label } from "@/components/ui";
 
@@ -37,7 +38,14 @@ export function LoginForm() {
         <Input id="email" name="email" type="email" required autoComplete="email" />
       </div>
       <div>
-        <Label htmlFor="password">Password</Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor="password" className="mb-0">
+            Password
+          </Label>
+          <Link href="/forgot-password" className="text-xs font-medium text-brand-600 hover:underline">
+            Forgot password?
+          </Link>
+        </div>
         <Input
           id="password"
           name="password"
