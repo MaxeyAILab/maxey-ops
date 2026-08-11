@@ -16,6 +16,10 @@ const createLeadSchema = z.object({
   source: z
     .enum(["WEBSITE", "FACEBOOK", "REFERRAL", "WALK_IN", "GOVERNMENT_BID", "OTHER"])
     .default("WEBSITE"),
+  attachments: z
+    .array(z.object({ url: z.string().min(1), name: z.string().min(1).max(200) }))
+    .max(5)
+    .optional(),
 });
 
 /**
@@ -35,6 +39,7 @@ export const POST = handleApi(async (req: NextRequest) => {
       address: body.address || null,
       message: body.message || null,
       source: body.source,
+      attachments: body.attachments?.length ? body.attachments : undefined,
       estimateDueBy: dueBy,
     },
   });

@@ -2,11 +2,14 @@
 
 import { useState } from "react";
 import { Button, Input, Label, Textarea } from "@/components/ui";
+import { FileInput } from "@/components/file-input";
 
 /** Public lead-intake form — posts straight into the CRM (Spec 6.1). */
 export function ContactForm() {
   const [status, setStatus] = useState<"idle" | "sending" | "done" | "error">("idle");
   const [reply, setReply] = useState("");
+  const [attachments, setAttachments] = useState<{ url: string; name: string }[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -22,6 +25,7 @@ export function ContactForm() {
         address: fd.get("address"),
         message: fd.get("message"),
         source: "WEBSITE",
+        attachments,
       }),
     }).catch(() => null);
 
@@ -67,8 +71,13 @@ export function ContactForm() {
         <Label htmlFor="message">Tell us about your project</Label>
         <Textarea id="message" name="message" rows={4} maxLength={5000} />
       </div>
-      <Button type="submit" disabled={status === "sending"} className="w-full">
-        {status === "sending" ? "Sending…" : "Send inquiry"}
+      <FileInput
+        label="Plans / photos (optional)"
+        onChange={setAttachments}
+        onBusyChange={setUploading}
+      />
+      <Button type="submit" disabled={status === "sending" || uploading} className="w-full">
+        {uploading ? "Uploading files…" : status === "sending" ? "Sending…" : "Send inquiry"}
       </Button>
       {status === "error" && (
         <p className="text-sm text-red-600">Something went wrong — please try again.</p>

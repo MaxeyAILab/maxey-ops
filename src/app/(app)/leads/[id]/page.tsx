@@ -58,6 +58,25 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
             <p className="whitespace-pre-wrap rounded-lg bg-ink-50 p-3 text-ink-700">
               {lead.message ?? "No message."}
             </p>
+            {Array.isArray(lead.attachments) && lead.attachments.length > 0 && (
+              <div>
+                <span className="font-medium text-ink-500">Attachments:</span>
+                <ul className="mt-1.5 space-y-1">
+                  {(lead.attachments as { url: string; name: string }[]).map((f, i) => (
+                    <li key={i}>
+                      <a
+                        href={f.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-brand-600 hover:underline"
+                      >
+                        📎 {f.name}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </CardBody>
         </Card>
 

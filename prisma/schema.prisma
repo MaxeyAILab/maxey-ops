@@ -224,6 +224,7 @@ model Lead {
   source        LeadSource @default(WEBSITE)
   message       String?
   planFileUrl   String?
+  attachments   Json? // client-submitted files: photos, PDFs, CAD plans ({ url, name }[])
   status        LeadStatus @default(NEW)
   estimateDueBy DateTime?
   createdAt     DateTime   @default(now())
