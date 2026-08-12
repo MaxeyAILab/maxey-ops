@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { PayrollEntry } from "@/lib/payroll";
+import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
 
 /**
  * Project & company cashflow figures (Spec 6.13).
@@ -20,7 +21,7 @@ export interface ProjectFinance {
   grossMargin: number;
   marginPct: number;
   retentionHeld: number;
-  latestProgressPct: number;
+  accomplishmentPct: number;
 }
 
 /** Labor cost of a run = employer payout (gross pay of all entries). */
@@ -43,7 +44,10 @@ export async function getProjectFinances(): Promise<ProjectFinance[]> {
         where: { status: { in: ["APPROVED", "PO_ISSUED", "DELIVERED"] } },
       },
       payrollRuns: { where: { status: { in: ["APPROVED", "PAID"] } } },
-      progressEntries: { orderBy: { createdAt: "desc" }, take: 1 },
+      // No `take` — the weighted-accomplishment rollup needs each work
+      // item's latest entry, which can be further back than just the most
+      // recent entry overall.
+      progressEntries: { orderBy: { createdAt: "desc" } },
     },
     orderBy: { createdAt: "desc" },
   });
@@ -75,7 +79,7 @@ export async function getProjectFinances(): Promise<ProjectFinance[]> {
       grossMargin,
       marginPct: contractValue > 0 ? (grossMargin / contractValue) * 100 : 0,
       retentionHeld,
-      latestProgressPct: Number(p.progressEntries[0]?.pctComplete ?? 0),
+      accomplishmentPct: weightedAccomplishment(computeWorkItemStatuses(p.progressEntries)),
     };
   });
 }

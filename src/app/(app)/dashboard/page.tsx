@@ -159,7 +159,7 @@ export default async function DashboardPage() {
                   {php(f.grossMargin)}
                   <div className="text-xs font-normal text-ink-400">{f.marginPct.toFixed(1)}%</div>
                 </Td>
-                <Td className="text-right tabular-nums">{f.latestProgressPct.toFixed(0)}%</Td>
+                <Td className="text-right tabular-nums">{f.accomplishmentPct.toFixed(0)}%</Td>
               </tr>
             ))}
             {finances.length === 0 && (

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui";
 import { PrintButton } from "@/components/print-button";
 import { runGross } from "@/lib/finance";
 import { canAccess } from "@/lib/access";
+import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +53,7 @@ export default async function ProjectReportPage({ params }: { params: { id: stri
       (s, r) => s + (r.purchaseOrder ? Number(r.purchaseOrder.totalCost) : Number(r.estimatedCost ?? 0)),
       0
     );
-  const latestPct = Number(p.progressEntries[0]?.pctComplete ?? 0);
+  const accomplishmentPct = weightedAccomplishment(computeWorkItemStatuses(p.progressEntries));
 
   return (
     <div className="space-y-4">
@@ -104,7 +105,7 @@ export default async function ProjectReportPage({ params }: { params: { id: stri
           </div>
           <div>
             <div className="text-xs font-semibold uppercase text-ink-400">Overall progress</div>
-            <div className="text-lg font-bold text-brand-600">{latestPct.toFixed(0)}%</div>
+            <div className="text-lg font-bold text-brand-600">{accomplishmentPct.toFixed(0)}%</div>
           </div>
         </div>
 

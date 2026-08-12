@@ -5,6 +5,7 @@ import { fmtDate, fmtDateTime, php } from "@/lib/format";
 import { Badge, Card, CardBody, CardHeader } from "@/components/ui";
 import { ChangeOrderRespond } from "@/components/co-respond";
 import { SignOutButton } from "@/components/signout-button";
+import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
 
 export const metadata = { title: "Client Portal" };
 export const dynamic = "force-dynamic";
@@ -25,10 +26,12 @@ export default async function PortalPage() {
     include: {
       paymentTerms: { orderBy: { sortOrder: "asc" }, include: { payments: true } },
       changeOrders: { orderBy: { createdAt: "desc" } },
+      // No `take` here — the weighted-accomplishment calc needs each work
+      // item's latest visible entry, which the timeline list below caps to
+      // the most recent 20 separately, for display only.
       progressEntries: {
         where: { visibleToClient: true },
         orderBy: { createdAt: "desc" },
-        take: 20,
         include: { submittedBy: { select: { name: true } } },
       },
     },
@@ -61,7 +64,8 @@ export default async function PortalPage() {
         )}
 
         {projects.map((p) => {
-          const latestPct = Number(p.progressEntries[0]?.pctComplete ?? 0);
+          const accomplishmentPct = weightedAccomplishment(computeWorkItemStatuses(p.progressEntries));
+          const timelineEntries = p.progressEntries.slice(0, 20);
           const pendingCOs = p.changeOrders.filter((c) => c.status === "PENDING_CLIENT");
           return (
             <section key={p.id} className="space-y-4">
@@ -78,12 +82,12 @@ export default async function PortalPage() {
                 <CardBody>
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-medium text-ink-700">Overall progress</span>
-                    <span className="font-bold text-brand-600">{latestPct.toFixed(0)}%</span>
+                    <span className="font-bold text-brand-600">{accomplishmentPct.toFixed(0)}%</span>
                   </div>
                   <div className="mt-2 h-3 overflow-hidden rounded-full bg-ink-100">
                     <div
                       className="h-full rounded-full bg-brand-500"
-                      style={{ width: `${Math.min(latestPct, 100)}%` }}
+                      style={{ width: `${Math.min(accomplishmentPct, 100)}%` }}
                     />
                   </div>
                 </CardBody>
@@ -118,7 +122,7 @@ export default async function PortalPage() {
                   <CardHeader title="Progress updates" subtitle="Reported from site, timestamped" />
                   <CardBody>
                     <ol className="space-y-2">
-                      {p.progressEntries.map((e) => (
+                      {timelineEntries.map((e) => (
                         <li key={e.id} className="rounded-lg bg-ink-50 p-3 text-sm">
                           <div className="flex items-center justify-between">
                             <span className="font-semibold text-brand-600">

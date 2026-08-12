@@ -10,7 +10,7 @@ import { AccountToggleButton, CreatePortalAccessForm } from "@/components/portal
 import { AccomplishmentRadial, WorkItemWeightBars } from "@/components/charts";
 import { runGross } from "@/lib/finance";
 import { canAccess } from "@/lib/access";
-import { computeWorkItemStatuses } from "@/lib/progress";
+import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
 
 export const dynamic = "force-dynamic";
 
@@ -59,8 +59,8 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
   const retentionHeld = p.paymentTerms
     .filter((t) => t.type === "RETENTION" && t.status !== "PAID")
     .reduce((s, t) => s + Number(t.amount), 0);
-  const latestPct = Number(p.progressEntries[0]?.pctComplete ?? 0);
   const workItemStatuses = computeWorkItemStatuses(p.progressEntries);
+  const accomplishmentPct = weightedAccomplishment(workItemStatuses);
 
   return (
     <div className="space-y-6">
@@ -100,7 +100,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
             value={php(contractValue - committed)}
             tone={contractValue - committed >= 0 ? "good" : "bad"}
           />
-          <Stat label="Progress" value={`${latestPct.toFixed(0)}%`} tone="brand" sub={`retention held ${php(retentionHeld)}`} />
+          <Stat label="Progress" value={`${accomplishmentPct.toFixed(0)}%`} tone="brand" sub={`retention held ${php(retentionHeld)}`} />
         </div>
       )}
 

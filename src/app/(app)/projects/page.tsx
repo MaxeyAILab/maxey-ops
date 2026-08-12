@@ -12,6 +12,7 @@ import { Badge, Card, CardHeader, Table, Td, Th } from "@/components/ui";
 import { AddProjectSection, ProjectStatusSelect } from "@/components/project-management";
 import { FINANCE_ROLES } from "@/lib/rbac";
 import { canAccess } from "@/lib/access";
+import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
 
 export const metadata = { title: "Projects" };
 export const dynamic = "force-dynamic";
@@ -23,7 +24,9 @@ function getProjects() {
     orderBy: { createdAt: "desc" },
     include: {
       client: { select: { name: true } },
-      progressEntries: { orderBy: { createdAt: "desc" }, take: 1 },
+      // No `take` — the weighted-accomplishment rollup needs each work
+      // item's latest entry, not just the single most-recent one overall.
+      progressEntries: { orderBy: { createdAt: "desc" } },
     },
   });
 }
@@ -80,7 +83,7 @@ export default async function ProjectsPage() {
               <Td className="text-right tabular-nums">{php(p.contractValue.toString())}</Td>
             )}
             <Td className="text-right tabular-nums">
-              {Number(p.progressEntries[0]?.pctComplete ?? 0).toFixed(0)}%
+              {weightedAccomplishment(computeWorkItemStatuses(p.progressEntries)).toFixed(0)}%
             </Td>
             <Td>{fmtDate(p.startDate)}</Td>
           </tr>
