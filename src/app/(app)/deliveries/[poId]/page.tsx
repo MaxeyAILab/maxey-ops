@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { fmtDate } from "@/lib/format";
 import { Badge } from "@/components/ui";
 import { DeliveryChecklistForm } from "@/components/delivery-form";
+import { projectOrCategoryLabel } from "@/lib/requisitions";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,7 @@ export default async function VerifyDeliveryPage({ params }: { params: { poId: s
         </Link>
         <div className="flex items-center justify-between gap-3">
           <h1 className="text-xl font-bold text-ink-900">
-            {po.poNumber} — {po.requisition.project.name}
+            {po.poNumber} — {projectOrCategoryLabel(po.requisition)}
           </h1>
           <Badge value={po.status} />
         </div>

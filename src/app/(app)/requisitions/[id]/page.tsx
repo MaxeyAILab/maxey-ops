@@ -10,6 +10,7 @@ import {
   CreatePoForm,
   DeleteRequisitionButton,
 } from "@/components/requisition-actions";
+import { projectOrCategoryLabel } from "@/lib/requisitions";
 
 export const dynamic = "force-dynamic";
 
@@ -54,7 +55,7 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
             ← All requisitions
           </Link>
           <h1 className="text-xl font-bold text-ink-900">
-            Requisition — {r.project.name}
+            Requisition — {projectOrCategoryLabel(r)}
           </h1>
           <p className="text-xs text-ink-500">
             Submitted by {r.submittedBy.name} on {fmtDateTime(r.submittedAt)}

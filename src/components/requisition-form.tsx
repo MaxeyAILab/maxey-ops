@@ -4,6 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { submitOrQueue } from "@/lib/outbox";
 import { Button, Card, CardBody, Input, Label, Select, Textarea } from "@/components/ui";
+import { NON_PROJECT_CATEGORIES } from "@/lib/requisitions";
+
+const CATEGORY_PREFIX = "cat:";
 
 interface ProjectOption {
   id: string;
@@ -47,11 +50,15 @@ export function RequisitionForm({ projects }: { projects: ProjectOption[] }) {
       return;
     }
 
+    const selection = String(fd.get("projectId") ?? "");
+    const isCategory = selection.startsWith(CATEGORY_PREFIX);
+
     const result = await submitOrQueue({
       url: "/api/requisitions",
       label: `Requisition: ${validItems.length} item(s)`,
       body: {
-        projectId: fd.get("projectId"),
+        projectId: isCategory ? undefined : selection,
+        category: isCategory ? selection.slice(CATEGORY_PREFIX.length) : undefined,
         urgency: fd.get("urgency"),
         neededBy: fd.get("neededBy") || undefined,
         notes: fd.get("notes"),
@@ -93,13 +100,24 @@ export function RequisitionForm({ projects }: { projects: ProjectOption[] }) {
     <form onSubmit={onSubmit} className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-3">
         <div>
-          <Label htmlFor="projectId">Project *</Label>
-          <Select id="projectId" name="projectId" required>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
+          <Label htmlFor="projectId">Project</Label>
+          <Select id="projectId" name="projectId" defaultValue={`${CATEGORY_PREFIX}EMERGENCY`}>
+            <optgroup label="No project">
+              {NON_PROJECT_CATEGORIES.map((c) => (
+                <option key={c.value} value={`${CATEGORY_PREFIX}${c.value}`}>
+                  {c.label}
+                </option>
+              ))}
+            </optgroup>
+            {projects.length > 0 && (
+              <optgroup label="Projects">
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </Select>
         </div>
         <div>

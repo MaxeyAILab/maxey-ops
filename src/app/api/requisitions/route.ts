@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { notifyOwner } from "@/lib/notify";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
+import { projectOrCategoryLabel } from "@/lib/requisitions";
 
 const itemSchema = z.object({
   name: z.string().min(1).max(200),
@@ -15,7 +16,8 @@ const itemSchema = z.object({
 const createSchema = z.object({
   clientUuid: z.string().uuid(), // idempotency key from the device (Spec §4)
   submittedAt: z.coerce.date(), // device time at moment of action, not sync time
-  projectId: z.string().min(1),
+  projectId: z.string().min(1).optional().or(z.literal("")), // omitted/empty for non-project requisitions
+  category: z.enum(["EMERGENCY", "OFFICE_SUPPLY", "WAREHOUSE_SUPPLY"]).optional(), // only meaningful when projectId is empty
   urgency: z.enum(["LOW", "NORMAL", "HIGH", "CRITICAL"]).default("NORMAL"),
   neededBy: z.coerce.date().optional(),
   notes: z.string().max(2000).optional().or(z.literal("")),
@@ -38,8 +40,12 @@ export const POST = handleApi(async (req: NextRequest) => {
     return NextResponse.json({ error: "Already synced", id: existing.id }, { status: 409 });
   }
 
-  const project = await prisma.project.findUnique({ where: { id: body.projectId } });
-  if (!project) throw new ApiError(400, "Unknown project");
+  const project = body.projectId
+    ? await prisma.project.findUnique({ where: { id: body.projectId } })
+    : null;
+  if (body.projectId && !project) throw new ApiError(400, "Unknown project");
+  const category = body.projectId ? null : body.category ?? "EMERGENCY";
+  const projectLabel = projectOrCategoryLabel({ project, category });
 
   // Entries that arrive well after their device timestamp came through the
   // offline queue — flag them so reviewers know the capture context.
@@ -48,7 +54,8 @@ export const POST = handleApi(async (req: NextRequest) => {
   const requisition = await prisma.requisition.create({
     data: {
       clientUuid: body.clientUuid,
-      projectId: body.projectId,
+      projectId: body.projectId || null,
+      category,
       submittedById: user.id,
       submittedAt: body.submittedAt,
       urgency: body.urgency,
@@ -73,12 +80,12 @@ export const POST = handleApi(async (req: NextRequest) => {
     actorId: user.id,
     actorName: user.name,
     action: "REQUISITION_SUBMITTED",
-    diff: { project: project.name, items: body.items.length, offlineSynced },
+    diff: { project: projectLabel, items: body.items.length, offlineSynced },
   });
   // Replaces the "call/text Jacob" step (Spec 6.2)
   await notifyOwner(
     "Requisition awaiting approval",
-    `${user.name} requested ${body.items.length} item(s) for ${project.name} (${body.urgency})`
+    `${user.name} requested ${body.items.length} item(s) for ${projectLabel} (${body.urgency})`
   );
 
   return NextResponse.json(requisition, { status: 201 });

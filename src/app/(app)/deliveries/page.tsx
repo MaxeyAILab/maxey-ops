@@ -4,6 +4,7 @@ import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fmtDate, fmtDateTime } from "@/lib/format";
 import { Badge, Card, CardBody, CardHeader, Table, Td, Th } from "@/components/ui";
+import { projectOrCategoryLabel } from "@/lib/requisitions";
 
 export const metadata = { title: "Deliveries" };
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ export default async function DeliveriesPage() {
       orderBy: { createdAt: "desc" },
       take: 20,
       include: {
-        po: { select: { poNumber: true, supplier: true } },
+        po: { select: { poNumber: true, supplier: true, requisition: { select: { category: true } } } },
         project: { select: { name: true } },
       },
     }),
@@ -68,7 +69,13 @@ export default async function DeliveriesPage() {
             {pendingPos.map((po) => (
               <tr key={po.id} className="hover:bg-ink-50">
                 <Td className="font-medium">{po.poNumber}</Td>
-                <Td>{po.requisition.project.name}</Td>
+                <Td>
+                  {po.requisition.project ? (
+                    po.requisition.project.name
+                  ) : (
+                    <span className="text-amber-600">{projectOrCategoryLabel(po.requisition)}</span>
+                  )}
+                </Td>
                 <Td>{po.supplier}</Td>
                 <Td>{fmtDate(po.deliveryDate)}</Td>
                 <Td>
@@ -105,7 +112,10 @@ export default async function DeliveriesPage() {
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <span className="font-medium text-ink-900">{d.po.poNumber}</span>
-                  <span className="text-ink-500"> · {d.project.name}</span>
+                  <span className="text-ink-500">
+                    {" "}
+                    · {d.project?.name ?? projectOrCategoryLabel({ project: null, category: d.po.requisition?.category })}
+                  </span>
                 </div>
                 <span className="text-xs text-ink-400">
                   {fmtDateTime(d.verifiedAt ?? d.createdAt)} · by{" "}

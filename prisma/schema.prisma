@@ -105,6 +105,13 @@ enum Urgency {
   CRITICAL
 }
 
+// Only set when a requisition has no project (Requisition.projectId is null).
+enum RequisitionCategory {
+  EMERGENCY
+  OFFICE_SUPPLY
+  WAREHOUSE_SUPPLY
+}
+
 enum POStatus {
   OPEN
   PARTIALLY_DELIVERED
@@ -336,8 +343,9 @@ model Payment {
 model Requisition {
   id             String            @id @default(cuid())
   clientUuid     String            @unique // generated on the device; makes offline sync idempotent
-  projectId      String
-  project        Project           @relation(fields: [projectId], references: [id])
+  projectId      String? // nullable: non-project requisitions (emergency / office / warehouse supply)
+  project        Project?          @relation(fields: [projectId], references: [id])
+  category       RequisitionCategory? // set only when projectId is null
   submittedById  String
   submittedBy    User              @relation("ReqSubmitter", fields: [submittedById], references: [id])
   submittedAt    DateTime // captured on-device at time of action, not sync time
@@ -431,8 +439,8 @@ model Delivery {
   clientUuid    String?       @unique // offline sync idempotency
   poId          String
   po            PurchaseOrder @relation(fields: [poId], references: [id])
-  projectId     String
-  project       Project       @relation(fields: [projectId], references: [id])
+  projectId     String? // nullable: mirrors the source requisition, which may be project-less
+  project       Project?      @relation(fields: [projectId], references: [id])
   checklist     Json // [{ item, orderedQty, receivedQty, ok, remarks }]
   verifiedById  String
   verifiedAt    DateTime? // device time at moment of verification

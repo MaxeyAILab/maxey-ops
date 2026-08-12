@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
+import { projectOrCategoryLabel } from "@/lib/requisitions";
 
 const poItemSchema = z.object({
   name: z.string().min(1),
@@ -69,7 +70,12 @@ export const POST = handleApi(async (req: NextRequest) => {
     actorId: user.id,
     actorName: user.name,
     action: "PO_CREATED",
-    diff: { poNumber, supplier: body.supplier, totalCost, project: requisition.project.name },
+    diff: {
+      poNumber,
+      supplier: body.supplier,
+      totalCost,
+      project: projectOrCategoryLabel(requisition),
+    },
   });
 
   return NextResponse.json(po, { status: 201 });

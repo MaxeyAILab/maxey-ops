@@ -4,6 +4,7 @@ import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fmtDate, fmtDateTime, php } from "@/lib/format";
 import { Badge, Card, CardHeader, Table, Td, Th } from "@/components/ui";
+import { projectOrCategoryLabel } from "@/lib/requisitions";
 
 export const metadata = { title: "Purchasing" };
 export const dynamic = "force-dynamic";
@@ -56,7 +57,13 @@ export default async function PurchasingPage() {
             {awaitingPo.map((r) => (
               <tr key={r.id} className="hover:bg-ink-50">
                 <Td className="text-xs">{fmtDateTime(r.approvedAt)}</Td>
-                <Td>{r.project.name}</Td>
+                <Td>
+                  {r.project ? (
+                    r.project.name
+                  ) : (
+                    <span className="text-amber-600">{projectOrCategoryLabel(r)}</span>
+                  )}
+                </Td>
                 <Td>{r.submittedBy.name}</Td>
                 <Td className="max-w-[240px]">
                   <span className="line-clamp-2 text-xs text-ink-500">
@@ -104,7 +111,13 @@ export default async function PurchasingPage() {
             {pos.map((po) => (
               <tr key={po.id} className="hover:bg-ink-50">
                 <Td className="font-medium">{po.poNumber}</Td>
-                <Td>{po.requisition.project.name}</Td>
+                <Td>
+                  {po.requisition.project ? (
+                    po.requisition.project.name
+                  ) : (
+                    <span className="text-amber-600">{projectOrCategoryLabel(po.requisition)}</span>
+                  )}
+                </Td>
                 <Td>{po.supplier}</Td>
                 <Td className="text-right tabular-nums">{php(po.totalCost.toString())}</Td>
                 <Td>{fmtDate(po.deliveryDate)}</Td>

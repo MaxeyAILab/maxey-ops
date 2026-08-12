@@ -20,11 +20,13 @@ export default async function NewRequisitionPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <h1 className="text-xl font-bold text-ink-900">New Material Requisition</h1>
-      {projects.length === 0 ? (
-        <p className="text-sm text-ink-500">No active projects to requisition against.</p>
-      ) : (
-        <RequisitionForm projects={projects} />
+      {projects.length === 0 && (
+        <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-700">
+          No active projects yet — that&apos;s fine, submit this as an emergency/general
+          requisition below and it can be linked to a project later.
+        </p>
       )}
+      <RequisitionForm projects={projects} />
     </div>
   );
 }

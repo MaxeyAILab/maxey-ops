@@ -5,6 +5,7 @@ import { audit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
 import { savePhotos } from "@/lib/storage";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
+import { projectOrCategoryLabel } from "@/lib/requisitions";
 
 const checkItemSchema = z.object({
   item: z.string().min(1),
@@ -86,7 +87,7 @@ export const POST = handleApi(async (req: NextRequest) => {
     action: complete ? "DELIVERY_VERIFIED" : "DELIVERY_VERIFIED_WITH_DISCREPANCIES",
     diff: {
       po: po.poNumber,
-      project: po.requisition.project.name,
+      project: projectOrCategoryLabel(po.requisition),
       discrepancies: discrepancyLines,
     },
   });
@@ -96,7 +97,7 @@ export const POST = handleApi(async (req: NextRequest) => {
     await notify({
       to: { name: "PM & Purchasing" },
       subject: `Delivery discrepancy — ${po.poNumber}`,
-      message: `${po.requisition.project.name}: ${discrepancyLines.join("; ")}`,
+      message: `${projectOrCategoryLabel(po.requisition)}: ${discrepancyLines.join("; ")}`,
     });
   }
 

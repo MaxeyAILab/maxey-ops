@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { fmtDateTime, php } from "@/lib/format";
 import { Badge, Button, Card, CardHeader, Table, Td, Th } from "@/components/ui";
 import { DeleteRequisitionButton } from "@/components/requisition-actions";
+import { projectOrCategoryLabel } from "@/lib/requisitions";
 
 export const metadata = { title: "Requisitions" };
 export const dynamic = "force-dynamic";
@@ -81,7 +82,13 @@ export default async function RequisitionsPage() {
                     <div className="text-[10px] uppercase text-ink-400">synced offline</div>
                   )}
                 </Td>
-                <Td>{r.project.name}</Td>
+                <Td>
+                  {r.project ? (
+                    r.project.name
+                  ) : (
+                    <span className="text-amber-600">{projectOrCategoryLabel(r)}</span>
+                  )}
+                </Td>
                 <Td>{r.submittedBy.name}</Td>
                 <Td className="max-w-[220px]">
                   <span className="line-clamp-2 text-xs text-ink-500">

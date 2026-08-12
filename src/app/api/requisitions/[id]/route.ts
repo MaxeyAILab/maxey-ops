@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
+import { projectOrCategoryLabel } from "@/lib/requisitions";
 
 const actionSchema = z.discriminatedUnion("action", [
   z.object({
@@ -79,7 +80,7 @@ export const PATCH = handleApi(
       await notify({
         to: { name: "Purchasing" },
         subject: "Requisition approved — create PO",
-        message: `${requisition.project.name}: requisition from ${requisition.submittedBy.name} approved.`,
+        message: `${projectOrCategoryLabel(requisition)}: requisition from ${requisition.submittedBy.name} approved.`,
       });
       return NextResponse.json(updated);
     }
@@ -134,7 +135,7 @@ export const DELETE = handleApi(
       actorName: user.name,
       action: "REQUISITION_DELETED",
       diff: {
-        project: requisition.project.name,
+        project: projectOrCategoryLabel(requisition),
         submittedBy: requisition.submittedBy.name,
         status: requisition.status,
       },
