@@ -10,6 +10,12 @@ const createSchema = z.object({
   submittedAt: z.coerce.date(),
   projectId: z.string().min(1),
   workItem: z.string().max(200).optional().or(z.literal("")),
+  weight: z.coerce.number().min(0).max(100).optional(),
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .optional()
+    .or(z.literal("")),
   pctComplete: z.coerce.number().min(0).max(100),
   notes: z.string().max(5000).optional().or(z.literal("")),
   photos: z.array(z.string()).max(6).optional(), // compressed data URLs (Spec §4)
@@ -40,6 +46,8 @@ export const POST = handleApi(async (req: NextRequest) => {
       projectId: body.projectId,
       submittedById: user.id,
       workItem: body.workItem || null,
+      weight: body.weight ?? null,
+      color: body.color || null,
       pctComplete: body.pctComplete,
       notes: body.notes || null,
       photos: photoUrls.length ? photoUrls : undefined,
@@ -53,7 +61,12 @@ export const POST = handleApi(async (req: NextRequest) => {
     actorId: user.id,
     actorName: user.name,
     action: "PROGRESS_REPORTED",
-    diff: { project: project.name, pctComplete: body.pctComplete, workItem: body.workItem ?? null },
+    diff: {
+      project: project.name,
+      pctComplete: body.pctComplete,
+      workItem: body.workItem ?? null,
+      weight: body.weight ?? null,
+    },
   });
 
   return NextResponse.json(entry, { status: 201 });

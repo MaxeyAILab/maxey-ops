@@ -193,3 +193,55 @@ export function CreatePoForm({
     </form>
   );
 }
+
+/**
+ * Owner-only delete (Spec §3). Not exposed to any other role — the
+ * requisitions list/detail pages only render this button when
+ * user.role === "OWNER".
+ */
+export function DeleteRequisitionButton({
+  requisitionId,
+  redirectTo,
+  compact = false,
+}: {
+  requisitionId: string;
+  /** Where to navigate after a successful delete (detail page use). Omit to just refresh in place (list page use). */
+  redirectTo?: string;
+  compact?: boolean;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function onDelete() {
+    if (!confirm("Delete this requisition? This cannot be undone.")) return;
+    setBusy(true);
+    setError("");
+    const res = await fetch(`/api/requisitions/${requisitionId}`, { method: "DELETE" });
+    setBusy(false);
+    if (res.ok) {
+      if (redirectTo) router.push(redirectTo);
+      else router.refresh();
+    } else {
+      setError((await res.json()).error ?? "Failed to delete");
+    }
+  }
+
+  return (
+    <div className={compact ? "" : "space-y-1"}>
+      <button
+        type="button"
+        onClick={onDelete}
+        disabled={busy}
+        className={
+          compact
+            ? "text-xs font-medium text-red-600 hover:underline disabled:opacity-50"
+            : "text-sm font-medium text-red-600 hover:underline disabled:opacity-50"
+        }
+      >
+        {busy ? "Deleting…" : "Delete"}
+      </button>
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}

@@ -104,3 +104,43 @@ export const PATCH = handleApi(
     return NextResponse.json(updated);
   }
 );
+
+/**
+ * DELETE /api/requisitions/[id] — Owner-only (Spec §3: destructive actions
+ * stay with the Owner; every other role, present and future, never gets
+ * this). Blocked once a Purchase Order exists — that's a committed
+ * financial record, not something to silently erase.
+ */
+export const DELETE = handleApi(
+  async (_req: NextRequest, { params }: { params: { id: string } }) => {
+    const user = await requireUser(["OWNER"]);
+
+    const requisition = await prisma.requisition.findUnique({
+      where: { id: params.id },
+      include: { project: true, submittedBy: true, purchaseOrder: true },
+    });
+    if (!requisition) throw new ApiError(404, "Requisition not found");
+    if (requisition.purchaseOrder) {
+      throw new ApiError(
+        400,
+        "Cannot delete — a purchase order already exists for this requisition."
+      );
+    }
+
+    await audit({
+      entityType: "Requisition",
+      entityId: requisition.id,
+      actorId: user.id,
+      actorName: user.name,
+      action: "REQUISITION_DELETED",
+      diff: {
+        project: requisition.project.name,
+        submittedBy: requisition.submittedBy.name,
+        status: requisition.status,
+      },
+    });
+    await prisma.requisition.delete({ where: { id: params.id } });
+
+    return NextResponse.json({ ok: true });
+  }
+);

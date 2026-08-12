@@ -184,6 +184,8 @@ export function ProgressForm({ projectId }: { projectId: string }) {
       body: {
         projectId,
         workItem: fd.get("workItem"),
+        weight: fd.get("weight") || undefined,
+        color: fd.get("color") || undefined,
         pctComplete: Number(fd.get("pctComplete")),
         notes: fd.get("notes"),
         photos,
@@ -205,13 +207,17 @@ export function ProgressForm({ projectId }: { projectId: string }) {
 
   return (
     <form onSubmit={onSubmit} className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
         <div>
           <Label htmlFor="workItem">Work item</Label>
           <Input id="workItem" name="workItem" placeholder="e.g., Structural works" />
         </div>
         <div>
-          <Label htmlFor="pctComplete">Overall % complete *</Label>
+          <Label htmlFor="weight">Weight (% of project)</Label>
+          <Input id="weight" name="weight" type="number" min="0" max="100" step="0.1" />
+        </div>
+        <div>
+          <Label htmlFor="pctComplete">Item completion % *</Label>
           <Input
             id="pctComplete"
             name="pctComplete"
@@ -222,7 +228,22 @@ export function ProgressForm({ projectId }: { projectId: string }) {
             required
           />
         </div>
+        <div>
+          <Label htmlFor="color">Color</Label>
+          <input
+            id="color"
+            name="color"
+            type="color"
+            defaultValue="#2563eb"
+            className="h-10 w-full cursor-pointer rounded-lg border border-ink-200 p-1 sm:w-14"
+          />
+        </div>
       </div>
+      <p className="-mt-2 text-xs text-ink-400">
+        Weight is this item&apos;s share of the whole project (e.g. 30 = 30%). Color is this work
+        item&apos;s ring/bar on the accomplishment chart — pick the same color each time you log
+        this item and it stays consistent.
+      </p>
       <div>
         <Label htmlFor="notes">Notes</Label>
         <Textarea id="notes" name="notes" rows={2} />

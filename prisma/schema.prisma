@@ -413,7 +413,9 @@ model ProgressEntry {
   submittedById String
   submittedBy   User     @relation(fields: [submittedById], references: [id])
   workItem      String?
-  pctComplete   Decimal  @db.Decimal(5, 2)
+  weight        Decimal? @db.Decimal(6, 2) // this work item's share of the project, for the weighted accomplishment rollup
+  color         String? // hex color for this work item's ring/bar on the accomplishment chart
+  pctComplete   Decimal  @db.Decimal(5, 2) // this entry's completion % for workItem (not the whole project)
   notes         String?
   photos        Json?
   visibleToClient Boolean @default(true)

@@ -7,8 +7,10 @@ import { Badge, Card, CardBody, CardHeader, Stat, Table, Td, Th } from "@/compon
 import { ChangeOrderForm, PaymentForm, ProgressForm } from "@/components/project-actions";
 import { PaymentList } from "@/components/payment-list";
 import { AccountToggleButton, CreatePortalAccessForm } from "@/components/portal-access";
+import { AccomplishmentRadial, WorkItemWeightBars } from "@/components/charts";
 import { runGross } from "@/lib/finance";
 import { canAccess } from "@/lib/access";
+import { computeWorkItemStatuses } from "@/lib/progress";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +60,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
     .filter((t) => t.type === "RETENTION" && t.status !== "PAID")
     .reduce((s, t) => s + Number(t.amount), 0);
   const latestPct = Number(p.progressEntries[0]?.pctComplete ?? 0);
+  const workItemStatuses = computeWorkItemStatuses(p.progressEntries);
 
   return (
     <div className="space-y-6">
@@ -260,8 +263,25 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
           <CardHeader
             title={`Progress timeline (${p.progressEntries.length})`}
             subtitle="Every entry timestamped and attributed — visible in the client portal"
+            action={
+              <a
+                href={`/api/projects/${p.id}/accomplishment-export`}
+                className="rounded-lg border border-ink-200 px-3 py-1.5 text-xs font-medium text-ink-600 hover:bg-ink-50"
+              >
+                Export accomplishment (CSV)
+              </a>
+            }
           />
-          <CardBody className="space-y-3">
+          <CardBody className="space-y-4">
+            <div className="flex flex-col items-center gap-4 rounded-lg bg-ink-50 p-4 sm:flex-row sm:items-start">
+              <AccomplishmentRadial items={workItemStatuses} />
+              <div className="w-full flex-1">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
+                  Weighted accomplishment by work item
+                </p>
+                <WorkItemWeightBars items={workItemStatuses} />
+              </div>
+            </div>
             {canProgress && <ProgressForm projectId={p.id} />}
             <ol className="space-y-2">
               {p.progressEntries.map((e) => (
@@ -274,7 +294,16 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                       {fmtDateTime(e.createdAt)} · {e.submittedBy.name}
                     </span>
                   </div>
-                  {e.workItem && <div className="font-medium text-ink-800">{e.workItem}</div>}
+                  {e.workItem && (
+                    <div className="font-medium text-ink-800">
+                      {e.workItem}
+                      {e.weight != null && (
+                        <span className="ml-1.5 text-xs font-normal text-ink-400">
+                          ({Number(e.weight).toFixed(0)}% weight)
+                        </span>
+                      )}
+                    </div>
+                  )}
                   {e.notes && <p className="text-xs text-ink-500">{e.notes}</p>}
                   {Array.isArray(e.photos) && (e.photos as string[]).length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-2">

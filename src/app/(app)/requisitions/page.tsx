@@ -4,6 +4,7 @@ import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fmtDateTime, php } from "@/lib/format";
 import { Badge, Button, Card, CardHeader, Table, Td, Th } from "@/components/ui";
+import { DeleteRequisitionButton } from "@/components/requisition-actions";
 
 export const metadata = { title: "Requisitions" };
 export const dynamic = "force-dynamic";
@@ -63,6 +64,7 @@ export default async function RequisitionsPage() {
               <Th>Urgency</Th>
               <Th className="text-right">Est. cost</Th>
               <Th>Status</Th>
+              {user.role === "OWNER" && <Th></Th>}
             </tr>
           </thead>
           <tbody>
@@ -98,11 +100,18 @@ export default async function RequisitionsPage() {
                     <div className="text-[10px] text-ink-400">{r.purchaseOrder.poNumber}</div>
                   )}
                 </Td>
+                {user.role === "OWNER" && (
+                  <Td>
+                    {!r.purchaseOrder && (
+                      <DeleteRequisitionButton requisitionId={r.id} compact />
+                    )}
+                  </Td>
+                )}
               </tr>
             ))}
             {requisitions.length === 0 && (
               <tr>
-                <Td colSpan={7} className="py-8 text-center text-ink-400">
+                <Td colSpan={user.role === "OWNER" ? 8 : 7} className="py-8 text-center text-ink-400">
                   No requisitions yet.
                 </Td>
               </tr>

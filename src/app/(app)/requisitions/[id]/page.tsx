@@ -8,6 +8,7 @@ import {
   ApproveRejectButtons,
   CostRequisitionForm,
   CreatePoForm,
+  DeleteRequisitionButton,
 } from "@/components/requisition-actions";
 
 export const dynamic = "force-dynamic";
@@ -61,9 +62,12 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
             {r.neededBy && ` · needed by ${fmtDate(r.neededBy)}`}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <Badge value={r.urgency} />
           <Badge value={r.status} />
+          {user.role === "OWNER" && !r.purchaseOrder && (
+            <DeleteRequisitionButton requisitionId={r.id} redirectTo="/requisitions" />
+          )}
         </div>
       </div>
 
