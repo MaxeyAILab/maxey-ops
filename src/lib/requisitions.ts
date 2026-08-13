@@ -9,7 +9,7 @@ export const NON_PROJECT_CATEGORIES = [
 
 export type NonProjectCategory = (typeof NON_PROJECT_CATEGORIES)[number]["value"];
 
-const CATEGORY_LABELS: Record<string, string> = {
+export const CATEGORY_LABELS: Record<string, string> = {
   EMERGENCY: "Emergency",
   OFFICE_SUPPLY: "Office Supply",
   WAREHOUSE_SUPPLY: "Warehouse Supply",
@@ -22,4 +22,15 @@ export function projectOrCategoryLabel(r: {
 }): string {
   if (r.project) return r.project.name;
   return CATEGORY_LABELS[r.category ?? "EMERGENCY"] ?? "No project";
+}
+
+/** Real committed cost if a PO exists, else the estimate. Single source of
+ * truth — used by the requisition folders view and the dashboard's
+ * non-project expense rollup so the two never disagree. */
+export function requisitionAmount(r: {
+  estimatedCost: unknown;
+  purchaseOrder: { totalCost: unknown } | null;
+}): number {
+  if (r.purchaseOrder) return Number(r.purchaseOrder.totalCost);
+  return Number(r.estimatedCost ?? 0);
 }

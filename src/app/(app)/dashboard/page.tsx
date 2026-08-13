@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getMonthlyCashflow, getProjectFinances, type ProjectFinance } from "@/lib/finance";
+import { getMonthlyCashflow, getNonProjectExpenses, getProjectFinances, type ProjectFinance } from "@/lib/finance";
 import { php, phpCompact } from "@/lib/format";
 import { COMPLETED_STATUSES } from "@/lib/project-status";
 import { Badge, Card, CardBody, CardHeader, Stat, Table, Td, Th } from "@/components/ui";
@@ -28,9 +28,10 @@ export default async function DashboardPage() {
   const user = await getSessionUser();
   if (!user || user.role !== "OWNER") redirect("/attendance"); // Owner-only
 
-  const [finances, cashflow, pendingReqs, newLeads, pendingCOs] = await Promise.all([
+  const [finances, cashflow, nonProjectExpenses, pendingReqs, newLeads, pendingCOs] = await Promise.all([
     getProjectFinances(),
     getMonthlyCashflow(6),
+    getNonProjectExpenses(),
     prisma.requisition.count({ where: { status: { in: ["SUBMITTED", "UNDER_REVIEW"] } } }),
     prisma.lead.count({ where: { status: "NEW" } }),
     prisma.changeOrder.count({ where: { status: "PENDING_CLIENT" } }),
@@ -113,6 +114,39 @@ export default async function DashboardPage() {
           <Stat label="Retention held" value={phpCompact(done.retention)} tone="brand" sub="by clients" />
         </div>
       </div>
+
+      <Card style={{ backgroundColor: "#fffbeb", borderColor: "#fde68a" }}>
+        <CardHeader
+          title="Non-project expenses"
+          subtitle="Emergency, office, and warehouse-supply purchases — not counted toward any project's contract, cost, or margin above"
+          action={
+            <Link
+              href="/requisitions"
+              className="text-xs font-medium text-brand-600 hover:underline"
+            >
+              View requisitions →
+            </Link>
+          }
+        />
+        <CardBody>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {nonProjectExpenses.byCategory.map((c) => (
+              <Stat
+                key={c.category}
+                label={c.label}
+                value={phpCompact(c.total)}
+                sub={`${c.count} requisition${c.count === 1 ? "" : "s"}`}
+              />
+            ))}
+            <Stat
+              label="Total non-project"
+              value={phpCompact(nonProjectExpenses.total)}
+              tone="brand"
+              sub="emergency + office + warehouse"
+            />
+          </div>
+        </CardBody>
+      </Card>
 
       <Card>
         <CardHeader

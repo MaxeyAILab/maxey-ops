@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { PayrollEntry } from "@/lib/payroll";
 import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
+import { CATEGORY_LABELS, NON_PROJECT_CATEGORIES, requisitionAmount } from "@/lib/requisitions";
 
 /**
  * Project & company cashflow figures (Spec 6.13).
@@ -131,4 +132,41 @@ export async function getMonthlyCashflow(months = 6): Promise<MonthlyCashflow[]>
     if (i >= 0) buckets[i].outflow += runGross(run.entries);
   }
   return buckets;
+}
+
+export interface NonProjectExpense {
+  category: string;
+  label: string;
+  count: number;
+  total: number;
+}
+
+/**
+ * Emergency / Office Supply / Warehouse Supply requisition spend —
+ * deliberately kept OUT of getProjectFinances() (that function only ever
+ * sees requisitions reachable through a project's own relation, so
+ * project-less ones are structurally invisible there already). This is the
+ * one place company-wide non-project spend is totaled, separate from any
+ * project's contract value, committed cost, or margin.
+ */
+export async function getNonProjectExpenses(): Promise<{
+  byCategory: NonProjectExpense[];
+  total: number;
+}> {
+  const requisitions = await prisma.requisition.findMany({
+    where: { projectId: null, status: { in: ["APPROVED", "PO_ISSUED", "DELIVERED"] } },
+    include: { purchaseOrder: { select: { totalCost: true } } },
+  });
+
+  const byCategory = NON_PROJECT_CATEGORIES.map(({ value, label }) => {
+    const matching = requisitions.filter((r) => (r.category ?? "EMERGENCY") === value);
+    return {
+      category: value,
+      label: CATEGORY_LABELS[value] ?? label,
+      count: matching.length,
+      total: matching.reduce((s, r) => s + requisitionAmount(r), 0),
+    };
+  });
+
+  return { byCategory, total: byCategory.reduce((s, c) => s + c.total, 0) };
 }

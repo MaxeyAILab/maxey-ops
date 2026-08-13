@@ -5,19 +5,10 @@ import { prisma } from "@/lib/prisma";
 import { fmtDateTime, php } from "@/lib/format";
 import { Badge, Button, Card, CardHeader, Table, Td, Th } from "@/components/ui";
 import { DeleteRequisitionButton } from "@/components/requisition-actions";
-import { projectOrCategoryLabel } from "@/lib/requisitions";
+import { projectOrCategoryLabel, requisitionAmount } from "@/lib/requisitions";
 
 export const metadata = { title: "Requisitions" };
 export const dynamic = "force-dynamic";
-
-/** Real committed cost if a PO exists, else the estimate. Mirrors lib/finance.ts. */
-function requisitionAmount(r: {
-  estimatedCost: unknown;
-  purchaseOrder: { totalCost: unknown } | null;
-}): number {
-  if (r.purchaseOrder) return Number(r.purchaseOrder.totalCost);
-  return Number(r.estimatedCost ?? 0);
-}
 
 const MONTH_FMT = new Intl.DateTimeFormat("en-PH", {
   month: "long",
