@@ -10,6 +10,8 @@ const clockSchema = z.object({
   type: z.enum(["IN", "OUT"]),
   projectId: z.string().optional().or(z.literal("")),
   gps: z.string().max(100).optional().or(z.literal("")),
+  device: z.string().max(100).optional().or(z.literal("")),
+  deviceId: z.string().max(100).optional().or(z.literal("")),
 });
 
 /**
@@ -43,6 +45,8 @@ export const POST = handleApi(async (req: NextRequest) => {
         projectId: body.projectId || null,
         timeIn: body.submittedAt,
         gpsIn: body.gps || null,
+        deviceIn: body.device || null,
+        deviceIdIn: body.deviceId || null,
         source,
       },
     });
@@ -52,7 +56,12 @@ export const POST = handleApi(async (req: NextRequest) => {
       actorId: user.id,
       actorName: user.name,
       action: "TIME_IN",
-      diff: { at: body.submittedAt.toISOString(), gps: body.gps || null, source },
+      diff: {
+        at: body.submittedAt.toISOString(),
+        gps: body.gps || null,
+        device: body.device || null,
+        source,
+      },
     });
     return NextResponse.json(entry, { status: 201 });
   }
@@ -67,7 +76,12 @@ export const POST = handleApi(async (req: NextRequest) => {
   }
   const entry = await prisma.attendance.update({
     where: { id: openEntry.id },
-    data: { timeOut: body.submittedAt, gpsOut: body.gps || null },
+    data: {
+      timeOut: body.submittedAt,
+      gpsOut: body.gps || null,
+      deviceOut: body.device || null,
+      deviceIdOut: body.deviceId || null,
+    },
   });
   await audit({
     entityType: "Attendance",
@@ -75,7 +89,12 @@ export const POST = handleApi(async (req: NextRequest) => {
     actorId: user.id,
     actorName: user.name,
     action: "TIME_OUT",
-    diff: { at: body.submittedAt.toISOString(), gps: body.gps || null, source },
+    diff: {
+      at: body.submittedAt.toISOString(),
+      gps: body.gps || null,
+      device: body.device || null,
+      source,
+    },
   });
   return NextResponse.json(entry);
 });

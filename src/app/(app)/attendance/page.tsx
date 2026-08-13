@@ -83,6 +83,12 @@ export default async function AttendancePage() {
 
   const needsProject = me?.department === "SITE" || me?.department === "DRIVER";
 
+  // Buddy-punching signal: the same browser (deviceId) tapping IN for more
+  // than one distinct person this week is worth a human look — not proof of
+  // anything by itself (a shared office tablet would also trigger this),
+  // just a flag.
+  let sharedDeviceWarnings: { deviceId: string; names: string[] }[] = [];
+
   // Admin summary data
   let siteSections: {
     projectId: string;
@@ -153,6 +159,26 @@ export default async function AttendancePage() {
         todayStart
       ),
     }));
+
+    const deviceUsers = new Map<string, Set<string>>();
+    for (const a of weekAttendance) {
+      if (!a.deviceIdIn) continue;
+      if (!deviceUsers.has(a.deviceIdIn)) deviceUsers.set(a.deviceIdIn, new Set());
+      deviceUsers.get(a.deviceIdIn)!.add(a.userId);
+    }
+    const sharedDeviceGroups = Array.from(deviceUsers.entries()).filter(([, u]) => u.size > 1);
+    if (sharedDeviceGroups.length > 0) {
+      const involvedIds = Array.from(new Set(sharedDeviceGroups.flatMap(([, u]) => Array.from(u))));
+      const involvedUsers = await prisma.user.findMany({
+        where: { id: { in: involvedIds } },
+        select: { id: true, name: true },
+      });
+      const nameOf = new Map(involvedUsers.map((u) => [u.id, u.name]));
+      sharedDeviceWarnings = sharedDeviceGroups.map(([deviceId, users]) => ({
+        deviceId,
+        names: Array.from(users).map((id) => nameOf.get(id) ?? "Unknown"),
+      }));
+    }
   }
 
   const summaryTable = (
@@ -215,6 +241,23 @@ export default async function AttendancePage() {
         {canManagePersonnel && <AddPersonnelSection projects={projects} />}
       </div>
 
+      {isAdmin && sharedDeviceWarnings.length > 0 && (
+        <Card style={{ borderColor: "#fecaca", backgroundColor: "#fef2f2" }}>
+          <CardHeader
+            title={`⚠ ${sharedDeviceWarnings.length} device${sharedDeviceWarnings.length === 1 ? "" : "s"} shared across staff this week`}
+            subtitle="The same browser/device tapped Time In for more than one person — not proof of anything (a shared office tablet triggers this too), just worth a look"
+          />
+          <CardBody className="space-y-1.5 text-sm">
+            {sharedDeviceWarnings.map((w) => (
+              <p key={w.deviceId} className="text-red-700">
+                <span className="font-medium">{w.names.join(" & ")}</span> tapped in from the
+                same device this week
+              </p>
+            ))}
+          </CardBody>
+        </Card>
+      )}
+
       {/* Personal time clock */}
       <Card className="mx-auto max-w-xl lg:mx-0">
         <CardHeader
@@ -267,6 +310,7 @@ export default async function AttendancePage() {
               <Th>Time in</Th>
               <Th>Time out</Th>
               <Th>Site</Th>
+              <Th>Device</Th>
             </tr>
           </thead>
           <tbody>
@@ -275,11 +319,12 @@ export default async function AttendancePage() {
                 <Td className="text-xs">{fmtDateTime(a.timeIn)}</Td>
                 <Td className="text-xs">{a.timeOut ? fmtDateTime(a.timeOut) : "— open —"}</Td>
                 <Td className="text-xs">{a.project?.name ?? "Office"}</Td>
+                <Td className="text-xs text-ink-500">{a.deviceIn ?? "—"}</Td>
               </tr>
             ))}
             {recent.length === 0 && (
               <tr>
-                <Td colSpan={3} className="py-6 text-center text-ink-400">
+                <Td colSpan={4} className="py-6 text-center text-ink-400">
                   No entries yet — tap Time In to start.
                 </Td>
               </tr>

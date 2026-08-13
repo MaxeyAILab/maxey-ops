@@ -557,6 +557,10 @@ model Attendance {
   timeOut   DateTime?
   gpsIn     String?
   gpsOut    String?
+  deviceIn    String? // readable label, e.g. "Android · Chrome"
+  deviceOut   String?
+  deviceIdIn  String? // persistent per-browser id (localStorage) — same id tapping in for different users is a buddy-punching signal
+  deviceIdOut String?
   source    String    @default("online") // online | offline_synced
   createdAt DateTime  @default(now())
 }
