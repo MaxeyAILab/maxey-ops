@@ -4,6 +4,7 @@ import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fmtDate, fmtDateTime, php } from "@/lib/format";
 import { Badge, Card, CardHeader, Table, Td, Th } from "@/components/ui";
+import { CancelPoButton } from "@/components/requisition-actions";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
 
 export const metadata = { title: "Purchasing" };
@@ -105,6 +106,7 @@ export default async function PurchasingPage() {
               <Th className="text-right">Total</Th>
               <Th>Delivery</Th>
               <Th>Status</Th>
+              {user.role === "OWNER" && <Th />}
             </tr>
           </thead>
           <tbody>
@@ -124,11 +126,18 @@ export default async function PurchasingPage() {
                 <Td>
                   <Badge value={po.status} />
                 </Td>
+                {user.role === "OWNER" && (
+                  <Td>
+                    {["OPEN", "PARTIALLY_DELIVERED"].includes(po.status) && (
+                      <CancelPoButton poId={po.id} compact />
+                    )}
+                  </Td>
+                )}
               </tr>
             ))}
             {pos.length === 0 && (
               <tr>
-                <Td colSpan={6} className="py-8 text-center text-ink-400">
+                <Td colSpan={user.role === "OWNER" ? 7 : 6} className="py-8 text-center text-ink-400">
                   No purchase orders yet.
                 </Td>
               </tr>

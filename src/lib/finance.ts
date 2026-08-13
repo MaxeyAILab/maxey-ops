@@ -58,11 +58,7 @@ export async function getProjectFinances(): Promise<ProjectFinance[]> {
     const received = p.payments.reduce((s, x) => s + Number(x.amount), 0);
     const laborCost = p.payrollRuns.reduce((s, r) => s + runGross(r.entries), 0);
     const committedCost =
-      laborCost +
-      p.requisitions.reduce((s, r) => {
-        if (r.purchaseOrder) return s + Number(r.purchaseOrder.totalCost);
-        return s + Number(r.estimatedCost ?? 0);
-      }, 0);
+      laborCost + p.requisitions.reduce((s, r) => s + requisitionAmount(r), 0);
     const retentionHeld = p.paymentTerms
       .filter((t) => t.type === "RETENTION" && t.status !== "PAID")
       .reduce((s, t) => s + Number(t.amount), 0);
@@ -99,7 +95,7 @@ export async function getMonthlyCashflow(months = 6): Promise<MonthlyCashflow[]>
 
   const [payments, pos, payrollRuns] = await Promise.all([
     prisma.payment.findMany({ where: { dateReceived: { gte: since } } }),
-    prisma.purchaseOrder.findMany({ where: { createdAt: { gte: since } } }),
+    prisma.purchaseOrder.findMany({ where: { createdAt: { gte: since }, status: { not: "CANCELLED" } } }),
     prisma.payrollRun.findMany({
       where: { status: { in: ["APPROVED", "PAID"] }, createdAt: { gte: since } },
     }),
@@ -155,7 +151,7 @@ export async function getNonProjectExpenses(): Promise<{
 }> {
   const requisitions = await prisma.requisition.findMany({
     where: { projectId: null, status: { in: ["APPROVED", "PO_ISSUED", "DELIVERED"] } },
-    include: { purchaseOrder: { select: { totalCost: true } } },
+    include: { purchaseOrder: { select: { totalCost: true, status: true } } },
   });
 
   const byCategory = NON_PROJECT_CATEGORIES.map(({ value, label }) => {

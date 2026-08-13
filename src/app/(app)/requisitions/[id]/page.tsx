@@ -6,6 +6,7 @@ import { fmtDate, fmtDateTime, php } from "@/lib/format";
 import { Badge, Card, CardBody, CardHeader } from "@/components/ui";
 import {
   ApproveRejectButtons,
+  CancelPoButton,
   CreatePoForm,
   DeleteRequisitionButton,
   ItemsCostingTable,
@@ -46,6 +47,12 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
     user.role === "OWNER" && ["SUBMITTED", "UNDER_REVIEW"].includes(r.status);
   const canCreatePo =
     ["PURCHASING", "OWNER"].includes(user.role) && r.status === "APPROVED" && !r.purchaseOrder;
+  const canDeleteRequisition =
+    user.role === "OWNER" && (!r.purchaseOrder || r.purchaseOrder.status === "CANCELLED");
+  const canCancelPo =
+    user.role === "OWNER" &&
+    r.purchaseOrder &&
+    ["OPEN", "PARTIALLY_DELIVERED"].includes(r.purchaseOrder.status);
 
   return (
     <div className="space-y-6">
@@ -66,7 +73,7 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
         <div className="flex items-center gap-3">
           <Badge value={r.urgency} />
           <Badge value={r.status} />
-          {user.role === "OWNER" && !r.purchaseOrder && (
+          {canDeleteRequisition && (
             <DeleteRequisitionButton requisitionId={r.id} redirectTo="/requisitions" />
           )}
         </div>
@@ -133,7 +140,13 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
             )}
             {r.purchaseOrder && (
               <div className="rounded-lg border border-ink-100 p-3 text-sm">
-                <div className="font-semibold text-ink-900">{r.purchaseOrder.poNumber}</div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="font-semibold text-ink-900">{r.purchaseOrder.poNumber}</div>
+                  <div className="flex items-center gap-2">
+                    <Badge value={r.purchaseOrder.status} />
+                    {canCancelPo && <CancelPoButton poId={r.purchaseOrder.id} compact />}
+                  </div>
+                </div>
                 <div className="text-ink-600">
                   Supplier: {r.purchaseOrder.supplier} · Total:{" "}
                   {php(r.purchaseOrder.totalCost.toString())}

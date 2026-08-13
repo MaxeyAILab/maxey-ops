@@ -31,7 +31,7 @@ export default async function RequisitionsPage() {
       project: { select: { name: true } },
       submittedBy: { select: { name: true } },
       approvedBy: { select: { name: true } },
-      purchaseOrder: { select: { poNumber: true, totalCost: true } },
+      purchaseOrder: { select: { poNumber: true, totalCost: true, status: true } },
     },
   });
 

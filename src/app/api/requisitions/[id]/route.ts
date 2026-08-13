@@ -143,8 +143,10 @@ export const PATCH = handleApi(
 /**
  * DELETE /api/requisitions/[id] — Owner-only (Spec §3: destructive actions
  * stay with the Owner; every other role, present and future, never gets
- * this). Blocked once a Purchase Order exists — that's a committed
- * financial record, not something to silently erase.
+ * this). Blocked while an active (non-cancelled) Purchase Order exists —
+ * cancel it first (PATCH /api/purchase-orders/[id]). Also blocked if a
+ * cancelled PO still has real delivery history against it — that's genuine
+ * operational activity, not something a delete should erase.
  */
 export const DELETE = handleApi(
   async (_req: NextRequest, { params }: { params: { id: string } }) => {
@@ -156,10 +158,21 @@ export const DELETE = handleApi(
     });
     if (!requisition) throw new ApiError(404, "Requisition not found");
     if (requisition.purchaseOrder) {
-      throw new ApiError(
-        400,
-        "Cannot delete — a purchase order already exists for this requisition."
-      );
+      if (requisition.purchaseOrder.status !== "CANCELLED") {
+        throw new ApiError(
+          400,
+          "Cannot delete — a purchase order already exists. Cancel it first."
+        );
+      }
+      const deliveryCount = await prisma.delivery.count({
+        where: { poId: requisition.purchaseOrder.id },
+      });
+      if (deliveryCount > 0) {
+        throw new ApiError(
+          400,
+          "Cannot delete — delivery history is recorded against this requisition's (cancelled) purchase order."
+        );
+      }
     }
 
     await audit({
@@ -172,9 +185,15 @@ export const DELETE = handleApi(
         project: projectOrCategoryLabel(requisition),
         submittedBy: requisition.submittedBy.name,
         status: requisition.status,
+        cancelledPo: requisition.purchaseOrder?.poNumber ?? null,
       },
     });
-    await prisma.requisition.delete({ where: { id: params.id } });
+    await prisma.$transaction([
+      ...(requisition.purchaseOrder
+        ? [prisma.purchaseOrder.delete({ where: { id: requisition.purchaseOrder.id } })]
+        : []),
+      prisma.requisition.delete({ where: { id: params.id } }),
+    ]);
 
     return NextResponse.json({ ok: true });
   }

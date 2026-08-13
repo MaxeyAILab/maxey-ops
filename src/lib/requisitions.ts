@@ -24,13 +24,18 @@ export function projectOrCategoryLabel(r: {
   return CATEGORY_LABELS[r.category ?? "EMERGENCY"] ?? "No project";
 }
 
-/** Real committed cost if a PO exists, else the estimate. Single source of
- * truth — used by the requisition folders view and the dashboard's
- * non-project expense rollup so the two never disagree. */
+/** Real committed cost if a live (non-cancelled) PO exists, else the
+ * estimate — a cancelled PO (kept around only because delivery history is
+ * attached to it) contributes nothing further. Single source of truth —
+ * used by the requisition folders view, getProjectFinances(), and the
+ * dashboard's non-project expense rollup so none of them disagree. */
 export function requisitionAmount(r: {
   estimatedCost: unknown;
-  purchaseOrder: { totalCost: unknown } | null;
+  purchaseOrder: { totalCost: unknown; status?: string } | null;
 }): number {
-  if (r.purchaseOrder) return Number(r.purchaseOrder.totalCost);
+  if (r.purchaseOrder) {
+    if (r.purchaseOrder.status === "CANCELLED") return 0;
+    return Number(r.purchaseOrder.totalCost);
+  }
   return Number(r.estimatedCost ?? 0);
 }

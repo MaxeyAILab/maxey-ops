@@ -346,3 +346,57 @@ export function DeleteRequisitionButton({
     </div>
   );
 }
+
+/**
+ * Owner-only PO cancel — available while the PO isn't fully delivered yet
+ * (Spec §3). Sends the requisition back to Approved so a corrected PO can
+ * be issued; doesn't touch any delivery history already recorded.
+ */
+export function CancelPoButton({
+  poId,
+  compact = false,
+}: {
+  poId: string;
+  compact?: boolean;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function onCancel() {
+    if (
+      !confirm(
+        "Cancel this purchase order? The requisition goes back to Approved so a corrected PO can be issued."
+      )
+    )
+      return;
+    setBusy(true);
+    setError("");
+    const res = await fetch(`/api/purchase-orders/${poId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "cancel" }),
+    });
+    setBusy(false);
+    if (res.ok) router.refresh();
+    else setError((await res.json()).error ?? "Failed to cancel");
+  }
+
+  return (
+    <div className={compact ? "" : "space-y-1"}>
+      <button
+        type="button"
+        onClick={onCancel}
+        disabled={busy}
+        className={
+          compact
+            ? "text-xs font-medium text-red-600 hover:underline disabled:opacity-50"
+            : "text-sm font-medium text-red-600 hover:underline disabled:opacity-50"
+        }
+      >
+        {busy ? "Cancelling…" : "Cancel PO"}
+      </button>
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
