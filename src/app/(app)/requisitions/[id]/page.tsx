@@ -3,12 +3,12 @@ import { notFound, redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fmtDate, fmtDateTime, php } from "@/lib/format";
-import { Badge, Card, CardBody, CardHeader, Table, Td, Th } from "@/components/ui";
+import { Badge, Card, CardBody, CardHeader } from "@/components/ui";
 import {
   ApproveRejectButtons,
-  CostRequisitionForm,
   CreatePoForm,
   DeleteRequisitionButton,
+  ItemsCostingTable,
 } from "@/components/requisition-actions";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
 
@@ -40,7 +40,7 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
   });
 
   const canCost =
-    ["PM", "OWNER", "ACCOUNTING"].includes(user.role) &&
+    ["PM", "OWNER", "ACCOUNTING", "PURCHASING"].includes(user.role) &&
     ["SUBMITTED", "UNDER_REVIEW"].includes(r.status);
   const canApprove =
     user.role === "OWNER" && ["SUBMITTED", "UNDER_REVIEW"].includes(r.status);
@@ -73,27 +73,27 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
       </div>
 
       <Card>
-        <CardHeader title="Requested items" />
-        <Table>
-          <thead>
-            <tr>
-              <Th>Item</Th>
-              <Th>Specification</Th>
-              <Th className="text-right">Qty</Th>
-              <Th>Unit</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {r.items.map((i) => (
-              <tr key={i.id}>
-                <Td className="font-medium">{i.name}</Td>
-                <Td className="text-ink-500">{i.spec ?? "—"}</Td>
-                <Td className="text-right tabular-nums">{Number(i.qty)}</Td>
-                <Td>{i.unit}</Td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
+        <CardHeader
+          title="Requested items"
+          subtitle={
+            canCost
+              ? "Enter a unit price and supplier per item to canvass — the total computes itself"
+              : "Canvassed pricing, once available"
+          }
+        />
+        <ItemsCostingTable
+          requisitionId={r.id}
+          editable={canCost}
+          items={r.items.map((i) => ({
+            id: i.id,
+            name: i.name,
+            spec: i.spec,
+            qty: Number(i.qty),
+            unit: i.unit,
+            estUnitCost: i.estUnitCost != null ? Number(i.estUnitCost) : null,
+            remarks: i.remarks,
+          }))}
+        />
         {r.notes && (
           <CardBody className="border-t border-ink-100 text-sm text-ink-600">
             <span className="font-medium">Notes:</span> {r.notes}
@@ -123,7 +123,6 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
                 to project budget.
               </p>
             )}
-            {canCost && <CostRequisitionForm requisitionId={r.id} />}
             {canApprove && (
               <div>
                 <p className="mb-2 text-xs text-ink-500">
@@ -154,6 +153,7 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
                     name: i.name,
                     qty: Number(i.qty),
                     unit: i.unit,
+                    unitCost: i.estUnitCost != null ? Number(i.estUnitCost) : null,
                   }))}
                 />
               </div>

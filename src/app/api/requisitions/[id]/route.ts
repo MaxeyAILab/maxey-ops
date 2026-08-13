@@ -8,8 +8,16 @@ import { projectOrCategoryLabel } from "@/lib/requisitions";
 
 const actionSchema = z.discriminatedUnion("action", [
   z.object({
-    action: z.literal("review"), // PM/office completes costing (Spec 6.2)
-    estimatedCost: z.coerce.number().min(0),
+    action: z.literal("review"), // canvassing: per-item unit price + supplier remarks (Spec 6.2)
+    items: z
+      .array(
+        z.object({
+          id: z.string().min(1),
+          unitCost: z.coerce.number().min(0),
+          remarks: z.string().max(300).optional().or(z.literal("")),
+        })
+      )
+      .min(1),
   }),
   z.object({ action: z.literal("approve") }),
   z.object({
@@ -29,26 +37,52 @@ export const PATCH = handleApi(
 
     const requisition = await prisma.requisition.findUnique({
       where: { id: params.id },
-      include: { project: true, submittedBy: true },
+      include: { project: true, submittedBy: true, items: true },
     });
     if (!requisition) throw new ApiError(404, "Requisition not found");
 
     if (body.action === "review") {
-      const user = await requireUser(["PM", "OWNER", "ACCOUNTING"]);
+      const user = await requireUser(["PM", "OWNER", "ACCOUNTING", "PURCHASING"]);
       if (!["SUBMITTED", "UNDER_REVIEW"].includes(requisition.status)) {
         throw new ApiError(400, `Cannot cost a requisition in ${requisition.status} state`);
       }
-      const updated = await prisma.requisition.update({
-        where: { id: params.id },
-        data: { status: "UNDER_REVIEW", estimatedCost: body.estimatedCost },
-      });
+      const itemMap = new Map(requisition.items.map((i) => [i.id, i]));
+      for (const it of body.items) {
+        if (!itemMap.has(it.id)) throw new ApiError(400, "Unknown item on this requisition");
+      }
+      // Qty comes from the DB row, never the client — the total is only ever
+      // as trustworthy as the quantity it's multiplied against.
+      const estimatedCost = body.items.reduce(
+        (sum, it) => sum + Number(itemMap.get(it.id)!.qty) * it.unitCost,
+        0
+      );
+
+      const [updated] = await prisma.$transaction([
+        prisma.requisition.update({
+          where: { id: params.id },
+          data: { status: "UNDER_REVIEW", estimatedCost },
+        }),
+        ...body.items.map((it) =>
+          prisma.requisitionItem.update({
+            where: { id: it.id },
+            data: { estUnitCost: it.unitCost, remarks: it.remarks || null },
+          })
+        ),
+      ]);
       await audit({
         entityType: "Requisition",
         entityId: requisition.id,
         actorId: user.id,
         actorName: user.name,
         action: "REQUISITION_COSTED",
-        diff: { estimatedCost: body.estimatedCost },
+        diff: {
+          estimatedCost,
+          items: body.items.map((it) => ({
+            item: itemMap.get(it.id)!.name,
+            unitCost: it.unitCost,
+            remarks: it.remarks || null,
+          })),
+        },
       });
       return NextResponse.json(updated);
     }

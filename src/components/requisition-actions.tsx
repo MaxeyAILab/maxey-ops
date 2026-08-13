@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Input, Label } from "@/components/ui";
+import { Button, Input, Label, Table, Td, Th } from "@/components/ui";
+import { php } from "@/lib/format";
 
 async function patch(id: string, body: unknown): Promise<string | null> {
   const res = await fetch(`/api/requisitions/${id}`, {
@@ -14,19 +15,59 @@ async function patch(id: string, body: unknown): Promise<string | null> {
   return (await res.json()).error ?? "Action failed";
 }
 
-/** PM/Accounting completes costing before Owner approval (Spec 6.2). */
-export function CostRequisitionForm({ requisitionId }: { requisitionId: string }) {
+export interface CostableItem {
+  id: string;
+  name: string;
+  spec: string | null;
+  qty: number;
+  unit: string;
+  estUnitCost: number | null;
+  remarks: string | null;
+}
+
+/**
+ * Requested items, doubling as the canvassing sheet (Spec 6.2): whoever is
+ * pricing the order (Purchasing, PM, Accounting, Owner) enters a per-item
+ * unit price and which supplier it's from — the subtotal and grand total
+ * compute themselves. Once costed, everyone reviewing the requisition
+ * (including the Owner approving it) sees the same breakdown read-only.
+ */
+export function ItemsCostingTable({
+  requisitionId,
+  items,
+  editable,
+}: {
+  requisitionId: string;
+  items: CostableItem[];
+  editable: boolean;
+}) {
   const router = useRouter();
+  const [rows, setRows] = useState(
+    items.map((i) => ({
+      unitCost: i.estUnitCost != null ? String(i.estUnitCost) : "",
+      remarks: i.remarks ?? "",
+    }))
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  function update(i: number, patch: Partial<{ unitCost: string; remarks: string }>) {
+    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  }
+
+  const subtotal = (i: number) => items[i].qty * (Number(rows[i].unitCost) || 0);
+  const total = items.reduce((s, _i, i) => s + subtotal(i), 0);
+
+  async function onSave() {
     setBusy(true);
-    const fd = new FormData(e.currentTarget);
+    setError("");
     const err = await patch(requisitionId, {
       action: "review",
-      estimatedCost: fd.get("estimatedCost"),
+      items: items.map((it, i) => ({
+        id: it.id,
+        unitCost: Number(rows[i].unitCost) || 0,
+        remarks: rows[i].remarks,
+      })),
     });
     setBusy(false);
     if (err) setError(err);
@@ -34,16 +75,76 @@ export function CostRequisitionForm({ requisitionId }: { requisitionId: string }
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex items-end gap-2">
-      <div className="flex-1">
-        <Label htmlFor="estimatedCost">Estimated total cost (PHP)</Label>
-        <Input id="estimatedCost" name="estimatedCost" type="number" min="0" step="0.01" required />
-      </div>
-      <Button type="submit" variant="secondary" disabled={busy}>
-        {busy ? "Saving…" : "Save costing"}
-      </Button>
-      {error && <p className="text-sm text-red-600">{error}</p>}
-    </form>
+    <div>
+      <Table>
+        <thead>
+          <tr>
+            <Th>Item</Th>
+            <Th>Specification</Th>
+            <Th className="text-right">Qty</Th>
+            <Th>Unit</Th>
+            <Th className="text-right">Price/unit</Th>
+            <Th className="text-right">Subtotal</Th>
+            <Th>Remarks (supplier)</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((it, i) => (
+            <tr key={it.id}>
+              <Td className="font-medium">{it.name}</Td>
+              <Td className="text-ink-500">{it.spec ?? "—"}</Td>
+              <Td className="text-right tabular-nums">{it.qty}</Td>
+              <Td>{it.unit}</Td>
+              <Td className="text-right">
+                {editable ? (
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    inputMode="decimal"
+                    className="ml-auto w-28 text-right"
+                    value={rows[i].unitCost}
+                    onChange={(e) => update(i, { unitCost: e.target.value })}
+                  />
+                ) : it.estUnitCost != null ? (
+                  php(it.estUnitCost)
+                ) : (
+                  "—"
+                )}
+              </Td>
+              <Td className="text-right tabular-nums">{php(subtotal(i))}</Td>
+              <Td>
+                {editable ? (
+                  <Input
+                    placeholder="e.g. ABC Hardware"
+                    className="w-40"
+                    value={rows[i].remarks}
+                    onChange={(e) => update(i, { remarks: e.target.value })}
+                  />
+                ) : (
+                  it.remarks ?? "—"
+                )}
+              </Td>
+            </tr>
+          ))}
+          <tr className="border-t-2 border-ink-200 font-semibold">
+            <Td colSpan={5} className="text-right">
+              Total
+            </Td>
+            <Td className="text-right tabular-nums">{php(total)}</Td>
+            <Td />
+          </tr>
+        </tbody>
+      </Table>
+      {editable && (
+        <div className="flex items-center gap-3 border-t border-ink-100 p-3">
+          <Button type="button" variant="secondary" disabled={busy} onClick={onSave}>
+            {busy ? "Saving…" : "Save costing"}
+          </Button>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -114,11 +215,11 @@ export function CreatePoForm({
   initialItems,
 }: {
   requisitionId: string;
-  initialItems: { name: string; qty: number; unit: string }[];
+  initialItems: { name: string; qty: number; unit: string; unitCost?: number | null }[];
 }) {
   const router = useRouter();
   const [items, setItems] = useState<PoItem[]>(
-    initialItems.map((i) => ({ ...i, unitCost: "0" }))
+    initialItems.map((i) => ({ ...i, unitCost: i.unitCost != null ? String(i.unitCost) : "0" }))
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
