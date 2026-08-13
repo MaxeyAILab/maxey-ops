@@ -10,6 +10,21 @@ import { projectOrCategoryLabel } from "@/lib/requisitions";
 export const metadata = { title: "Requisitions" };
 export const dynamic = "force-dynamic";
 
+/** Real committed cost if a PO exists, else the estimate. Mirrors lib/finance.ts. */
+function requisitionAmount(r: {
+  estimatedCost: unknown;
+  purchaseOrder: { totalCost: unknown } | null;
+}): number {
+  if (r.purchaseOrder) return Number(r.purchaseOrder.totalCost);
+  return Number(r.estimatedCost ?? 0);
+}
+
+const MONTH_FMT = new Intl.DateTimeFormat("en-PH", {
+  month: "long",
+  year: "numeric",
+  timeZone: "Asia/Manila",
+});
+
 export default async function RequisitionsPage() {
   const user = await getSessionUser();
   if (!user || !["OWNER", "PM", "FOREMAN", "PURCHASING", "ACCOUNTING", "DRIVER"].includes(user.role)) {
@@ -24,13 +39,74 @@ export default async function RequisitionsPage() {
       items: true,
       project: { select: { name: true } },
       submittedBy: { select: { name: true } },
-      purchaseOrder: { select: { poNumber: true } },
+      approvedBy: { select: { name: true } },
+      purchaseOrder: { select: { poNumber: true, totalCost: true } },
     },
   });
 
   const actionable = requisitions.filter((r) =>
     ["SUBMITTED", "UNDER_REVIEW"].includes(r.status)
   );
+
+  // Rejections have no dedicated actor/timestamp columns on Requisition — the
+  // append-only audit log already recorded who rejected it and when.
+  const rejectedIds = requisitions.filter((r) => r.status === "REJECTED").map((r) => r.id);
+  const rejectionLogs = rejectedIds.length
+    ? await prisma.auditLog.findMany({
+        where: { entityType: "Requisition", entityId: { in: rejectedIds }, action: "REQUISITION_REJECTED" },
+        orderBy: { createdAt: "desc" },
+      })
+    : [];
+  const rejectionByReqId = new Map(rejectionLogs.map((l) => [l.entityId, l]));
+
+  function decidedInfo(r: (typeof requisitions)[number]): { date: Date | null; by: string | null } {
+    if (r.status === "REJECTED") {
+      const log = rejectionByReqId.get(r.id);
+      return { date: log?.createdAt ?? null, by: log?.actorName ?? null };
+    }
+    return { date: r.approvedAt, by: r.approvedBy?.name ?? null };
+  }
+
+  // Archive resolved (approved or rejected) requisitions into monthly folders,
+  // each showing how much was approved vs. rejected that month.
+  type Row = (typeof requisitions)[number];
+  interface Folder {
+    key: string;
+    label: string;
+    approvedCount: number;
+    approvedTotal: number;
+    rejectedCount: number;
+    rejectedTotal: number;
+    items: Row[];
+  }
+  const folderMap = new Map<string, Folder>();
+  for (const r of requisitions) {
+    if (!r.approvedAt && r.status !== "REJECTED") continue; // still pending — not resolved yet
+    const d = new Date(r.submittedAt);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    let folder = folderMap.get(key);
+    if (!folder) {
+      folder = {
+        key,
+        label: MONTH_FMT.format(d),
+        approvedCount: 0,
+        approvedTotal: 0,
+        rejectedCount: 0,
+        rejectedTotal: 0,
+        items: [],
+      };
+      folderMap.set(key, folder);
+    }
+    folder.items.push(r);
+    if (r.status === "REJECTED") {
+      folder.rejectedCount += 1;
+      folder.rejectedTotal += requisitionAmount(r);
+    } else {
+      folder.approvedCount += 1;
+      folder.approvedTotal += requisitionAmount(r);
+    }
+  }
+  const folders = Array.from(folderMap.values()).sort((a, b) => (a.key < b.key ? 1 : -1));
 
   return (
     <div className="space-y-6">
@@ -126,6 +202,87 @@ export default async function RequisitionsPage() {
           </tbody>
         </Table>
       </Card>
+
+      {folders.length > 0 && (
+        <Card>
+          <CardHeader
+            title="Approved & Rejected — by month"
+            subtitle="Resolved requisitions archived by month, with totals"
+          />
+          <div className="divide-y divide-ink-100">
+            {folders.map((f) => (
+              <details key={f.key} className="group">
+                <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-ink-50 sm:px-5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-ink-400 transition-transform group-open:rotate-90">▶</span>
+                    <span className="font-semibold text-ink-900">{f.label}</span>
+                  </div>
+                  <div className="flex flex-wrap justify-end gap-x-4 gap-y-1 text-xs">
+                    {f.approvedCount > 0 && (
+                      <span className="font-medium text-emerald-700">
+                        {f.approvedCount} approved · {php(f.approvedTotal)}
+                      </span>
+                    )}
+                    {f.rejectedCount > 0 && (
+                      <span className="font-medium text-red-600">
+                        {f.rejectedCount} rejected · {php(f.rejectedTotal)}
+                      </span>
+                    )}
+                  </div>
+                </summary>
+                <div className="border-t border-ink-100 px-4 py-2 sm:px-5">
+                  <Table>
+                    <thead>
+                      <tr>
+                        <Th>Submitted</Th>
+                        <Th>Requested by</Th>
+                        <Th>Project</Th>
+                        <Th>Decided</Th>
+                        <Th>Decided by</Th>
+                        <Th className="text-right">Amount</Th>
+                        <Th>Status</Th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {f.items.map((r) => {
+                        const decided = decidedInfo(r);
+                        return (
+                          <tr key={r.id} className="hover:bg-ink-50">
+                            <Td>
+                              <Link
+                                href={`/requisitions/${r.id}`}
+                                className="font-medium text-brand-600 hover:underline"
+                              >
+                                {fmtDateTime(r.submittedAt)}
+                              </Link>
+                            </Td>
+                            <Td>{r.submittedBy.name}</Td>
+                            <Td>
+                              {r.project ? (
+                                r.project.name
+                              ) : (
+                                <span className="text-amber-600">{projectOrCategoryLabel(r)}</span>
+                              )}
+                            </Td>
+                            <Td>{fmtDateTime(decided.date)}</Td>
+                            <Td>{decided.by ?? "—"}</Td>
+                            <Td className="text-right tabular-nums">
+                              {php(requisitionAmount(r))}
+                            </Td>
+                            <Td>
+                              <Badge value={r.status} />
+                            </Td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </Table>
+                </div>
+              </details>
+            ))}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
