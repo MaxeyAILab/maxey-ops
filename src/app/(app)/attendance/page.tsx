@@ -4,7 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { fmtDateTime } from "@/lib/format";
 import { Card, CardBody, CardHeader, Table, Td, Th } from "@/components/ui";
 import { AttendanceClock } from "@/components/attendance-clock";
-import { AddPersonnelSection, RemovePersonnelButton } from "@/components/personnel-actions";
+import {
+  AddPersonnelSection,
+  EditPersonnelButton,
+  RemovePersonnelButton,
+} from "@/components/personnel-actions";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
 import type { Attendance } from "@prisma/client";
 
@@ -97,6 +101,9 @@ export default async function AttendancePage() {
       userId: string;
       name: string;
       position: string;
+      dailyRate: number | null;
+      phone: string | null;
+      email: string | null;
       summary: ReturnType<typeof summarize>;
     }[];
   }[] = [];
@@ -105,6 +112,9 @@ export default async function AttendancePage() {
     name: string;
     position: string;
     department: string;
+    dailyRate: number | null;
+    phone: string | null;
+    email: string | null;
     summary: ReturnType<typeof summarize>;
   }[] = [];
 
@@ -117,7 +127,18 @@ export default async function AttendancePage() {
           assignments: {
             where: { active: true },
             orderBy: { user: { name: "asc" } },
-            include: { user: { select: { id: true, name: true, position: true } } },
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  position: true,
+                  dailyRate: true,
+                  phone: true,
+                  email: true,
+                },
+              },
+            },
           },
         },
       }),
@@ -128,7 +149,15 @@ export default async function AttendancePage() {
           department: { in: ["OFFICE", "DRIVER"] },
         },
         orderBy: [{ department: "asc" }, { name: "asc" }],
-        select: { id: true, name: true, position: true, department: true },
+        select: {
+          id: true,
+          name: true,
+          position: true,
+          department: true,
+          dailyRate: true,
+          phone: true,
+          email: true,
+        },
       }),
       prisma.attendance.findMany({
         where: { OR: [{ timeIn: { gte: weekStart } }, { timeOut: null }] },
@@ -142,6 +171,9 @@ export default async function AttendancePage() {
         userId: a.user.id,
         name: a.user.name,
         position: a.user.position ?? "—",
+        dailyRate: a.user.dailyRate ? Number(a.user.dailyRate) : null,
+        phone: a.user.phone,
+        email: a.user.email,
         summary: summarize(
           weekAttendance.filter((r) => r.userId === a.userId && r.projectId === p.id),
           todayStart
@@ -154,6 +186,9 @@ export default async function AttendancePage() {
       name: u.name,
       position: u.position ?? "—",
       department: u.department ?? "",
+      dailyRate: u.dailyRate ? Number(u.dailyRate) : null,
+      phone: u.phone,
+      email: u.email,
       summary: summarize(
         weekAttendance.filter((r) => r.userId === u.id),
         todayStart
@@ -182,7 +217,16 @@ export default async function AttendancePage() {
   }
 
   const summaryTable = (
-    rows: { userId: string; name: string; position: string; summary: ReturnType<typeof summarize>; department?: string }[],
+    rows: {
+      userId: string;
+      name: string;
+      position: string;
+      dailyRate: number | null;
+      phone: string | null;
+      email: string | null;
+      summary: ReturnType<typeof summarize>;
+      department?: string;
+    }[],
     showDept = false
   ) => (
     <Table>
@@ -209,7 +253,15 @@ export default async function AttendancePage() {
             <Td className="text-right tabular-nums">{r.summary.todayHours.toFixed(1)}</Td>
             <Td className="text-right tabular-nums">{r.summary.weekHours.toFixed(1)}</Td>
             {canManagePersonnel && (
-              <Td className="text-right">
+              <Td className="text-right whitespace-nowrap">
+                <EditPersonnelButton
+                  userId={r.userId}
+                  name={r.name}
+                  position={r.position}
+                  dailyRate={r.dailyRate}
+                  phone={r.phone}
+                  email={r.email}
+                />
                 <RemovePersonnelButton userId={r.userId} name={r.name} />
               </Td>
             )}

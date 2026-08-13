@@ -192,6 +192,140 @@ export function AddPersonnelSection({ projects = [] }: { projects?: ProjectOptio
   );
 }
 
+/** "Edit personnel" — update name, position, rate, and contact info. */
+export function EditPersonnelButton({
+  userId,
+  name,
+  position,
+  dailyRate,
+  phone,
+  email,
+}: {
+  userId: string;
+  name: string;
+  position: string;
+  dailyRate?: number | null;
+  phone?: string | null;
+  email?: string | null;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    const fd = new FormData(e.currentTarget);
+    const res = await fetch(`/api/personnel/${userId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: fd.get("name"),
+        position: fd.get("position"),
+        dailyRate: fd.get("dailyRate") || undefined,
+        phone: fd.get("phone"),
+        email: fd.get("email"),
+      }),
+    });
+    setBusy(false);
+    if (res.ok) {
+      setOpen(false);
+      router.refresh();
+    } else {
+      setError((await res.json()).error ?? "Failed to update");
+    }
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="rounded px-2 py-1 text-xs text-brand-600 hover:bg-brand-50"
+      >
+        Edit
+      </button>
+      {open && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setOpen(false)}
+        >
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md">
+            <Card>
+              <CardHeader
+                title={`Edit ${name}`}
+                subtitle="Name, position, rate, and contact info"
+                action={
+                  <button
+                    onClick={() => setOpen(false)}
+                    className="text-sm text-ink-400 hover:text-ink-600"
+                  >
+                    ✕ Close
+                  </button>
+                }
+              />
+              <CardBody>
+                <form onSubmit={onSubmit} className="space-y-3">
+                  <div>
+                    <Label htmlFor={`eName-${userId}`}>Full name</Label>
+                    <Input id={`eName-${userId}`} name="name" defaultValue={name} required />
+                  </div>
+                  <div>
+                    <Label htmlFor={`ePosition-${userId}`}>Position</Label>
+                    <Input
+                      id={`ePosition-${userId}`}
+                      name="position"
+                      list="position-options"
+                      defaultValue={position}
+                      required
+                    />
+                    <datalist id="position-options">
+                      {POSITIONS.map((p) => (
+                        <option key={p} value={p} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <Label htmlFor={`eRate-${userId}`}>Daily rate (PHP)</Label>
+                      <Input
+                        id={`eRate-${userId}`}
+                        name="dailyRate"
+                        type="number"
+                        min="1"
+                        step="0.01"
+                        defaultValue={dailyRate ?? ""}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor={`ePhone-${userId}`}>Phone</Label>
+                      <Input id={`ePhone-${userId}`} name="phone" type="tel" defaultValue={phone ?? ""} />
+                    </div>
+                  </div>
+                  <div>
+                    <Label htmlFor={`eEmail-${userId}`}>Email</Label>
+                    <Input id={`eEmail-${userId}`} name="email" type="email" defaultValue={email ?? ""} />
+                  </div>
+                  {error && <p className="text-sm text-red-600">{error}</p>}
+                  <div className="flex justify-end gap-2 pt-1">
+                    <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={busy}>
+                      {busy ? "Saving…" : "Save changes"}
+                    </Button>
+                  </div>
+                </form>
+              </CardBody>
+            </Card>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 /** "Remove personnel" — resignation. History is preserved. */
 export function RemovePersonnelButton({ userId, name }: { userId: string; name: string }) {
   const router = useRouter();
