@@ -174,6 +174,12 @@ const badgeTones: Record<string, string> = {
   IN_WAREHOUSE: "bg-ink-100 text-ink-600",
   ON_SITE: "bg-emerald-100 text-emerald-800",
   UNDER_REPAIR: "bg-amber-100 text-amber-800",
+  // site instructions / assignments
+  NOT_STARTED: "bg-ink-100 text-ink-600",
+  IN_PROGRESS: "bg-blue-100 text-blue-800",
+  FOR_REVIEW: "bg-violet-100 text-violet-800",
+  COMPLETED: "bg-emerald-100 text-emerald-800",
+  NEEDS_REVISION: "bg-red-100 text-red-800",
 };
 
 export function Badge({ value, label }: { value: string; label?: string }) {

@@ -135,10 +135,18 @@ enum MovementType {
 }
 
 enum InstructionStatus {
-  OPEN
-  ACKNOWLEDGED
+  NOT_STARTED
   IN_PROGRESS
-  DONE
+  ON_HOLD
+  FOR_REVIEW
+  COMPLETED
+  CANCELLED
+}
+
+enum InstructionApproval {
+  PENDING
+  APPROVED
+  NEEDS_REVISION
 }
 
 enum PayrollStatus {
@@ -178,7 +186,8 @@ model User {
   purchaseOrders        PurchaseOrder[]
   paymentsRecorded      Payment[]
   progressEntries       ProgressEntry[]
-  instructionsPosted    SiteInstruction[]
+  instructionsPosted    SiteInstruction[]   @relation("InstructionPostedBy")
+  instructionsAssigned  SiteInstruction[]   @relation("InstructionAssignedTo")
   changeOrdersCreated   ChangeOrder[]   @relation("COCreator")
   changeOrdersResponded ChangeOrder[]   @relation("COResponder")
   quotationsCreated     Quotation[]
@@ -598,15 +607,22 @@ model PayrollRun {
 }
 
 model SiteInstruction {
-  id         String            @id @default(cuid())
-  projectId  String
-  project    Project           @relation(fields: [projectId], references: [id])
-  postedById String
-  postedBy   User              @relation(fields: [postedById], references: [id])
-  text       String
-  photoUrl   String?
-  status     InstructionStatus @default(OPEN)
-  createdAt  DateTime          @default(now())
+  id                String              @id @default(cuid())
+  projectId         String
+  project           Project             @relation(fields: [projectId], references: [id])
+  postedById        String
+  postedBy          User                @relation("InstructionPostedBy", fields: [postedById], references: [id])
+  assignedToId      String? // blank = broadcast to the whole site team, as before
+  assignedTo        User?               @relation("InstructionAssignedTo", fields: [assignedToId], references: [id])
+  text              String
+  photoUrl          String?
+  status            InstructionStatus   @default(NOT_STARTED)
+  dueDate           DateTime? // target completion date the boss wants
+  remarks           String? // assignee's latest progress update
+  completedAt       DateTime? // actual completion date
+  supervisorRemarks String?
+  approval          InstructionApproval @default(PENDING)
+  createdAt         DateTime            @default(now())
 }
 
 model Meeting {

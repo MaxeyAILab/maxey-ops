@@ -517,7 +517,7 @@ async function main() {
           projectId: delaCruz.id,
           postedById: jacob.id,
           text: "Verify second-floor column alignment against grid line B before pouring. Use revised structural drawing S-04 Rev 2.",
-          status: "ACKNOWLEDGED",
+          status: "IN_PROGRESS",
           createdAt: new Date(Date.now() - 2 * 86_400_000),
         },
       });
@@ -526,7 +526,7 @@ async function main() {
           projectId: delaCruz.id,
           postedById: pm.id,
           text: "Cover all exposed rebar before the weekend — rain expected. Photograph after covering.",
-          status: "OPEN",
+          status: "NOT_STARTED",
         },
       });
     }

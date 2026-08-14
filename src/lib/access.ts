@@ -10,6 +10,8 @@ import type { Department, Role } from "@prisma/client";
  * - Drivers: Requisitions, Purchasing, Deliveries, Attendance, Payroll
  * Office staff mirror site workers (Spec §3: "time in/out, limited modules").
  * PM/Purchasing/Accounting keep their working menus minus Owner-only ones.
+ * Instructions now doubles as the employee assignment tracker (2026-08-14)
+ * — every non-Client role gets it so an assignee can reach their own task.
  */
 export function allowedMenus(role: Role, _department: Department | null): string[] {
   switch (role) {
@@ -39,7 +41,7 @@ export function allowedMenus(role: Role, _department: Department | null): string
         "/payroll",
       ];
     case "DRIVER":
-      return ["/requisitions", "/purchasing", "/deliveries", "/attendance", "/payroll"];
+      return ["/requisitions", "/purchasing", "/deliveries", "/instructions", "/attendance", "/payroll"];
     case "PM":
       return [
         "/projects",
@@ -58,11 +60,12 @@ export function allowedMenus(role: Role, _department: Department | null): string
         "/purchasing",
         "/deliveries",
         "/inventory",
+        "/instructions",
         "/attendance",
         "/payroll",
       ];
     case "OFFICE": // site workers and office staff
-      return ["/attendance", "/payroll"];
+      return ["/instructions", "/attendance", "/payroll"];
     default:
       return [];
   }
