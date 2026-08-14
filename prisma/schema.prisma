@@ -443,6 +443,8 @@ model Delivery {
   projectId     String? // nullable: mirrors the source requisition, which may be project-less
   project       Project?      @relation(fields: [projectId], references: [id])
   checklist     Json // [{ item, orderedQty, receivedQty, ok, remarks }]
+  driverName    String? // driver who brought the delivery
+  recipientName String? // person on site/warehouse/office who received it
   verifiedById  String
   verifiedAt    DateTime? // device time at moment of verification
   discrepancies String?

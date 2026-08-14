@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { submitOrQueue } from "@/lib/outbox";
-import { Button, Card, CardBody, Input } from "@/components/ui";
+import { Button, Card, CardBody, Input, Label } from "@/components/ui";
 import { PhotoInput } from "@/components/photo-input";
 
 interface PoItem {
@@ -57,6 +57,8 @@ export function DeliveryChecklistForm({ poId, items }: { poId: string; items: Po
     }))
   );
   const [photos, setPhotos] = useState<string[]>([]);
+  const [driverName, setDriverName] = useState("");
+  const [recipientName, setRecipientName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [queuedMsg, setQueuedMsg] = useState("");
@@ -78,6 +80,8 @@ export function DeliveryChecklistForm({ poId, items }: { poId: string; items: Po
         poId,
         gps,
         photos,
+        driverName,
+        recipientName,
         checklist: rows.map((r) => ({
           item: r.item,
           orderedQty: r.orderedQty,
@@ -114,6 +118,27 @@ export function DeliveryChecklistForm({ poId, items }: { poId: string; items: Po
 
   return (
     <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <Label htmlFor="driverName">Driver</Label>
+          <Input
+            id="driverName"
+            placeholder="Name of the driver delivering"
+            value={driverName}
+            onChange={(e) => setDriverName(e.target.value)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="recipientName">Received by</Label>
+          <Input
+            id="recipientName"
+            placeholder="Name of the person who received it"
+            value={recipientName}
+            onChange={(e) => setRecipientName(e.target.value)}
+          />
+        </div>
+      </div>
+
       <div className="space-y-3">
         {rows.map((r, i) => (
           <div

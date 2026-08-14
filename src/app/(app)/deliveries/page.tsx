@@ -4,6 +4,7 @@ import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fmtDate, fmtDateTime, php } from "@/lib/format";
 import { Badge, Card, CardBody, CardHeader, Table, Td, Th } from "@/components/ui";
+import { DeleteDeliveryButton } from "@/components/delivery-actions";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
 
 export const metadata = { title: "Deliveries" };
@@ -62,6 +63,7 @@ export default async function DeliveriesPage() {
   ]);
 
   const canVerify = ["FOREMAN", "PM", "OWNER"].includes(user.role);
+  const isOwner = user.role === "OWNER";
   const verifierNames = new Map(
     (
       await prisma.user.findMany({
@@ -188,11 +190,21 @@ export default async function DeliveriesPage() {
                     · {d.project?.name ?? projectOrCategoryLabel({ project: null, category: d.po.requisition?.category })}
                   </span>
                 </div>
-                <span className="text-xs text-ink-400">
-                  {fmtDateTime(d.verifiedAt ?? d.createdAt)} · by{" "}
-                  {verifierNames.get(d.verifiedById) ?? "—"}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-ink-400">
+                    {fmtDateTime(d.verifiedAt ?? d.createdAt)} · by{" "}
+                    {verifierNames.get(d.verifiedById) ?? "—"}
+                  </span>
+                  {isOwner && <DeleteDeliveryButton deliveryId={d.id} poNumber={d.po.poNumber} />}
+                </div>
               </div>
+              {(d.driverName || d.recipientName) && (
+                <p className="mt-1 text-xs text-ink-500">
+                  {d.driverName && `Driver: ${d.driverName}`}
+                  {d.driverName && d.recipientName && " · "}
+                  {d.recipientName && `Received by: ${d.recipientName}`}
+                </p>
+              )}
               {d.discrepancies ? (
                 <p className="mt-1 whitespace-pre-wrap rounded bg-amber-50 p-2 text-xs text-amber-700">
                   ⚠ {d.discrepancies}
@@ -241,6 +253,7 @@ export default async function DeliveriesPage() {
                         <Th>Verified by</Th>
                         <Th className="text-right">Value received</Th>
                         <Th>Status</Th>
+                        {isOwner && <Th />}
                       </tr>
                     </thead>
                     <tbody>
@@ -261,6 +274,11 @@ export default async function DeliveriesPage() {
                               <span className="text-xs font-medium text-emerald-600">✓ Complete</span>
                             )}
                           </Td>
+                          {isOwner && (
+                            <Td className="text-right">
+                              <DeleteDeliveryButton deliveryId={d.id} poNumber={d.po.poNumber} />
+                            </Td>
+                          )}
                         </tr>
                       ))}
                     </tbody>

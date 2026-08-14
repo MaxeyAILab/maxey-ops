@@ -22,6 +22,8 @@ const createSchema = z.object({
   checklist: z.array(checkItemSchema).min(1),
   gps: z.string().max(100).optional().or(z.literal("")),
   photos: z.array(z.string()).max(6).optional(), // compressed data URLs
+  driverName: z.string().max(200).optional().or(z.literal("")),
+  recipientName: z.string().max(200).optional().or(z.literal("")),
 });
 
 /**
@@ -59,6 +61,8 @@ export const POST = handleApi(async (req: NextRequest) => {
         poId: po.id,
         projectId: po.requisition.projectId,
         checklist: body.checklist as never,
+        driverName: body.driverName || null,
+        recipientName: body.recipientName || null,
         verifiedById: user.id,
         verifiedAt: body.submittedAt,
         discrepancies: complete ? null : discrepancyLines.join("\n"),
@@ -89,6 +93,8 @@ export const POST = handleApi(async (req: NextRequest) => {
       po: po.poNumber,
       project: projectOrCategoryLabel(po.requisition),
       discrepancies: discrepancyLines,
+      driverName: body.driverName || null,
+      recipientName: body.recipientName || null,
     },
   });
 
