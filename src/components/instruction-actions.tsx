@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { submitOrQueue } from "@/lib/outbox";
 import { Button, Input, Label, Select, Textarea } from "@/components/ui";
 import { PhotoInput } from "@/components/photo-input";
+import { NON_PROJECT_INSTRUCTION_CATEGORIES } from "@/lib/instructions";
+
+const CATEGORY_PREFIX = "cat:";
 
 interface ProjectOption {
   id: string;
@@ -17,7 +20,8 @@ interface EmployeeOption {
   position: string | null;
 }
 
-/** Jacob/PM posts a dated, project-specific assignment (Spec 6.6). */
+/** Jacob/PM posts a dated assignment — against a project, or a category
+ * (office/site/deliveries/warehouse/other) when there's no active project. */
 export function PostInstructionForm({
   projects,
   employees,
@@ -35,11 +39,14 @@ export function PostInstructionForm({
     setBusy(true);
     setError("");
     const fd = new FormData(e.currentTarget);
+    const selection = String(fd.get("projectId") ?? "");
+    const isCategory = selection.startsWith(CATEGORY_PREFIX);
     const res = await fetch("/api/instructions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        projectId: fd.get("projectId"),
+        projectId: isCategory ? undefined : selection,
+        category: isCategory ? selection.slice(CATEGORY_PREFIX.length) : undefined,
         text: fd.get("text"),
         photos,
         assignedToId: fd.get("assignedToId") || undefined,
@@ -60,12 +67,23 @@ export function PostInstructionForm({
     <form onSubmit={onSubmit} className="space-y-3">
       <div>
         <Label htmlFor="insProject">Project</Label>
-        <Select id="insProject" name="projectId" required>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
+        <Select id="insProject" name="projectId" defaultValue={`${CATEGORY_PREFIX}OTHER`}>
+          <optgroup label="No project">
+            {NON_PROJECT_INSTRUCTION_CATEGORIES.map((c) => (
+              <option key={c.value} value={`${CATEGORY_PREFIX}${c.value}`}>
+                {c.label}
+              </option>
+            ))}
+          </optgroup>
+          {projects.length > 0 && (
+            <optgroup label="Projects">
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </Select>
       </div>
       <div>

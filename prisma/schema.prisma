@@ -143,6 +143,14 @@ enum InstructionStatus {
   CANCELLED
 }
 
+enum InstructionCategory {
+  OFFICE
+  SITE
+  DELIVERIES
+  WAREHOUSE
+  OTHER
+}
+
 enum InstructionApproval {
   PENDING
   APPROVED
@@ -608,8 +616,9 @@ model PayrollRun {
 
 model SiteInstruction {
   id                String              @id @default(cuid())
-  projectId         String
-  project           Project             @relation(fields: [projectId], references: [id])
+  projectId         String? // nullable: not every instruction needs an active project
+  project           Project?            @relation(fields: [projectId], references: [id])
+  category          InstructionCategory? // set when projectId is blank — office/site/deliveries/etc.
   postedById        String
   postedBy          User                @relation("InstructionPostedBy", fields: [postedById], references: [id])
   assignedToId      String? // blank = broadcast to the whole site team, as before

@@ -10,6 +10,7 @@ import {
   PostInstructionForm,
 } from "@/components/instruction-actions";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
+import { instructionProjectOrCategoryLabel } from "@/lib/instructions";
 
 export const metadata = { title: "Site Instructions" };
 export const dynamic = "force-dynamic";
@@ -129,7 +130,8 @@ export default async function InstructionsPage({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-xs text-ink-400">
-              {i.project.name} · {fmtDateTime(i.createdAt)} · assigned by {i.postedBy.name}
+              {instructionProjectOrCategoryLabel(i)} · {fmtDateTime(i.createdAt)} · assigned by{" "}
+              {i.postedBy.name}
             </div>
             <p className="mt-1 whitespace-pre-wrap text-sm text-ink-800">{i.text}</p>
             {i.photoUrl && (
@@ -195,14 +197,10 @@ export default async function InstructionsPage({
         <Card>
           <CardHeader
             title="Post an assignment"
-            subtitle="Assign to one person with a target date, or broadcast to the whole site team"
+            subtitle="Against a project, or Office/Site/Deliveries/Warehouse/Other when there's no active project — assign to one person or broadcast to the whole site team"
           />
           <CardBody>
-            {projects.length > 0 ? (
-              <PostInstructionForm projects={projects} employees={employees} />
-            ) : (
-              <p className="text-sm text-ink-400">No active projects.</p>
-            )}
+            <PostInstructionForm projects={projects} employees={employees} />
           </CardBody>
         </Card>
       )}
@@ -326,7 +324,7 @@ export default async function InstructionsPage({
                       {f.items.map((i) => (
                         <tr key={i.id} className="hover:bg-ink-50">
                           <Td className="text-xs">{fmtDateTime(i.createdAt)}</Td>
-                          <Td className="text-xs">{i.project.name}</Td>
+                          <Td className="text-xs">{instructionProjectOrCategoryLabel(i)}</Td>
                           <Td className="max-w-[220px]">
                             <span className="line-clamp-2 text-xs text-ink-600">{i.text}</span>
                           </Td>

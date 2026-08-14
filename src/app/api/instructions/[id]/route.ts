@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
+import { instructionProjectOrCategoryLabel } from "@/lib/instructions";
 
 const patchSchema = z.discriminatedUnion("action", [
   z.object({
@@ -55,7 +56,7 @@ export const PATCH = handleApi(
         actorId: user.id,
         actorName: user.name,
         action: "INSTRUCTION_REVIEWED",
-        diff: { project: instruction.project.name, approval: body.approval },
+        diff: { project: instructionProjectOrCategoryLabel(instruction), approval: body.approval },
       });
 
       return NextResponse.json(updated);
@@ -82,7 +83,11 @@ export const PATCH = handleApi(
       actorId: user.id,
       actorName: user.name,
       action: `INSTRUCTION_${body.status}`,
-      diff: { project: instruction.project.name, from: instruction.status, remarks: body.remarks || null },
+      diff: {
+        project: instructionProjectOrCategoryLabel(instruction),
+        from: instruction.status,
+        remarks: body.remarks || null,
+      },
     });
 
     return NextResponse.json(updated);
