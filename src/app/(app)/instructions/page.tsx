@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { fmtDate, fmtDateTime } from "@/lib/format";
 import { Badge, Button, Card, CardBody, CardHeader, Input, Label, Select, Table, Td, Th } from "@/components/ui";
 import {
+  BoardPriorityCell,
+  BoardStatusCell,
   InstructionReviewForm,
   InstructionUpdateForm,
   PostInstructionForm,
@@ -33,7 +35,7 @@ const MONTH_FMT = new Intl.DateTimeFormat("en-PH", {
 export default async function InstructionsPage({
   searchParams,
 }: {
-  searchParams: { from?: string; to?: string; projectId?: string };
+  searchParams: { from?: string; to?: string; projectId?: string; view?: string };
 }) {
   const user = await getSessionUser();
   if (!user || user.role === "CLIENT") redirect("/projects");
@@ -117,11 +119,65 @@ export default async function InstructionsPage({
   }
   const folders = Array.from(folderMap.values()).sort((a, b) => (a.key < b.key ? 1 : -1));
 
+  const canUpdateFor = (i: (typeof instructions)[number]): boolean =>
+    ["OWNER", "PM"].includes(user.role) ||
+    i.assignedToId === user.id ||
+    (!i.assignedToId && user.role === "FOREMAN");
+
+  // Board view (Spec: spreadsheet-style, grouped by week) — same underlying
+  // data as the feed, respects the active calendar/project search.
+  const isBoard = searchParams.view === "board";
+  const boardSource = hasFilter ? searchResults : instructions;
+  function viewHref(view: "feed" | "board") {
+    const params = new URLSearchParams();
+    if (searchParams.from) params.set("from", searchParams.from);
+    if (searchParams.to) params.set("to", searchParams.to);
+    if (searchParams.projectId) params.set("projectId", searchParams.projectId);
+    if (view === "board") params.set("view", "board");
+    const qs = params.toString();
+    return `/instructions${qs ? `?${qs}` : ""}`;
+  }
+  function mondayOf(d: Date): Date {
+    const dateOnly = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(d);
+    const utcMidnight = new Date(`${dateOnly}T00:00:00Z`);
+    const dow = utcMidnight.getUTCDay(); // 0 = Sunday
+    const diff = dow === 0 ? 6 : dow - 1; // days since Monday
+    const monday = new Date(utcMidnight);
+    monday.setUTCDate(monday.getUTCDate() - diff);
+    return monday;
+  }
+  type Row2 = (typeof instructions)[number];
+  interface WeekGroup {
+    key: string;
+    label: string;
+    items: Row2[];
+  }
+  const weekMap = new Map<string, WeekGroup>();
+  for (const i of boardSource) {
+    const monday = mondayOf(i.createdAt);
+    const key = monday.toISOString().slice(0, 10);
+    let week = weekMap.get(key);
+    if (!week) {
+      week = { key, label: `Week of ${fmtDate(monday)}`, items: [] };
+      weekMap.set(key, week);
+    }
+    week.items.push(i);
+  }
+  const weeks = Array.from(weekMap.values()).sort((a, b) => (a.key < b.key ? 1 : -1));
+
+  const AVATAR_COLORS = ["#2563eb", "#d97706", "#059669", "#7c3aed", "#db2777", "#0891b2", "#8a1a28", "#65a30d"];
+  function avatarColor(name: string): string {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+    return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+  }
+  function initials(name: string): string {
+    const parts = name.trim().split(/\s+/);
+    return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase();
+  }
+
   const renderItem = (i: (typeof instructions)[number]) => {
-    const canUpdate =
-      ["OWNER", "PM"].includes(user.role) ||
-      i.assignedToId === user.id ||
-      (!i.assignedToId && user.role === "FOREMAN");
+    const canUpdate = canUpdateFor(i);
     const overdue = !!i.dueDate && i.dueDate < new Date() && !CLOSED_STATUSES.includes(i.status);
     const showReview = isSupervisor && ["FOR_REVIEW", "COMPLETED"].includes(i.status);
 
@@ -168,6 +224,7 @@ export default async function InstructionsPage({
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1.5">
             <Badge value={i.status} />
+            <Badge value={i.priority} />
             {i.approval !== "PENDING" && <Badge value={i.approval} />}
           </div>
         </div>
@@ -190,8 +247,32 @@ export default async function InstructionsPage({
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <h1 className="text-xl font-bold text-ink-900">Site Instructions</h1>
+    <div className={isBoard ? "mx-auto max-w-6xl space-y-6" : "mx-auto max-w-3xl space-y-6"}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-bold text-ink-900">Site Instructions</h1>
+        <div className="flex overflow-hidden rounded-lg border border-ink-200 text-sm">
+          <Link
+            href={viewHref("feed")}
+            className={
+              !isBoard
+                ? "bg-brand-500 px-3 py-1.5 font-medium text-white"
+                : "px-3 py-1.5 text-ink-600 hover:bg-ink-50"
+            }
+          >
+            Feed
+          </Link>
+          <Link
+            href={viewHref("board")}
+            className={
+              isBoard
+                ? "bg-brand-500 px-3 py-1.5 font-medium text-white"
+                : "px-3 py-1.5 text-ink-600 hover:bg-ink-50"
+            }
+          >
+            Board
+          </Link>
+        </div>
+      </div>
 
       {canPost && (
         <Card>
@@ -241,7 +322,7 @@ export default async function InstructionsPage({
         </CardBody>
       </Card>
 
-      {hasFilter && (
+      {hasFilter && !isBoard && (
         <Card>
           <CardHeader
             title={`Search results (${searchResults.length})`}
@@ -264,30 +345,110 @@ export default async function InstructionsPage({
         </Card>
       )}
 
-      <Card>
-        <CardHeader title={`Today (${today.length})`} subtitle="Assignments issued today" />
-        <CardBody className="space-y-3">
-          {today.map(renderItem)}
-          {today.length === 0 && <p className="text-sm text-ink-400">Nothing new today.</p>}
-        </CardBody>
-      </Card>
-
-      <Card>
-        <CardHeader
-          title={`Still open (${open.length})`}
-          subtitle="Earlier assignments not yet done — surfaced until closed"
-        />
-        <CardBody className="space-y-3">
-          {open.map(renderItem)}
-          {open.length === 0 && <p className="text-sm text-ink-400">Nothing outstanding.</p>}
-        </CardBody>
-      </Card>
-
-      {done.length > 0 && (
+      {isBoard && (
         <Card>
-          <CardHeader title={`Completed (${done.length})`} />
-          <CardBody className="space-y-3">{done.slice(0, 20).map(renderItem)}</CardBody>
+          <CardHeader
+            title={`Board (${boardSource.length})`}
+            subtitle="Grouped by week — status and priority auto-save on change, no separate save button"
+          />
+          <div className="divide-y divide-ink-100">
+            {weeks.map((w) => (
+              <details key={w.key} open className="group">
+                <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 hover:bg-ink-50 sm:px-5">
+                  <span className="text-ink-400 transition-transform group-open:rotate-90">▶</span>
+                  <span className="font-semibold text-ink-900">{w.label}</span>
+                  <span className="text-xs font-normal text-ink-400">
+                    ({w.items.length} assignment{w.items.length === 1 ? "" : "s"})
+                  </span>
+                </summary>
+                <div className="border-t border-ink-100 px-4 py-2 sm:px-5">
+                  <Table>
+                    <thead>
+                      <tr>
+                        <Th>Task</Th>
+                        <Th>Assigned to</Th>
+                        <Th>Type</Th>
+                        <Th>Status</Th>
+                        <Th>Priority</Th>
+                        <Th>Due date</Th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {w.items.map((i) => {
+                        const canUpdate = canUpdateFor(i);
+                        const overdue =
+                          !!i.dueDate && i.dueDate < new Date() && !CLOSED_STATUSES.includes(i.status);
+                        const assigneeName = i.assignedTo?.name ?? "Whole site team";
+                        return (
+                          <tr key={i.id} className={overdue ? "bg-red-50/40 hover:bg-red-50" : "hover:bg-ink-50"}>
+                            <Td className="max-w-[240px]">
+                              <span className="line-clamp-2 text-sm text-ink-800">{i.text}</span>
+                            </Td>
+                            <Td className="whitespace-nowrap">
+                              <span className="inline-flex items-center gap-1.5">
+                                <span
+                                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+                                  style={{ backgroundColor: avatarColor(assigneeName) }}
+                                >
+                                  {i.assignedTo ? initials(assigneeName) : "ST"}
+                                </span>
+                                <span className="text-xs text-ink-700">{assigneeName}</span>
+                              </span>
+                            </Td>
+                            <Td className="text-xs text-ink-600">{instructionProjectOrCategoryLabel(i)}</Td>
+                            <Td className="min-w-[130px]">
+                              <BoardStatusCell instructionId={i.id} status={i.status} canUpdate={canUpdate} />
+                            </Td>
+                            <Td className="min-w-[110px]">
+                              <BoardPriorityCell instructionId={i.id} priority={i.priority} canEdit={isSupervisor} />
+                            </Td>
+                            <Td className={overdue ? "text-xs font-medium text-red-600" : "text-xs text-ink-600"}>
+                              {i.dueDate ? fmtDate(i.dueDate) : "—"}
+                              {overdue && " ⚠"}
+                            </Td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </Table>
+                </div>
+              </details>
+            ))}
+            {weeks.length === 0 && (
+              <p className="px-4 py-6 text-center text-sm text-ink-400 sm:px-5">No assignments yet.</p>
+            )}
+          </div>
         </Card>
+      )}
+
+      {!isBoard && (
+        <>
+          <Card>
+            <CardHeader title={`Today (${today.length})`} subtitle="Assignments issued today" />
+            <CardBody className="space-y-3">
+              {today.map(renderItem)}
+              {today.length === 0 && <p className="text-sm text-ink-400">Nothing new today.</p>}
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader
+              title={`Still open (${open.length})`}
+              subtitle="Earlier assignments not yet done — surfaced until closed"
+            />
+            <CardBody className="space-y-3">
+              {open.map(renderItem)}
+              {open.length === 0 && <p className="text-sm text-ink-400">Nothing outstanding.</p>}
+            </CardBody>
+          </Card>
+
+          {done.length > 0 && (
+            <Card>
+              <CardHeader title={`Completed (${done.length})`} />
+              <CardBody className="space-y-3">{done.slice(0, 20).map(renderItem)}</CardBody>
+            </Card>
+          )}
+        </>
       )}
 
       {folders.length > 0 && (
@@ -318,6 +479,7 @@ export default async function InstructionsPage({
                         <Th>Assigned to</Th>
                         <Th>Target</Th>
                         <Th>Status</Th>
+                        <Th>Priority</Th>
                       </tr>
                     </thead>
                     <tbody>
@@ -332,6 +494,9 @@ export default async function InstructionsPage({
                           <Td className="text-xs">{i.dueDate ? fmtDate(i.dueDate) : "—"}</Td>
                           <Td>
                             <Badge value={i.status} />
+                          </Td>
+                          <Td>
+                            <Badge value={i.priority} />
                           </Td>
                         </tr>
                       ))}

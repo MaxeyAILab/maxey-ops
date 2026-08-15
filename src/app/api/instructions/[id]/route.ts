@@ -9,23 +9,31 @@ const patchSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("update_status"),
     status: z.enum(["NOT_STARTED", "IN_PROGRESS", "ON_HOLD", "FOR_REVIEW", "COMPLETED", "CANCELLED"]),
-    remarks: z.string().max(2000).optional().or(z.literal("")),
+    // Omit entirely to leave remarks untouched (the compact board cell does
+    // this); send "" to explicitly clear, or text to update (the full
+    // update form always sends this field).
+    remarks: z.string().max(2000).optional(),
   }),
   z.object({
     action: z.literal("review"),
     approval: z.enum(["APPROVED", "NEEDS_REVISION"]),
     supervisorRemarks: z.string().max(2000).optional().or(z.literal("")),
   }),
+  z.object({
+    action: z.literal("set_priority"),
+    priority: z.enum(["LOW", "NORMAL", "HIGH", "CRITICAL"]),
+  }),
 ]);
 
 /**
- * PATCH /api/instructions/[id] — two independent actions on an assignment:
+ * PATCH /api/instructions/[id] — three independent actions on an assignment:
  *  - update_status: the assignee (or PM/Owner, or Foreman for unassigned
- *    broadcast instructions) sets status + a progress remark. Actual
- *    completion date is stamped/cleared automatically as status crosses
- *    into/out of COMPLETED.
+ *    broadcast instructions) sets status, optionally with a progress remark.
+ *    Actual completion date is stamped/cleared automatically as status
+ *    crosses into/out of COMPLETED.
  *  - review: Owner/PM leaves supervisor remarks and an approval verdict —
  *    independent of status, doesn't gate it.
+ *  - set_priority: Owner/PM only.
  */
 export const PATCH = handleApi(
   async (req: NextRequest, { params }: { params: { id: string } }) => {
@@ -62,6 +70,30 @@ export const PATCH = handleApi(
       return NextResponse.json(updated);
     }
 
+    if (body.action === "set_priority") {
+      if (!["OWNER", "PM"].includes(user.role)) throw new ApiError(403, "Only Owner/PM can set priority");
+
+      const updated = await prisma.siteInstruction.update({
+        where: { id: params.id },
+        data: { priority: body.priority },
+      });
+
+      await audit({
+        entityType: "SiteInstruction",
+        entityId: instruction.id,
+        actorId: user.id,
+        actorName: user.name,
+        action: "INSTRUCTION_PRIORITY_SET",
+        diff: {
+          project: instructionProjectOrCategoryLabel(instruction),
+          from: instruction.priority,
+          to: body.priority,
+        },
+      });
+
+      return NextResponse.json(updated);
+    }
+
     const canUpdate =
       ["OWNER", "PM"].includes(user.role) ||
       instruction.assignedToId === user.id ||
@@ -72,7 +104,7 @@ export const PATCH = handleApi(
       where: { id: params.id },
       data: {
         status: body.status,
-        remarks: body.remarks || null,
+        ...(body.remarks !== undefined ? { remarks: body.remarks || null } : {}),
         completedAt: body.status === "COMPLETED" ? (instruction.completedAt ?? new Date()) : null,
       },
     });
@@ -86,7 +118,7 @@ export const PATCH = handleApi(
       diff: {
         project: instructionProjectOrCategoryLabel(instruction),
         from: instruction.status,
-        remarks: body.remarks || null,
+        remarks: body.remarks !== undefined ? body.remarks || null : undefined,
       },
     });
 

@@ -51,6 +51,7 @@ export function PostInstructionForm({
         photos,
         assignedToId: fd.get("assignedToId") || undefined,
         dueDate: fd.get("dueDate") || undefined,
+        priority: fd.get("priority") || undefined,
       }),
     });
     setBusy(false);
@@ -96,7 +97,7 @@ export function PostInstructionForm({
           placeholder="e.g., Re-check column C4 alignment before pouring; use the revised drawing."
         />
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-3">
         <div>
           <Label htmlFor="insAssignee">Assigned to</Label>
           <Select id="insAssignee" name="assignedToId" defaultValue="">
@@ -112,6 +113,16 @@ export function PostInstructionForm({
         <div>
           <Label htmlFor="insDue">Target completion date</Label>
           <Input id="insDue" name="dueDate" type="date" />
+        </div>
+        <div>
+          <Label htmlFor="insPriority">Priority</Label>
+          <Select id="insPriority" name="priority" defaultValue="NORMAL">
+            {PRIORITY_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
         </div>
       </div>
       <PhotoInput label="Photo / marked-up drawing (optional)" max={2} onChange={setPhotos} />
@@ -130,6 +141,13 @@ const STATUS_OPTIONS = [
   { value: "FOR_REVIEW", label: "For Review" },
   { value: "COMPLETED", label: "Completed" },
   { value: "CANCELLED", label: "Cancelled" },
+];
+
+const PRIORITY_OPTIONS = [
+  { value: "LOW", label: "Low" },
+  { value: "NORMAL", label: "Normal" },
+  { value: "HIGH", label: "High" },
+  { value: "CRITICAL", label: "Critical" },
 ];
 
 /** Assignee (or PM/Owner) updates status + a progress remark — offline-capable. */
@@ -269,5 +287,139 @@ export function InstructionReviewForm({
         {busy ? "Saving…" : "Save review"}
       </Button>
     </div>
+  );
+}
+
+const STATUS_CELL_COLORS: Record<string, { bg: string; text: string }> = {
+  NOT_STARTED: { bg: "#f1f5f9", text: "#475569" },
+  IN_PROGRESS: { bg: "#dbeafe", text: "#1e40af" },
+  ON_HOLD: { bg: "#fef3c7", text: "#92400e" },
+  FOR_REVIEW: { bg: "#ede9fe", text: "#5b21b6" },
+  COMPLETED: { bg: "#d1fae5", text: "#065f46" },
+  CANCELLED: { bg: "#f1f5f9", text: "#475569" },
+};
+
+const PRIORITY_CELL_COLORS: Record<string, { bg: string; text: string }> = {
+  LOW: { bg: "#f1f5f9", text: "#475569" },
+  NORMAL: { bg: "#dbeafe", text: "#1e40af" },
+  HIGH: { bg: "#fef3c7", text: "#92400e" },
+  CRITICAL: { bg: "#fee2e2", text: "#991b1b" },
+};
+
+const pillSelectClass =
+  "min-h-0 w-full appearance-none rounded-md border-0 px-2 py-1 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:opacity-60";
+
+/** Board-view status cell — auto-saves on change, colored like a Monday.com
+ * status pill. Never touches remarks (omits the field so the API leaves it
+ * untouched), so switching status here can't wipe a progress note entered
+ * elsewhere. */
+export function BoardStatusCell({
+  instructionId,
+  status,
+  canUpdate,
+}: {
+  instructionId: string;
+  status: string;
+  canUpdate: boolean;
+}) {
+  const router = useRouter();
+  const [value, setValue] = useState(status);
+  const [busy, setBusy] = useState(false);
+  const tone = STATUS_CELL_COLORS[value] ?? STATUS_CELL_COLORS.NOT_STARTED;
+
+  if (!canUpdate) {
+    return (
+      <span
+        className="inline-block rounded-md px-2 py-1 text-xs font-medium"
+        style={{ backgroundColor: tone.bg, color: tone.text }}
+      >
+        {STATUS_OPTIONS.find((o) => o.value === value)?.label ?? value}
+      </span>
+    );
+  }
+
+  async function onChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const next = e.target.value;
+    setValue(next);
+    setBusy(true);
+    await fetch(`/api/instructions/${instructionId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "update_status", status: next }),
+    });
+    setBusy(false);
+    router.refresh();
+  }
+
+  return (
+    <select
+      value={value}
+      onChange={onChange}
+      disabled={busy}
+      style={{ backgroundColor: tone.bg, color: tone.text }}
+      className={pillSelectClass}
+    >
+      {STATUS_OPTIONS.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/** Board-view priority cell — Owner/PM only, auto-saves on change. */
+export function BoardPriorityCell({
+  instructionId,
+  priority,
+  canEdit,
+}: {
+  instructionId: string;
+  priority: string;
+  canEdit: boolean;
+}) {
+  const router = useRouter();
+  const [value, setValue] = useState(priority);
+  const [busy, setBusy] = useState(false);
+  const tone = PRIORITY_CELL_COLORS[value] ?? PRIORITY_CELL_COLORS.NORMAL;
+
+  if (!canEdit) {
+    return (
+      <span
+        className="inline-block rounded-md px-2 py-1 text-xs font-medium"
+        style={{ backgroundColor: tone.bg, color: tone.text }}
+      >
+        {PRIORITY_OPTIONS.find((o) => o.value === value)?.label ?? value}
+      </span>
+    );
+  }
+
+  async function onChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const next = e.target.value;
+    setValue(next);
+    setBusy(true);
+    await fetch(`/api/instructions/${instructionId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "set_priority", priority: next }),
+    });
+    setBusy(false);
+    router.refresh();
+  }
+
+  return (
+    <select
+      value={value}
+      onChange={onChange}
+      disabled={busy}
+      style={{ backgroundColor: tone.bg, color: tone.text }}
+      className={pillSelectClass}
+    >
+      {PRIORITY_OPTIONS.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
   );
 }

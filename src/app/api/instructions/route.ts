@@ -14,6 +14,7 @@ const createSchema = z.object({
   photos: z.array(z.string()).max(2).optional(),
   assignedToId: z.string().optional().or(z.literal("")), // blank = broadcast to the whole site team
   dueDate: z.coerce.date().optional(),
+  priority: z.enum(["LOW", "NORMAL", "HIGH", "CRITICAL"]).default("NORMAL"),
 });
 
 /**
@@ -49,6 +50,7 @@ export const POST = handleApi(async (req: NextRequest) => {
       text: body.text,
       photoUrl: photoUrls[0] ?? null,
       dueDate: body.dueDate ?? null,
+      priority: body.priority,
     },
   });
 
@@ -58,7 +60,12 @@ export const POST = handleApi(async (req: NextRequest) => {
     actorId: user.id,
     actorName: user.name,
     action: "INSTRUCTION_POSTED",
-    diff: { project: label, assignedTo: assignee?.name ?? null, dueDate: body.dueDate ?? null },
+    diff: {
+      project: label,
+      assignedTo: assignee?.name ?? null,
+      dueDate: body.dueDate ?? null,
+      priority: body.priority,
+    },
   });
   await notify({
     to: { name: assignee?.name ?? "Site team" },

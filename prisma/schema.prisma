@@ -151,6 +151,13 @@ enum InstructionCategory {
   OTHER
 }
 
+enum InstructionPriority {
+  LOW
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
 enum InstructionApproval {
   PENDING
   APPROVED
@@ -626,6 +633,7 @@ model SiteInstruction {
   text              String
   photoUrl          String?
   status            InstructionStatus   @default(NOT_STARTED)
+  priority          InstructionPriority @default(NORMAL)
   dueDate           DateTime? // target completion date the boss wants
   remarks           String? // assignee's latest progress update
   completedAt       DateTime? // actual completion date
