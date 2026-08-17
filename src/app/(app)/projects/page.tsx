@@ -9,7 +9,11 @@ import {
   PROSPECTIVE_STATUSES,
 } from "@/lib/project-status";
 import { Badge, Card, CardHeader, Table, Td, Th } from "@/components/ui";
-import { AddProjectSection, ProjectStatusSelect } from "@/components/project-management";
+import {
+  AddProjectSection,
+  DeleteProjectButton,
+  ProjectStatusSelect,
+} from "@/components/project-management";
 import { FINANCE_ROLES } from "@/lib/rbac";
 import { canAccess } from "@/lib/access";
 import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
@@ -40,6 +44,7 @@ export default async function ProjectsPage() {
   const projects = await getProjects();
   const showMoney = FINANCE_ROLES.includes(user.role) || user.role === "PM";
   const canManage = ["OWNER", "PM"].includes(user.role);
+  const isOwner = user.role === "OWNER";
 
   const ongoing = projects.filter((p) => (ONGOING_STATUSES as string[]).includes(p.status));
   const prospective = projects.filter((p) =>
@@ -57,6 +62,7 @@ export default async function ProjectsPage() {
           {showMoney && <Th className="text-right">Contract</Th>}
           <Th className="text-right">Progress</Th>
           <Th>Started</Th>
+          {isOwner && <Th />}
         </tr>
       </thead>
       <tbody>
@@ -86,11 +92,16 @@ export default async function ProjectsPage() {
               {weightedAccomplishment(computeWorkItemStatuses(p.progressEntries)).toFixed(0)}%
             </Td>
             <Td>{fmtDate(p.startDate)}</Td>
+            {isOwner && (
+              <Td className="text-right">
+                <DeleteProjectButton projectId={p.id} name={p.name} />
+              </Td>
+            )}
           </tr>
         ))}
         {rows.length === 0 && (
           <tr>
-            <Td colSpan={showMoney ? 6 : 5} className="py-8 text-center text-ink-400">
+            <Td colSpan={showMoney ? (isOwner ? 7 : 6) : isOwner ? 6 : 5} className="py-8 text-center text-ink-400">
               {emptyText}
             </Td>
           </tr>

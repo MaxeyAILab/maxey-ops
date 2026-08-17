@@ -3,7 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, CardBody, CardHeader, Input, Label } from "@/components/ui";
-import { ALL_STATUSES, STATUS_LABELS } from "@/lib/project-status";
+import {
+  COMPLETED_STATUSES,
+  ONGOING_STATUSES,
+  PROSPECTIVE_STATUSES,
+  STATUS_LABELS,
+} from "@/lib/project-status";
 
 /** Manual "+ Add project" form on the Projects tab. */
 export function AddProjectForm({ onDone }: { onDone?: () => void }) {
@@ -153,11 +158,57 @@ export function ProjectStatusSelect({
       onChange={(e) => change(e.target.value)}
       className="min-h-[38px] rounded-lg border border-ink-200 bg-white px-2 text-xs font-medium text-ink-700 focus:border-brand-500 focus:outline-none"
     >
-      {ALL_STATUSES.map((s) => (
-        <option key={s} value={s}>
-          {STATUS_LABELS[s]}
-        </option>
-      ))}
+      <optgroup label="Prospective">
+        {PROSPECTIVE_STATUSES.map((s) => (
+          <option key={s} value={s}>
+            {STATUS_LABELS[s]}
+          </option>
+        ))}
+      </optgroup>
+      <optgroup label="On-going">
+        {ONGOING_STATUSES.map((s) => (
+          <option key={s} value={s}>
+            {STATUS_LABELS[s]}
+          </option>
+        ))}
+      </optgroup>
+      <optgroup label="Completed">
+        {COMPLETED_STATUSES.map((s) => (
+          <option key={s} value={s}>
+            {STATUS_LABELS[s]}
+          </option>
+        ))}
+      </optgroup>
     </select>
+  );
+}
+
+/** Owner-only cleanup for a mistaken/duplicate project — refuses server-side
+ * if anything real is attached. */
+export function DeleteProjectButton({ projectId, name }: { projectId: string; name: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+
+  async function onDelete() {
+    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+    setBusy(true);
+    const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
+    setBusy(false);
+    if (res.ok) {
+      router.refresh();
+    } else {
+      alert((await res.json()).error ?? "Failed to delete");
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onDelete}
+      disabled={busy}
+      className="text-xs font-medium text-red-600 hover:underline disabled:opacity-50"
+    >
+      {busy ? "Deleting…" : "Delete"}
+    </button>
   );
 }

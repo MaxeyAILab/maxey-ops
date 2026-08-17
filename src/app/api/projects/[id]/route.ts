@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
@@ -67,5 +68,43 @@ export const PATCH = handleApi(
     }
 
     return NextResponse.json({ ...updated, portalSuggestion });
+  }
+);
+
+/**
+ * DELETE /api/projects/[id] — Owner only, for cleaning up a mistaken or
+ * duplicate project entry. Refuses if anything real is attached (payments,
+ * requisitions, attendance, payroll, etc.) — a project with actual activity
+ * should be marked Turned-over instead, never deleted (Spec §8 append-only).
+ */
+export const DELETE = handleApi(
+  async (_req: NextRequest, { params }: { params: { id: string } }) => {
+    const user = await requireUser(["OWNER"]);
+
+    const project = await prisma.project.findUnique({ where: { id: params.id } });
+    if (!project) throw new ApiError(404, "Project not found");
+
+    try {
+      await prisma.project.delete({ where: { id: params.id } });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
+        throw new ApiError(
+          400,
+          "This project has related records (requisitions, payments, attendance, etc.) and can't be deleted. Mark it Turned-over instead."
+        );
+      }
+      throw err;
+    }
+
+    await audit({
+      entityType: "Project",
+      entityId: project.id,
+      actorId: user.id,
+      actorName: user.name,
+      action: "PROJECT_DELETED",
+      diff: { name: project.name, status: project.status },
+    });
+
+    return NextResponse.json({ ok: true });
   }
 );
