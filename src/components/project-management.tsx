@@ -183,28 +183,117 @@ export function ProjectStatusSelect({
   );
 }
 
-/** Owner-only cleanup for a mistaken/duplicate project — refuses server-side
- * if anything real is attached. */
+const RELATED_LABELS: Record<string, string> = {
+  requisitions: "requisition(s)",
+  purchaseOrders: "purchase order(s)",
+  deliveries: "delivery record(s)",
+  payments: "payment record(s)",
+  changeOrders: "change order(s)",
+  progressEntries: "progress update(s)",
+  instructions: "site instruction(s) / assignment(s)",
+  meetings: "meeting log(s)",
+  logbookEntries: "logbook entry(ies)",
+  tripLogs: "trip log(s)",
+  attendance: "attendance record(s)",
+  assignments: "project assignment(s)",
+  payrollRuns: "payroll run(s)",
+  materialStocks: "on-site material stock row(s)",
+};
+
+/** Owner-only cleanup for a mistaken/duplicate project. Plain delete succeeds
+ * instantly if nothing is attached; otherwise shows exactly what's attached
+ * and requires typing the project name before a force delete cascades
+ * through it all. */
 export function DeleteProjectButton({ projectId, name }: { projectId: string; name: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const [counts, setCounts] = useState<Record<string, number> | null>(null);
+  const [confirmText, setConfirmText] = useState("");
 
-  async function onDelete() {
-    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+  async function attemptDelete(force: boolean) {
     setBusy(true);
-    const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
+    const res = await fetch(`/api/projects/${projectId}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force }),
+    });
     setBusy(false);
     if (res.ok) {
+      setCounts(null);
       router.refresh();
-    } else {
-      alert((await res.json()).error ?? "Failed to delete");
+      return;
     }
+    const data = await res.json().catch(() => ({}));
+    if (data.blocked && data.counts) {
+      setCounts(data.counts);
+    } else {
+      alert(data.error ?? "Failed to delete");
+    }
+  }
+
+  function onDeleteClick() {
+    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+    attemptDelete(false);
+  }
+
+  if (counts) {
+    const lines = Object.entries(counts).filter(([, n]) => n > 0);
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+        onClick={() => setCounts(null)}
+      >
+        <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md">
+          <Card>
+            <CardHeader
+              title={`Force delete "${name}"?`}
+              subtitle="This permanently deletes the project AND everything below — no undo."
+            />
+            <CardBody className="space-y-3">
+              <ul className="list-disc space-y-1 pl-5 text-sm text-ink-700">
+                {lines.map(([key, n]) => (
+                  <li key={key}>
+                    {n} {RELATED_LABELS[key] ?? key}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-ink-500">
+                Equipment/inventory movement history that merely references this project is kept
+                and unlinked, not deleted.
+              </p>
+              <div>
+                <Label htmlFor={`confirmName-${projectId}`}>Type the project name to confirm</Label>
+                <Input
+                  id={`confirmName-${projectId}`}
+                  value={confirmText}
+                  onChange={(e) => setConfirmText(e.target.value)}
+                  placeholder={name}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="secondary" onClick={() => setCounts(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="danger"
+                  disabled={busy || confirmText !== name}
+                  onClick={() => attemptDelete(true)}
+                >
+                  {busy ? "Deleting…" : "Force delete everything"}
+                </Button>
+              </div>
+            </CardBody>
+          </Card>
+        </div>
+      </div>
+    );
   }
 
   return (
     <button
       type="button"
-      onClick={onDelete}
+      onClick={onDeleteClick}
       disabled={busy}
       className="text-xs font-medium text-red-600 hover:underline disabled:opacity-50"
     >

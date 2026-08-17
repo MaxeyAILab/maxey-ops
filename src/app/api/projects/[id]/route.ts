@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
@@ -71,29 +70,126 @@ export const PATCH = handleApi(
   }
 );
 
+const deleteSchema = z.object({ force: z.boolean().optional() });
+
 /**
- * DELETE /api/projects/[id] — Owner only, for cleaning up a mistaken or
- * duplicate project entry. Refuses if anything real is attached (payments,
- * requisitions, attendance, payroll, etc.) — a project with actual activity
- * should be marked Turned-over instead, never deleted (Spec §8 append-only).
+ * DELETE /api/projects/[id] — Owner only.
+ *
+ * Plain delete: succeeds instantly if the project has nothing attached.
+ * If it does, refuses and returns a count breakdown instead of the raw FK
+ * error — the client shows that breakdown and, if the Owner explicitly
+ * confirms, replays the request with { force: true }, which cascades
+ * through everything the project actually owns (requisitions → POs →
+ * deliveries, payments, attendance, payroll, progress, instructions, etc.)
+ * inside one transaction. Equipment/inventory ledger rows that merely
+ * reference this project (tool checkouts, material movements) are unlinked
+ * rather than deleted — that history belongs to the tool/warehouse item, not
+ * the project. AuditLog rows are never touched (Spec §8 append-only); a
+ * PROJECT_FORCE_DELETED entry records exactly what was removed.
  */
 export const DELETE = handleApi(
-  async (_req: NextRequest, { params }: { params: { id: string } }) => {
+  async (req: NextRequest, { params }: { params: { id: string } }) => {
     const user = await requireUser(["OWNER"]);
+    const body = deleteSchema.parse(await req.json().catch(() => ({})));
 
     const project = await prisma.project.findUnique({ where: { id: params.id } });
     if (!project) throw new ApiError(404, "Project not found");
 
-    try {
-      await prisma.project.delete({ where: { id: params.id } });
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
-        throw new ApiError(
-          400,
-          "This project has related records (requisitions, payments, attendance, etc.) and can't be deleted. Mark it Turned-over instead."
-        );
-      }
-      throw err;
+    const requisitionIds = (
+      await prisma.requisition.findMany({ where: { projectId: project.id }, select: { id: true } })
+    ).map((r) => r.id);
+    const poIds = requisitionIds.length
+      ? (
+          await prisma.purchaseOrder.findMany({
+            where: { requisitionId: { in: requisitionIds } },
+            select: { id: true },
+          })
+        ).map((po) => po.id)
+      : [];
+
+    const [
+      deliveries,
+      payments,
+      changeOrders,
+      progressEntries,
+      instructions,
+      meetings,
+      logbookEntries,
+      tripLogs,
+      attendance,
+      assignments,
+      payrollRuns,
+      materialStocks,
+    ] = await Promise.all([
+      prisma.delivery.count({ where: { OR: [{ projectId: project.id }, { poId: { in: poIds } }] } }),
+      prisma.payment.count({ where: { projectId: project.id } }),
+      prisma.changeOrder.count({ where: { projectId: project.id } }),
+      prisma.progressEntry.count({ where: { projectId: project.id } }),
+      prisma.siteInstruction.count({ where: { projectId: project.id } }),
+      prisma.meeting.count({ where: { projectId: project.id } }),
+      prisma.logbookEntry.count({ where: { projectId: project.id } }),
+      prisma.tripLog.count({ where: { projectId: project.id } }),
+      prisma.attendance.count({ where: { projectId: project.id } }),
+      prisma.projectAssignment.count({ where: { projectId: project.id } }),
+      prisma.payrollRun.count({ where: { projectId: project.id } }),
+      prisma.projectMaterialStock.count({ where: { projectId: project.id } }),
+    ]);
+
+    const counts = {
+      requisitions: requisitionIds.length,
+      purchaseOrders: poIds.length,
+      deliveries,
+      payments,
+      changeOrders,
+      progressEntries,
+      instructions,
+      meetings,
+      logbookEntries,
+      tripLogs,
+      attendance,
+      assignments,
+      payrollRuns,
+      materialStocks,
+    };
+    const totalRelated = Object.values(counts).reduce((a, b) => a + b, 0);
+
+    if (totalRelated > 0 && !body.force) {
+      return NextResponse.json(
+        {
+          error: "This project has related records and can't be deleted without confirming.",
+          blocked: true,
+          counts,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (totalRelated > 0) {
+      await prisma.$transaction([
+        prisma.delivery.deleteMany({ where: { OR: [{ projectId: project.id }, { poId: { in: poIds } }] } }),
+        prisma.purchaseOrder.deleteMany({ where: { id: { in: poIds } } }),
+        prisma.requisition.deleteMany({ where: { projectId: project.id } }), // cascades RequisitionItem
+        prisma.payment.deleteMany({ where: { projectId: project.id } }),
+        prisma.changeOrder.deleteMany({ where: { projectId: project.id } }),
+        prisma.progressEntry.deleteMany({ where: { projectId: project.id } }),
+        prisma.siteInstruction.deleteMany({ where: { projectId: project.id } }),
+        prisma.meeting.deleteMany({ where: { projectId: project.id } }),
+        prisma.logbookEntry.deleteMany({ where: { projectId: project.id } }),
+        prisma.tripLog.deleteMany({ where: { projectId: project.id } }),
+        prisma.attendance.deleteMany({ where: { projectId: project.id } }),
+        prisma.projectAssignment.deleteMany({ where: { projectId: project.id } }),
+        prisma.payrollRun.deleteMany({ where: { projectId: project.id } }),
+        prisma.projectMaterialStock.deleteMany({ where: { projectId: project.id } }),
+        // Equipment/inventory ledger history outlives the project — unlink, don't delete.
+        prisma.toolAsset.updateMany({ where: { currentProjectId: project.id }, data: { currentProjectId: null } }),
+        prisma.toolMovement.updateMany({ where: { fromProjectId: project.id }, data: { fromProjectId: null } }),
+        prisma.toolMovement.updateMany({ where: { toProjectId: project.id }, data: { toProjectId: null } }),
+        prisma.inventoryMovement.updateMany({ where: { fromProjectId: project.id }, data: { fromProjectId: null } }),
+        prisma.inventoryMovement.updateMany({ where: { toProjectId: project.id }, data: { toProjectId: null } }),
+        prisma.project.delete({ where: { id: project.id } }),
+      ]);
+    } else {
+      await prisma.project.delete({ where: { id: project.id } });
     }
 
     await audit({
@@ -101,8 +197,8 @@ export const DELETE = handleApi(
       entityId: project.id,
       actorId: user.id,
       actorName: user.name,
-      action: "PROJECT_DELETED",
-      diff: { name: project.name, status: project.status },
+      action: totalRelated > 0 ? "PROJECT_FORCE_DELETED" : "PROJECT_DELETED",
+      diff: { name: project.name, status: project.status, ...(totalRelated > 0 ? { counts } : {}) },
     });
 
     return NextResponse.json({ ok: true });
