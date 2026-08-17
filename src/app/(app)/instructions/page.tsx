@@ -7,6 +7,8 @@ import { Badge, Button, Card, CardBody, CardHeader, Input, Label, Select, Table,
 import {
   BoardPriorityCell,
   BoardStatusCell,
+  DeleteInstructionButton,
+  EditInstructionForm,
   InstructionReviewForm,
   InstructionUpdateForm,
   PostInstructionForm,
@@ -228,6 +230,23 @@ export default async function InstructionsPage({
             {i.approval !== "PENDING" && <Badge value={i.approval} />}
           </div>
         </div>
+        {isSupervisor && (
+          <div className="mt-2 flex items-center gap-3">
+            <EditInstructionForm
+              instruction={{
+                id: i.id,
+                text: i.text,
+                projectId: i.projectId,
+                category: i.category,
+                assignedToId: i.assignedToId,
+                dueDate: i.dueDate ? i.dueDate.toISOString().slice(0, 10) : "",
+              }}
+              projects={projects}
+              employees={employees}
+            />
+            <DeleteInstructionButton instructionId={i.id} />
+          </div>
+        )}
         {canUpdate && (
           <div className="mt-3">
             <InstructionUpdateForm instructionId={i.id} status={i.status} remarks={i.remarks} />
@@ -480,6 +499,7 @@ export default async function InstructionsPage({
                         <Th>Target</Th>
                         <Th>Status</Th>
                         <Th>Priority</Th>
+                        {user.role === "OWNER" && <Th />}
                       </tr>
                     </thead>
                     <tbody>
@@ -498,6 +518,11 @@ export default async function InstructionsPage({
                           <Td>
                             <Badge value={i.priority} />
                           </Td>
+                          {user.role === "OWNER" && (
+                            <Td className="text-right">
+                              <DeleteInstructionButton instructionId={i.id} />
+                            </Td>
+                          )}
                         </tr>
                       ))}
                     </tbody>

@@ -23,6 +23,14 @@ const patchSchema = z.discriminatedUnion("action", [
     action: z.literal("set_priority"),
     priority: z.enum(["LOW", "NORMAL", "HIGH", "CRITICAL"]),
   }),
+  z.object({
+    action: z.literal("edit"),
+    text: z.string().min(1).max(5000),
+    projectId: z.string().optional().or(z.literal("")),
+    category: z.enum(["OFFICE", "SITE", "DELIVERIES", "WAREHOUSE", "OTHER"]).optional(),
+    assignedToId: z.string().optional().or(z.literal("")),
+    dueDate: z.coerce.date().optional().nullable(),
+  }),
 ]);
 
 /**
@@ -65,6 +73,47 @@ export const PATCH = handleApi(
         actorName: user.name,
         action: "INSTRUCTION_REVIEWED",
         diff: { project: instructionProjectOrCategoryLabel(instruction), approval: body.approval },
+      });
+
+      return NextResponse.json(updated);
+    }
+
+    if (body.action === "edit") {
+      if (!["OWNER", "PM"].includes(user.role)) throw new ApiError(403, "Only Owner/PM can edit an assignment");
+
+      const project = body.projectId
+        ? await prisma.project.findUnique({ where: { id: body.projectId } })
+        : null;
+      if (body.projectId && !project) throw new ApiError(404, "Project not found");
+      const category = body.projectId ? null : body.category ?? "OTHER";
+
+      let assignee = null;
+      if (body.assignedToId) {
+        assignee = await prisma.user.findUnique({ where: { id: body.assignedToId } });
+        if (!assignee || !assignee.active) throw new ApiError(400, "Unknown or inactive assignee");
+      }
+
+      const updated = await prisma.siteInstruction.update({
+        where: { id: params.id },
+        data: {
+          text: body.text,
+          projectId: body.projectId || null,
+          category,
+          assignedToId: assignee?.id ?? null,
+          dueDate: body.dueDate ?? null,
+        },
+      });
+
+      await audit({
+        entityType: "SiteInstruction",
+        entityId: instruction.id,
+        actorId: user.id,
+        actorName: user.name,
+        action: "INSTRUCTION_EDITED",
+        diff: {
+          from: { text: instruction.text, project: instructionProjectOrCategoryLabel(instruction) },
+          to: { text: body.text, project: instructionProjectOrCategoryLabel({ project, category }) },
+        },
       });
 
       return NextResponse.json(updated);
@@ -123,5 +172,31 @@ export const PATCH = handleApi(
     });
 
     return NextResponse.json(updated);
+  }
+);
+
+/** DELETE /api/instructions/[id] — Owner-only cleanup for a test/mistaken assignment. */
+export const DELETE = handleApi(
+  async (_req: NextRequest, { params }: { params: { id: string } }) => {
+    const user = await requireUser(["OWNER"]);
+
+    const instruction = await prisma.siteInstruction.findUnique({
+      where: { id: params.id },
+      include: { project: { select: { name: true } } },
+    });
+    if (!instruction) throw new ApiError(404, "Instruction not found");
+
+    await prisma.siteInstruction.delete({ where: { id: params.id } });
+
+    await audit({
+      entityType: "SiteInstruction",
+      entityId: instruction.id,
+      actorId: user.id,
+      actorName: user.name,
+      action: "INSTRUCTION_DELETED",
+      diff: { text: instruction.text, project: instructionProjectOrCategoryLabel(instruction) },
+    });
+
+    return NextResponse.json({ ok: true });
   }
 );
