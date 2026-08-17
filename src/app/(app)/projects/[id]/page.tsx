@@ -4,7 +4,12 @@ import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fmtDate, fmtDateTime, php } from "@/lib/format";
 import { Badge, Card, CardBody, CardHeader, Stat, Table, Td, Th } from "@/components/ui";
-import { ChangeOrderForm, PaymentForm, ProgressForm } from "@/components/project-actions";
+import {
+  ChangeOrderForm,
+  EditProgressEntryButton,
+  PaymentForm,
+  ProgressForm,
+} from "@/components/project-actions";
 import { PaymentList } from "@/components/payment-list";
 import { AccountToggleButton, CreatePortalAccessForm } from "@/components/portal-access";
 import { AccomplishmentRadial, WorkItemWeightBars } from "@/components/charts";
@@ -284,42 +289,59 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
             </div>
             {canProgress && <ProgressForm projectId={p.id} />}
             <ol className="space-y-2">
-              {p.progressEntries.map((e) => (
-                <li key={e.id} className="rounded-lg border border-ink-100 p-3 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-brand-600">
-                      {Number(e.pctComplete).toFixed(0)}%
-                    </span>
-                    <span className="text-xs text-ink-400">
-                      {fmtDateTime(e.createdAt)} · {e.submittedBy.name}
-                    </span>
-                  </div>
-                  {e.workItem && (
-                    <div className="font-medium text-ink-800">
-                      {e.workItem}
-                      {e.weight != null && (
-                        <span className="ml-1.5 text-xs font-normal text-ink-400">
-                          ({Number(e.weight).toFixed(0)}% weight)
-                        </span>
-                      )}
+              {p.progressEntries.map((e) => {
+                const canEditEntry =
+                  ["OWNER", "PM"].includes(user.role) || e.submittedById === user.id;
+                return (
+                  <li key={e.id} className="rounded-lg border border-ink-100 p-3 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-brand-600">
+                        {Number(e.pctComplete).toFixed(0)}%
+                      </span>
+                      <span className="text-xs text-ink-400">
+                        {fmtDateTime(e.createdAt)} · {e.submittedBy.name}
+                        {e.editedAt && " · edited"}
+                      </span>
                     </div>
-                  )}
-                  {e.notes && <p className="text-xs text-ink-500">{e.notes}</p>}
-                  {Array.isArray(e.photos) && (e.photos as string[]).length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {(e.photos as string[]).map((src) => (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          key={src}
-                          src={src}
-                          alt=""
-                          className="h-20 w-20 rounded-lg object-cover"
-                        />
-                      ))}
-                    </div>
-                  )}
-                </li>
-              ))}
+                    {e.workItem && (
+                      <div className="font-medium text-ink-800">
+                        {e.workItem}
+                        {e.weight != null && (
+                          <span className="ml-1.5 text-xs font-normal text-ink-400">
+                            ({Number(e.weight).toFixed(0)}% weight)
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {e.notes && <p className="text-xs text-ink-500">{e.notes}</p>}
+                    {Array.isArray(e.photos) && (e.photos as string[]).length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {(e.photos as string[]).map((src) => (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            key={src}
+                            src={src}
+                            alt=""
+                            className="h-20 w-20 rounded-lg object-cover"
+                          />
+                        ))}
+                      </div>
+                    )}
+                    {canEditEntry && (
+                      <EditProgressEntryButton
+                        entry={{
+                          id: e.id,
+                          workItem: e.workItem,
+                          weight: e.weight != null ? Number(e.weight) : null,
+                          color: e.color,
+                          pctComplete: Number(e.pctComplete),
+                          notes: e.notes,
+                        }}
+                      />
+                    )}
+                  </li>
+                );
+              })}
               {p.progressEntries.length === 0 && (
                 <p className="text-sm text-ink-400">No progress entries yet.</p>
               )}

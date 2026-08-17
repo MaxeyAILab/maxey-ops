@@ -67,12 +67,17 @@ export function computeWorkItemStatuses(entries: ProgressEntryLike[]): WorkItemS
   return Array.from(byItem.values()).sort((a, b) => b.weight - a.weight);
 }
 
-/** Weighted-average accomplishment across work items, 0–100. */
+/**
+ * Overall project accomplishment, 0–100 — each work item's weight is its
+ * share of the *whole project* (Spec: "30 = 30% of scope"), so this divides
+ * by a fixed 100, not by the sum of logged items' weights. Work items with
+ * no entry yet correctly contribute 0, the same as the "Remaining" grey
+ * segment on AccomplishmentRadial — the two must always agree, since this is
+ * shown side-by-side with that chart on the project page.
+ */
 export function weightedAccomplishment(statuses: WorkItemStatus[]): number {
-  const totalWeight = statuses.reduce((s, x) => s + x.weight, 0);
-  if (totalWeight <= 0) return 0;
   const weighted = statuses.reduce((s, x) => s + x.weight * x.pctComplete, 0);
-  return weighted / totalWeight;
+  return Math.max(0, Math.min(100, weighted / 100));
 }
 
 /** This item's contribution to the overall weighted accomplishment, 0–100. */

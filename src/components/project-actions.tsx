@@ -257,3 +257,117 @@ export function ProgressForm({ projectId }: { projectId: string }) {
     </form>
   );
 }
+
+interface ProgressEntryEditable {
+  id: string;
+  workItem: string | null;
+  weight: number | null;
+  color: string | null;
+  pctComplete: number;
+  notes: string | null;
+}
+
+/** Correct a mistaken progress entry in place — same fields as ProgressForm,
+ * pre-filled, so a typo or wrong weight doesn't need a brand-new entry. */
+export function EditProgressEntryButton({ entry }: { entry: ProgressEntryEditable }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    const fd = new FormData(e.currentTarget);
+    const res = await fetch(`/api/progress/${entry.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        workItem: fd.get("workItem"),
+        weight: fd.get("weight") || undefined,
+        color: fd.get("color") || undefined,
+        pctComplete: Number(fd.get("pctComplete")),
+        notes: fd.get("notes"),
+      }),
+    });
+    setBusy(false);
+    if (res.ok) {
+      setOpen(false);
+      router.refresh();
+    } else {
+      setError((await res.json()).error ?? "Failed to save changes");
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="text-xs font-medium text-brand-600 hover:underline"
+      >
+        Edit
+      </button>
+    );
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="mt-2 space-y-2 rounded-lg border border-brand-100 bg-brand-50/40 p-3">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
+        <div>
+          <Label htmlFor={`ewi-${entry.id}`}>Work item</Label>
+          <Input id={`ewi-${entry.id}`} name="workItem" defaultValue={entry.workItem ?? ""} />
+        </div>
+        <div>
+          <Label htmlFor={`ewt-${entry.id}`}>Weight (%)</Label>
+          <Input
+            id={`ewt-${entry.id}`}
+            name="weight"
+            type="number"
+            min="0"
+            max="100"
+            step="0.1"
+            defaultValue={entry.weight ?? ""}
+          />
+        </div>
+        <div>
+          <Label htmlFor={`epc-${entry.id}`}>Completion % *</Label>
+          <Input
+            id={`epc-${entry.id}`}
+            name="pctComplete"
+            type="number"
+            min="0"
+            max="100"
+            step="0.1"
+            defaultValue={entry.pctComplete}
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor={`ecl-${entry.id}`}>Color</Label>
+          <input
+            id={`ecl-${entry.id}`}
+            name="color"
+            type="color"
+            defaultValue={entry.color ?? "#2563eb"}
+            className="h-10 w-full cursor-pointer rounded-lg border border-ink-200 p-1 sm:w-14"
+          />
+        </div>
+      </div>
+      <div>
+        <Label htmlFor={`en-${entry.id}`}>Notes</Label>
+        <Textarea id={`en-${entry.id}`} name="notes" rows={2} defaultValue={entry.notes ?? ""} />
+      </div>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="secondary" onClick={() => setOpen(false)} className="text-xs">
+          Cancel
+        </Button>
+        <Button type="submit" disabled={busy} className="text-xs">
+          {busy ? "Saving…" : "Save changes"}
+        </Button>
+      </div>
+    </form>
+  );
+}
