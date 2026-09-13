@@ -193,7 +193,7 @@ export default async function FinancePage() {
             </div>
             <div className="panel-body" style={{ paddingTop: 14 }}>
               {wip.rows.length === 0 ? (
-                <p className="emptynote">No on-going projects yet.</p>
+                <p className="emptynote">No projects yet.</p>
               ) : (
                 <>
                   <table className="wip">
@@ -216,7 +216,10 @@ export default async function FinancePage() {
                           <tr key={r.id}>
                             <td>
                               <div className="pname">{r.name}</div>
-                              <div className="pmeta">{r.clientName}</div>
+                              <div className="pmeta">
+                                {r.clientName}
+                                {r.isCompleted && " · Completed"}
+                              </div>
                             </td>
                             <td>{php(r.contractValue)}</td>
                             <td>{php(r.costToDate)}</td>
@@ -390,7 +393,7 @@ export default async function FinancePage() {
             </div>
             <div className="panel-body">
               {wip.rows.length === 0 ? (
-                <p className="emptynote">No on-going projects yet.</p>
+                <p className="emptynote">No projects yet.</p>
               ) : (
                 <ul className="fadelist">
                   {wip.rows.map((r) => {
@@ -398,7 +401,10 @@ export default async function FinancePage() {
                       return (
                         <li key={r.id}>
                           <div className="fadetop">
-                            <span className="fadename">{r.name}</span>
+                            <span className="fadename">
+                              {r.name}
+                              {r.isCompleted && " · Completed"}
+                            </span>
                             <span className="fadedelta">
                               no bid % set
                               <SetTargetMarginForm projectId={r.id} current={null} />
@@ -414,7 +420,10 @@ export default async function FinancePage() {
                     return (
                       <li key={r.id}>
                         <div className="fadetop">
-                          <span className="fadename">{r.name}</span>
+                          <span className="fadename">
+                            {r.name}
+                            {r.isCompleted && " · Completed"}
+                          </span>
                           <span className={`fadedelta ${delta < 0 ? "neg" : delta > 0 ? "pos" : ""}`}>
                             {delta >= 0 ? "+" : ""}
                             {delta.toFixed(1)}pt

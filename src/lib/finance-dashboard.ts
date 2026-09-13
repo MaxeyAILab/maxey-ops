@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getMonthlyCashflow, getNonProjectExpenses, getProjectFinances, type ProjectFinance } from "@/lib/finance";
-import { ONGOING_STATUSES } from "@/lib/project-status";
+import { COMPLETED_STATUSES, ONGOING_STATUSES } from "@/lib/project-status";
 
 /**
  * Everything the Finance tab needs, computed from real rows only — no
@@ -42,6 +42,8 @@ export interface WipRow {
   id: string;
   name: string;
   clientName: string;
+  status: string;
+  isCompleted: boolean;
   contractValue: number;
   costToDate: number;
   pctComplete: number;
@@ -49,19 +51,24 @@ export interface WipRow {
   billed: number;
   /** Forecast margin at completion: extrapolates cost-to-date at the current
    * cost-per-%-complete burn rate across the whole contract — not just
-   * "margin on cost spent so far." */
+   * "margin on cost spent so far." For an already-completed project this
+   * collapses to the actual final margin, since accomplishmentPct is ~100. */
   marginAtCompletionPct: number;
   targetMarginPct: number | null;
   billingGap: number; // billed − earned: positive = client has paid ahead, negative = you're funding the work
 }
 
-function marginAtCompletion(f: ProjectFinance): number {
+export function marginAtCompletion(f: ProjectFinance): number {
   if (f.contractValue <= 0) return 0;
   const projectedTotalCost =
     f.accomplishmentPct > 0 ? f.committedCost / (f.accomplishmentPct / 100) : f.committedCost;
   return ((f.contractValue - projectedTotalCost) / f.contractValue) * 100;
 }
 
+/** Ongoing projects (true work-in-progress) plus completed/turned-over ones
+ * — so the tab still has something to show once a project wraps, matching
+ * what the Owner Dashboard already surfaces for finished work. Ongoing rows
+ * sort first. */
 export async function getWipTable(): Promise<{ rows: WipRow[]; totals: WipRow | null }> {
   const [finances, targets] = await Promise.all([
     getProjectFinances(),
@@ -69,13 +76,24 @@ export async function getWipTable(): Promise<{ rows: WipRow[]; totals: WipRow | 
   ]);
   const targetById = new Map(targets.map((t) => [t.id, t.targetMarginPct != null ? Number(t.targetMarginPct) : null]));
 
-  const active = finances.filter((f) => (ONGOING_STATUSES as string[]).includes(f.status));
-  const rows: WipRow[] = active.map((f) => {
+  const included = finances
+    .filter(
+      (f) => (ONGOING_STATUSES as string[]).includes(f.status) || (COMPLETED_STATUSES as string[]).includes(f.status)
+    )
+    .sort((a, b) => {
+      const aDone = (COMPLETED_STATUSES as string[]).includes(a.status) ? 1 : 0;
+      const bDone = (COMPLETED_STATUSES as string[]).includes(b.status) ? 1 : 0;
+      return aDone - bDone;
+    });
+  const rows: WipRow[] = included.map((f) => {
     const earned = (f.contractValue * f.accomplishmentPct) / 100;
+    const isCompleted = (COMPLETED_STATUSES as string[]).includes(f.status);
     return {
       id: f.id,
       name: f.name,
       clientName: f.clientName,
+      status: f.status,
+      isCompleted,
       contractValue: f.contractValue,
       costToDate: f.committedCost,
       pctComplete: f.accomplishmentPct,
@@ -93,10 +111,14 @@ export async function getWipTable(): Promise<{ rows: WipRow[]; totals: WipRow | 
   const costToDate = rows.reduce((s, r) => s + r.costToDate, 0);
   const earned = rows.reduce((s, r) => s + r.earned, 0);
   const billed = rows.reduce((s, r) => s + r.billed, 0);
+  const activeCount = rows.filter((r) => !r.isCompleted).length;
+  const doneCount = rows.length - activeCount;
   const totals: WipRow = {
     id: "TOTAL",
-    name: `${rows.length} active project${rows.length === 1 ? "" : "s"}`,
+    name: `${rows.length} project${rows.length === 1 ? "" : "s"} (${activeCount} active, ${doneCount} completed)`,
     clientName: "",
+    status: "",
+    isCompleted: false,
     contractValue,
     costToDate,
     pctComplete: contractValue > 0 ? (earned / contractValue) * 100 : 0,

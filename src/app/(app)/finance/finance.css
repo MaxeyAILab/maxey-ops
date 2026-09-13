@@ -28,12 +28,6 @@
   margin: -24px -16px;
   padding: 24px 16px 48px;
 }
-@media (min-width: 768px) {
-  .findash {
-    margin: -24px calc(-50vw + 50% + 1rem);
-    padding: 24px calc(50vw - 50% - 1rem + 24px) 48px;
-  }
-}
 
 .findash *,
 .findash *::before,
