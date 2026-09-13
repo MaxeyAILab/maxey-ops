@@ -211,6 +211,7 @@ model User {
   auditLogs             AuditLog[]
   assignments           ProjectAssignment[]
   resetTokens           PasswordResetToken[]
+  cashSnapshots         CashSnapshot[]
 }
 
 // Self-service "forgot password" (Spec §8-adjacent hardening). Only the
@@ -309,6 +310,7 @@ model Project {
   pcabRef       String?
   startDate     DateTime?
   targetEndDate DateTime?
+  targetMarginPct Decimal?    @db.Decimal(5, 2) // margin bid at contract signing — Finance tab compares current forecast against this
   createdAt     DateTime      @default(now())
 
   paymentTerms    PaymentTerm[]
@@ -342,6 +344,7 @@ model PaymentTerm {
   dueCondition String?
   status       PaymentTermStatus @default(PENDING)
   sortOrder    Int               @default(0)
+  createdAt    DateTime          @default(now())
 
   payments Payment[]
 }
@@ -360,6 +363,18 @@ model Payment {
   recordedById  String
   recordedBy    User         @relation(fields: [recordedById], references: [id])
   createdAt     DateTime     @default(now())
+}
+
+// Manually-checked bank balance for the Finance tab's cash-on-hand figure —
+// there's no bank integration, so the Owner periodically types in what the
+// bank app shows. Append-only: each check is its own row, latest wins.
+model CashSnapshot {
+  id           String   @id @default(cuid())
+  amount       Decimal  @db.Decimal(14, 2)
+  note         String?
+  recordedById String
+  recordedBy   User     @relation(fields: [recordedById], references: [id])
+  recordedAt   DateTime @default(now())
 }
 
 // ---------- Requisition → PO ----------

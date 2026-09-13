@@ -1,0 +1,669 @@
+/* Finance tab — scoped design system. Everything lives under .findash so
+   this page's bespoke look never leaks into the rest of the (Tailwind-based)
+   app, and none of the app's styles bleed in here either. */
+
+.findash {
+  --ground: #e6e9e6;
+  --panel: #fafbfa;
+  --ink: #161a1b;
+  --ink-2: #5a6462;
+  --ink-3: #8b9491;
+  --rule: #d2d7d3;
+  --rule-soft: #e4e8e4;
+  --teal: #0b6e5a;
+  --teal-soft: #d9e9e4;
+  --oxide: #a03426;
+  --oxide-soft: #f2deda;
+  --steel: #3d5a73;
+  --steel-soft: #dde4ea;
+  --amber: #b07514;
+  --amber-soft: #f5e7cc;
+
+  font-family: var(--findash-font, "Archivo", "Helvetica Neue", Arial, sans-serif);
+  background: var(--ground);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+  margin: -24px -16px;
+  padding: 24px 16px 48px;
+}
+@media (min-width: 768px) {
+  .findash {
+    margin: -24px calc(-50vw + 50% + 1rem);
+    padding: 24px calc(50vw - 50% - 1rem + 24px) 48px;
+  }
+}
+
+.findash *,
+.findash *::before,
+.findash *::after {
+  box-sizing: border-box;
+}
+
+.findash .shell {
+  max-width: 1232px;
+  margin: 0 auto;
+}
+
+.findash .grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 20px;
+  margin-top: 20px;
+}
+.findash .c3 {
+  grid-column: span 12;
+}
+.findash .c4 {
+  grid-column: span 12;
+}
+.findash .c5 {
+  grid-column: span 12;
+}
+.findash .c6 {
+  grid-column: span 12;
+}
+.findash .c7 {
+  grid-column: span 12;
+}
+.findash .c12 {
+  grid-column: span 12;
+}
+@media (min-width: 900px) {
+  .findash .c3 {
+    grid-column: span 3;
+  }
+  .findash .c4 {
+    grid-column: span 4;
+  }
+  .findash .c5 {
+    grid-column: span 5;
+  }
+  .findash .c6 {
+    grid-column: span 6;
+  }
+  .findash .c7 {
+    grid-column: span 7;
+  }
+}
+
+.findash .panel {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  display: flex;
+  flex-direction: column;
+}
+.findash .panel-head {
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid var(--rule-soft);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.findash .panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.findash .panel-note {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  font-weight: 400;
+  text-align: right;
+  max-width: 340px;
+}
+.findash .panel-body {
+  padding: 16px 18px;
+  flex: 1;
+  overflow-x: auto;
+}
+
+.findash .masthead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 26px 0 16px;
+  border-bottom: 2px solid var(--ink);
+}
+.findash .mark {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.findash .mark h1 {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.findash .mark p {
+  font-size: 11.5px;
+  color: var(--ink-2);
+  margin-top: 1px;
+}
+.findash .stamp {
+  text-align: right;
+  font-size: 11.5px;
+  color: var(--ink-2);
+  line-height: 1.6;
+}
+.findash .stamp b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.findash .health {
+  display: grid;
+  grid-template-columns: 1fr;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  margin-top: 20px;
+}
+@media (min-width: 900px) {
+  .findash .health {
+    grid-template-columns: 1.55fr 1fr 1fr 1fr;
+    height: 136px;
+  }
+}
+.findash .hcell {
+  padding: 16px 20px;
+  border-left: 1px solid var(--rule-soft);
+  border-top: 1px solid var(--rule-soft);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+}
+@media (min-width: 900px) {
+  .findash .hcell {
+    border-top: 0;
+  }
+  .findash .hcell:first-child {
+    border-left: 0;
+    background: linear-gradient(90deg, #f2f5f3, var(--panel));
+  }
+}
+.findash .hcell:first-child {
+  border-left: 0;
+  background: linear-gradient(90deg, #f2f5f3, var(--panel));
+}
+.findash .hlabel {
+  font-size: 11.5px;
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.findash .hval {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+.findash .hcell:first-child .hval {
+  font-size: 34px;
+}
+.findash .hsub {
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+.findash .hsub b {
+  font-weight: 600;
+  color: var(--ink);
+}
+.findash .pos {
+  color: var(--teal);
+}
+.findash .neg {
+  color: var(--oxide);
+}
+.findash .warn {
+  color: var(--amber);
+}
+.findash .runway {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 2px;
+}
+.findash .runbar {
+  flex: 1;
+  height: 5px;
+  background: var(--rule);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.findash .runbar i {
+  display: block;
+  height: 100%;
+  background: var(--amber);
+}
+
+.findash .wip {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+.findash .wip th {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-2);
+  text-align: right;
+  padding: 0 10px 9px;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+.findash .wip th:first-child {
+  text-align: left;
+  padding-left: 0;
+}
+.findash .wip td {
+  padding: 11px 10px;
+  border-bottom: 1px solid var(--rule-soft);
+  text-align: right;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.findash .wip td:first-child {
+  text-align: left;
+  padding-left: 0;
+}
+.findash .wip tr:last-child td {
+  border-bottom: 0;
+}
+.findash .pname {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.findash .pmeta {
+  font-size: 11px;
+  color: var(--ink-3);
+  font-weight: 400;
+  margin-top: 1px;
+}
+.findash .prog {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.findash .progbar {
+  width: 52px;
+  height: 5px;
+  background: var(--rule);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.findash .progbar i {
+  display: block;
+  height: 100%;
+  background: var(--steel);
+}
+.findash .gapcell {
+  width: 250px;
+  padding-right: 0 !important;
+}
+.findash .gapwrap {
+  position: relative;
+  height: 22px;
+  width: 240px;
+  margin-left: auto;
+}
+.findash .gapaxis {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--ink-3);
+}
+.findash .gapbar {
+  position: absolute;
+  top: 5px;
+  height: 12px;
+  border-radius: 1px;
+}
+.findash .gapbar.over {
+  left: 50%;
+  background: var(--teal);
+}
+.findash .gapbar.under {
+  right: 50%;
+  background: var(--oxide);
+}
+.findash .gapfig {
+  position: absolute;
+  top: 3px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.findash .fade {
+  font-weight: 600;
+}
+.findash .totrow td {
+  border-top: 2px solid var(--ink);
+  border-bottom: 0 !important;
+  font-weight: 700;
+  padding-top: 12px;
+}
+.findash .axislabels {
+  display: flex;
+  justify-content: space-between;
+  width: 240px;
+  margin: 7px 0 0 auto;
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+.findash .emptynote {
+  padding: 22px 0;
+  text-align: center;
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+
+.findash .aging {
+  list-style: none;
+}
+.findash .aging li {
+  display: grid;
+  grid-template-columns: 84px 1fr 92px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.findash .aging li:last-child {
+  border-bottom: 0;
+}
+.findash .aglabel {
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+.findash .agtrack {
+  height: 16px;
+  background: var(--rule-soft);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.findash .agtrack i {
+  display: block;
+  height: 100%;
+}
+.findash .agval {
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+}
+.findash .subhead {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin: 16px 0 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+}
+.findash .ret {
+  list-style: none;
+}
+.findash .ret li {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  font-size: 12.5px;
+  border-bottom: 1px dotted var(--rule);
+}
+.findash .ret li:last-child {
+  border-bottom: 0;
+}
+.findash .ret span {
+  color: var(--ink-2);
+}
+.findash .ret b {
+  font-weight: 600;
+}
+
+.findash .fadelist {
+  list-style: none;
+}
+.findash .fadelist li {
+  padding: 11px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.findash .fadelist li:last-child {
+  border-bottom: 0;
+}
+.findash .fadetop {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+  gap: 8px;
+}
+.findash .fadename {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.findash .fadedelta {
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.findash .fadetrack {
+  position: relative;
+  height: 14px;
+  background: var(--rule-soft);
+  border-radius: 2px;
+}
+.findash .fadetrack .bid {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 1.5px;
+  background: var(--ink);
+}
+.findash .fadetrack .act {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 2px 0 0 2px;
+}
+.findash .fadefoot {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  color: var(--ink-3);
+  margin-top: 4px;
+}
+
+.findash .flags {
+  list-style: none;
+}
+.findash .flags li {
+  display: flex;
+  gap: 10px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.findash .flags li:last-child {
+  border-bottom: 0;
+}
+.findash .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex: 0 0 auto;
+}
+.findash .flagtxt {
+  font-size: 12px;
+  line-height: 1.4;
+}
+.findash .flagtxt b {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 1px;
+}
+.findash .flagtxt span {
+  color: var(--ink-2);
+}
+
+.findash .funnel {
+  list-style: none;
+}
+.findash .funnel li {
+  padding: 9px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.findash .funnel li:last-child {
+  border-bottom: 0;
+}
+.findash .ftop {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+  margin-bottom: 5px;
+  gap: 8px;
+}
+.findash .ftop b {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.findash .ftrack {
+  height: 18px;
+  background: var(--rule-soft);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.findash .ftrack i {
+  display: block;
+  height: 100%;
+  background: var(--steel);
+}
+.findash .hitrate {
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.findash .hitrate div:last-child {
+  text-align: right;
+}
+.findash .bignum {
+  font-size: 23px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.findash .legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  font-size: 11px;
+  color: var(--ink-2);
+  margin-top: 12px;
+}
+.findash .legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+.findash .foot {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+  font-size: 11px;
+  color: var(--ink-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+/* Owner-editable bits */
+.findash .findash-linkbtn {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--steel);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+.findash .findash-linkbtn-sm {
+  font-size: 10px;
+  color: var(--ink-3);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+  margin-left: 4px;
+}
+.findash .findash-inlineform {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.findash .findash-inlineform input {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: #fff;
+  color: var(--ink);
+}
+.findash .findash-inlineform-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.findash .findash-inlineform-actions button,
+.findash .findash-margininline button {
+  font-family: inherit;
+  font-size: 11.5px;
+  padding: 5px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: #fff;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.findash .findash-primary {
+  background: var(--ink) !important;
+  color: #fff !important;
+  border-color: var(--ink) !important;
+}
+.findash .findash-formerror {
+  font-size: 11px;
+  color: var(--oxide);
+}
+.findash .findash-margininline {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 6px;
+}
+.findash .findash-margininline input {
+  width: 56px;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 2px 5px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+}

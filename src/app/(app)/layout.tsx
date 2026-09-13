@@ -26,10 +26,12 @@ const CHIP_TONES = {
   emerald: "bg-emerald-100",
   pink: "bg-pink-100",
   cyan: "bg-cyan-100",
+  rose: "bg-rose-100",
 } as const;
 
 const nav: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: "📊", chip: "sky" },
+  { href: "/finance", label: "Finance", icon: "💵", chip: "rose" },
   { href: "/leads", label: "Leads / CRM", icon: "📥", chip: "violet" },
   { href: "/projects", label: "Projects", icon: "🏗️", chip: "amber" },
   { href: "/requisitions", label: "Requisitions", icon: "📝", chip: "indigo" },

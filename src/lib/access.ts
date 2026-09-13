@@ -18,6 +18,7 @@ export function allowedMenus(role: Role, _department: Department | null): string
     case "OWNER":
       return [
         "/dashboard",
+        "/finance",
         "/leads",
         "/projects",
         "/requisitions",
