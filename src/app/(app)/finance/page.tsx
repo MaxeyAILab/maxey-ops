@@ -1,4 +1,3 @@
-import { Archivo } from "next/font/google";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { canAccess } from "@/lib/access";
@@ -17,8 +16,6 @@ import {
 } from "@/lib/finance-dashboard";
 import { SetTargetMarginForm, UpdateCashForm } from "@/components/finance-actions";
 import "./finance.css";
-
-const archivo = Archivo({ subsets: ["latin"], weight: ["400", "500", "600", "700"] });
 
 export const metadata = { title: "Finance" };
 export const dynamic = "force-dynamic";
@@ -99,7 +96,7 @@ export default async function FinancePage() {
   };
 
   return (
-    <div className={`findash ${archivo.className}`}>
+    <div className="findash">
       <div className="shell">
         <div className="masthead">
           <div className="mark">

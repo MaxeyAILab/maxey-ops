@@ -12,7 +12,7 @@ export function Card({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cx("rounded-xl border border-ink-200 bg-white shadow-sm", className)}
+      className={cx("rounded-sm border border-ink-200 bg-white", className)}
       {...props}
     />
   );
@@ -64,7 +64,7 @@ export function Button({
     <button
       className={cx(
         // min 44px tap target for field use (Spec §8 mobile-first)
-        "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+        "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-sm px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
         styles[variant],
         className
       )}
@@ -80,7 +80,7 @@ export function Input({
   return (
     <input
       className={cx(
-        "block min-h-[44px] w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500",
+        "block min-h-[44px] w-full rounded-sm border border-ink-200 bg-white px-3 text-sm text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500",
         className
       )}
       {...props}
@@ -95,7 +95,7 @@ export function Textarea({
   return (
     <textarea
       className={cx(
-        "block w-full rounded-lg border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500",
+        "block w-full rounded-sm border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500",
         className
       )}
       {...props}
@@ -110,7 +110,7 @@ export function Select({
   return (
     <select
       className={cx(
-        "block min-h-[44px] w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500",
+        "block min-h-[44px] w-full rounded-sm border border-ink-200 bg-white px-3 text-sm text-ink-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500",
         className
       )}
       {...props}
@@ -136,23 +136,23 @@ const badgeTones: Record<string, string> = {
   UNDER_REVIEW: "bg-amber-100 text-amber-800",
   ESTIMATE_IN_PROGRESS: "bg-violet-100 text-violet-800",
   QUOTATION_SENT: "bg-cyan-100 text-cyan-800",
-  WON: "bg-emerald-100 text-emerald-800",
+  WON: "bg-teal-100 text-teal-800",
   LOST: "bg-red-100 text-red-800", // shared with tool/equipment "Lost" status
   // requisitions
   SUBMITTED: "bg-blue-100 text-blue-800",
-  APPROVED: "bg-emerald-100 text-emerald-800",
+  APPROVED: "bg-teal-100 text-teal-800",
   REJECTED: "bg-red-100 text-red-800",
   PO_ISSUED: "bg-cyan-100 text-cyan-800",
-  DELIVERED: "bg-emerald-100 text-emerald-800",
+  DELIVERED: "bg-teal-100 text-teal-800",
   // change orders / payments
   PENDING_CLIENT: "bg-amber-100 text-amber-800",
   PENDING: "bg-ink-100 text-ink-600",
   DUE: "bg-amber-100 text-amber-800",
-  PAID: "bg-emerald-100 text-emerald-800",
+  PAID: "bg-teal-100 text-teal-800",
   // projects (construction lifecycle)
   SITE_SURVEY: "bg-violet-100 text-violet-800",
   MOBILIZATION: "bg-blue-100 text-blue-800",
-  ONGOING_CONSTRUCTION: "bg-emerald-100 text-emerald-800",
+  ONGOING_CONSTRUCTION: "bg-teal-100 text-teal-800",
   NOT_ACTIVE: "bg-ink-100 text-ink-600",
   ON_HOLD: "bg-amber-100 text-amber-800",
   FOR_PUNCHLIST: "bg-cyan-100 text-cyan-800",
@@ -169,16 +169,16 @@ const badgeTones: Record<string, string> = {
   // quotation
   DRAFT: "bg-ink-100 text-ink-600",
   SENT: "bg-cyan-100 text-cyan-800",
-  ACCEPTED: "bg-emerald-100 text-emerald-800",
+  ACCEPTED: "bg-teal-100 text-teal-800",
   // tool/equipment status
   IN_WAREHOUSE: "bg-ink-100 text-ink-600",
-  ON_SITE: "bg-emerald-100 text-emerald-800",
+  ON_SITE: "bg-teal-100 text-teal-800",
   UNDER_REPAIR: "bg-amber-100 text-amber-800",
   // site instructions / assignments
   NOT_STARTED: "bg-ink-100 text-ink-600",
   IN_PROGRESS: "bg-blue-100 text-blue-800",
   FOR_REVIEW: "bg-violet-100 text-violet-800",
-  COMPLETED: "bg-emerald-100 text-emerald-800",
+  COMPLETED: "bg-teal-100 text-teal-800",
   NEEDS_REVISION: "bg-red-100 text-red-800",
 };
 
@@ -186,7 +186,7 @@ export function Badge({ value, label }: { value: string; label?: string }) {
   return (
     <span
       className={cx(
-        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+        "inline-flex items-center rounded-sm px-2.5 py-0.5 text-xs font-medium",
         badgeTones[value] ?? "bg-ink-100 text-ink-600"
       )}
     >
@@ -247,13 +247,14 @@ export function Stat({
   label: string;
   value: React.ReactNode;
   sub?: React.ReactNode;
-  tone?: "default" | "good" | "bad" | "brand";
+  tone?: "default" | "good" | "bad" | "brand" | "warning";
 }) {
   const tones = {
     default: "text-ink-900",
-    good: "text-emerald-600",
+    good: "text-teal-600",
     bad: "text-red-600",
     brand: "text-brand-600",
+    warning: "text-orange-600",
   };
   return (
     <Card className="px-4 py-3.5 sm:px-5">
@@ -266,7 +267,7 @@ export function Stat({
 
 export function EmptyState({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-dashed border-ink-200 px-6 py-10 text-center text-sm text-ink-500">
+    <div className="rounded-sm border border-dashed border-ink-200 px-6 py-10 text-center text-sm text-ink-500">
       {children}
     </div>
   );

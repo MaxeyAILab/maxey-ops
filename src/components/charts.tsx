@@ -24,7 +24,7 @@ export function CashflowChart({
     <div className="h-72 w-full">
       <ResponsiveContainer>
         <LineChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#edebe9" />
+          <CartesianGrid strokeDasharray="3 3" stroke="#d2d7d3" />
           <XAxis dataKey="month" tick={{ fontSize: 12 }} />
           <YAxis tickFormatter={(v: number) => phpCompact(v)} tick={{ fontSize: 11 }} width={70} />
           <Tooltip
@@ -39,17 +39,17 @@ export function CashflowChart({
           <Line
             type="monotone"
             dataKey="inflow"
-            stroke="#10b981"
+            stroke="#0b6e5a"
             strokeWidth={2.5}
-            dot={{ r: 3.5, fill: "#10b981" }}
+            dot={{ r: 3.5, fill: "#0b6e5a" }}
             activeDot={{ r: 5 }}
           />
           <Line
             type="monotone"
             dataKey="outflow"
-            stroke="#6e1420"
+            stroke="#a03426"
             strokeWidth={2.5}
-            dot={{ r: 3.5, fill: "#6e1420" }}
+            dot={{ r: 3.5, fill: "#a03426" }}
             activeDot={{ r: 5 }}
           />
         </LineChart>
@@ -79,7 +79,7 @@ export function AccomplishmentRadial({ items }: { items: AccomplishmentItem[] })
   }));
   const total = segments.reduce((s, d) => s + d.value, 0);
   const remaining = Math.max(0, 100 - total);
-  const data = remaining > 0 ? [...segments, { name: "Remaining", value: remaining, fill: "#edebe9" }] : segments;
+  const data = remaining > 0 ? [...segments, { name: "Remaining", value: remaining, fill: "#d2d7d3" }] : segments;
 
   return (
     <div className="relative h-44 w-44">

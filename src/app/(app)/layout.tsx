@@ -59,7 +59,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <aside className="no-print hidden w-56 shrink-0 flex-col border-r border-ink-200 bg-white md:flex">
         <div className="sticky top-0 flex h-screen flex-col">
           <div className="flex items-center gap-2 border-b border-ink-100 px-4 py-4">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-500 text-sm font-black text-white">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#8a1a28] text-sm font-black text-white">
               M
             </span>
             <div>
@@ -101,7 +101,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="min-w-0 flex-1">
         <header className="no-print sticky top-0 z-20 border-b border-ink-200 bg-white md:hidden">
           <div className="flex items-center justify-between gap-3 px-4 py-2.5">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-500 text-sm font-black text-white">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#8a1a28] text-sm font-black text-white">
               M
             </span>
             <nav className="flex items-center gap-1 overflow-x-auto text-sm">

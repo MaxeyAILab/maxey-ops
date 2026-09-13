@@ -81,6 +81,7 @@ export default async function DashboardPage() {
           <Stat
             label="Committed cost"
             value={phpCompact(active.committed)}
+            tone="bad"
             sub="approved reqs + POs + payroll"
           />
           <Stat
@@ -89,7 +90,7 @@ export default async function DashboardPage() {
             tone={active.margin >= 0 ? "good" : "bad"}
             sub={active.contract > 0 ? `${((active.margin / active.contract) * 100).toFixed(1)}% of contract` : undefined}
           />
-          <Stat label="Retention held" value={phpCompact(active.retention)} tone="brand" sub="by clients" />
+          <Stat label="Retention held" value={phpCompact(active.retention)} tone="warning" sub="by clients" />
         </div>
       </div>
 
@@ -103,6 +104,7 @@ export default async function DashboardPage() {
           <Stat
             label="Committed cost"
             value={phpCompact(done.committed)}
+            tone="bad"
             sub="approved reqs + POs + payroll"
           />
           <Stat
@@ -111,7 +113,7 @@ export default async function DashboardPage() {
             tone={done.margin >= 0 ? "good" : "bad"}
             sub={done.contract > 0 ? `${((done.margin / done.contract) * 100).toFixed(1)}% of contract` : undefined}
           />
-          <Stat label="Retention held" value={phpCompact(done.retention)} tone="brand" sub="by clients" />
+          <Stat label="Retention held" value={phpCompact(done.retention)} tone="warning" sub="by clients" />
         </div>
       </div>
 

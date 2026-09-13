@@ -32,7 +32,7 @@ const FALLBACK_PALETTE = [
   "#7c3aed", // violet
   "#db2777", // pink
   "#0891b2", // cyan
-  "#8a1a28", // brand burgundy
+  "#a03426", // oxide
   "#65a30d", // lime
 ];
 function fallbackColor(name: string): string {

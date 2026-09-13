@@ -98,6 +98,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
           <Stat
             label="Committed cost"
             value={php(committed)}
+            tone="bad"
             sub={`incl. payroll ${php(laborCost)}`}
           />
           <Stat

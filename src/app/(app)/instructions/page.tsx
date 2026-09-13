@@ -167,7 +167,7 @@ export default async function InstructionsPage({
   }
   const weeks = Array.from(weekMap.values()).sort((a, b) => (a.key < b.key ? 1 : -1));
 
-  const AVATAR_COLORS = ["#2563eb", "#d97706", "#059669", "#7c3aed", "#db2777", "#0891b2", "#8a1a28", "#65a30d"];
+  const AVATAR_COLORS = ["#2563eb", "#d97706", "#059669", "#7c3aed", "#db2777", "#0891b2", "#a03426", "#65a30d"];
   function avatarColor(name: string): string {
     let hash = 0;
     for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
