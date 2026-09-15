@@ -5,6 +5,10 @@ import crypto from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
+import { ASSIGNABLE_MENUS } from "@/lib/access";
+
+const ASSIGNABLE_ROLES = ["PM", "FOREMAN", "PURCHASING", "ACCOUNTING", "DRIVER", "OFFICE"] as const;
+const ASSIGNABLE_MENU_HREFS = new Set(ASSIGNABLE_MENUS.map((m) => m.href));
 
 const createSchema = z.object({
   name: z.string().min(1).max(200),
@@ -18,6 +22,10 @@ const createSchema = z.object({
   // Site workers: assign directly to a project roster on creation
   projectId: z.string().optional().or(z.literal("")),
   projectStartDate: z.coerce.date().optional(),
+  // Sign-in access — role picker + tab checklist (only meaningful when email is given)
+  role: z.enum(ASSIGNABLE_ROLES).optional(),
+  useCustomMenus: z.boolean().optional().default(false),
+  customMenus: z.array(z.string()).optional().default([]),
 });
 
 /**
@@ -33,13 +41,17 @@ export const POST = handleApi(async (req: NextRequest) => {
     throw new ApiError(400, "Provide a daily rate or an hourly rate");
   }
 
-  // Role follows department/position; permissions stay minimal by default
+  // Role follows the explicit picker when given (sign-in access section);
+  // falls back to the old department/position heuristic for placeholder
+  // accounts that never log in (no email, no role chosen).
   const role =
-    body.department === "DRIVER"
+    body.role ??
+    (body.department === "DRIVER"
       ? "DRIVER"
       : body.position.toLowerCase().includes("foreman")
         ? "FOREMAN"
-        : "OFFICE";
+        : "OFFICE");
+  const customMenus = body.customMenus.filter((m) => ASSIGNABLE_MENU_HREFS.has(m));
 
   const email =
     body.email ||
@@ -69,6 +81,8 @@ export const POST = handleApi(async (req: NextRequest) => {
         position: body.position,
         dailyRate: body.dailyRate,
         hourlyRate: body.hourlyRate,
+        useCustomMenus: body.useCustomMenus,
+        customMenus,
         // Real login (email given): force a password change on first sign-in
         mustChangePassword: !!body.email,
       },
@@ -100,6 +114,8 @@ export const POST = handleApi(async (req: NextRequest) => {
       dailyRate: body.dailyRate ?? null,
       hourlyRate: body.hourlyRate ?? null,
       assignedProject: project?.name ?? null,
+      role,
+      customMenus: body.useCustomMenus ? customMenus : null,
     },
   });
 

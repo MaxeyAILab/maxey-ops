@@ -3,6 +3,10 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
+import { ASSIGNABLE_MENUS } from "@/lib/access";
+
+const ASSIGNABLE_ROLES = ["PM", "FOREMAN", "PURCHASING", "ACCOUNTING", "DRIVER", "OFFICE"] as const;
+const ASSIGNABLE_MENU_HREFS = new Set(ASSIGNABLE_MENUS.map((m) => m.href));
 
 const updateSchema = z.object({
   name: z.string().min(1).max(200).optional(),
@@ -11,6 +15,10 @@ const updateSchema = z.object({
   hourlyRate: z.coerce.number().positive().optional(),
   phone: z.string().max(30).optional().or(z.literal("")),
   email: z.string().email().optional().or(z.literal("")),
+  // Sign-in access — role picker + tab checklist
+  role: z.enum(ASSIGNABLE_ROLES).optional(),
+  useCustomMenus: z.boolean().optional(),
+  customMenus: z.array(z.string()).optional(),
 });
 
 /**
@@ -25,6 +33,9 @@ export const PATCH = handleApi(
 
     const target = await prisma.user.findUnique({ where: { id: params.id } });
     if (!target) throw new ApiError(404, "Personnel not found");
+    if (body.role && target.role === "OWNER") {
+      throw new ApiError(400, "The owner account's role cannot be changed");
+    }
 
     let email = target.email;
     if (body.email && body.email !== target.email) {
@@ -42,6 +53,8 @@ export const PATCH = handleApi(
       hourlyRate = body.hourlyRate as unknown as typeof hourlyRate;
     }
 
+    const customMenus = body.customMenus?.filter((m) => ASSIGNABLE_MENU_HREFS.has(m));
+
     const updated = await prisma.user.update({
       where: { id: target.id },
       data: {
@@ -51,6 +64,9 @@ export const PATCH = handleApi(
         email,
         dailyRate,
         hourlyRate,
+        role: body.role ?? target.role,
+        useCustomMenus: body.useCustomMenus ?? target.useCustomMenus,
+        customMenus: customMenus ?? target.customMenus,
       },
     });
 
@@ -67,6 +83,8 @@ export const PATCH = handleApi(
         hourlyRate: updated.hourlyRate ? Number(updated.hourlyRate) : null,
         phone: updated.phone,
         email: updated.email,
+        role: updated.role,
+        customMenus: updated.useCustomMenus ? updated.customMenus : null,
       },
     });
 

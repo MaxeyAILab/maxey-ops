@@ -13,6 +13,8 @@ export interface SessionUser {
   department: Department | null;
   clientId: string | null;
   mustChangePassword: boolean;
+  useCustomMenus: boolean;
+  customMenus: string[];
 }
 
 export const authOptions: NextAuthOptions = {
@@ -83,6 +85,8 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       department: true,
       clientId: true,
       name: true,
+      useCustomMenus: true,
+      customMenus: true,
     },
   });
   if (!dbUser?.active) return null;
@@ -93,5 +97,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     department: dbUser.department,
     clientId: dbUser.clientId,
     mustChangePassword: dbUser.mustChangePassword,
+    useCustomMenus: dbUser.useCustomMenus,
+    customMenus: dbUser.customMenus,
   };
 }

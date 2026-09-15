@@ -19,7 +19,9 @@ export const dynamic = "force-dynamic";
 export default async function ProjectReportPage({ params }: { params: { id: string } }) {
   const user = await getSessionUser();
   if (!user) redirect("/login");
-  if (!canAccess(user.role, user.department, "/projects")) redirect("/attendance");
+  if (!canAccess(user.role, user.department, "/projects", user.customMenus, user.useCustomMenus)) {
+    redirect("/attendance");
+  }
 
   const p = await prisma.project.findUnique({
     where: { id: params.id },

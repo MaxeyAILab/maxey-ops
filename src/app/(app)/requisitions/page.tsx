@@ -6,6 +6,7 @@ import { fmtDateTime, php } from "@/lib/format";
 import { Badge, Button, Card, CardHeader, Table, Td, Th } from "@/components/ui";
 import { DeleteRequisitionButton } from "@/components/requisition-actions";
 import { projectOrCategoryLabel, requisitionAmount } from "@/lib/requisitions";
+import { canAccess } from "@/lib/access";
 
 export const metadata = { title: "Requisitions" };
 export const dynamic = "force-dynamic";
@@ -18,7 +19,7 @@ const MONTH_FMT = new Intl.DateTimeFormat("en-PH", {
 
 export default async function RequisitionsPage() {
   const user = await getSessionUser();
-  if (!user || !["OWNER", "PM", "FOREMAN", "PURCHASING", "ACCOUNTING", "DRIVER"].includes(user.role)) {
+  if (!user || !canAccess(user.role, user.department, "/requisitions", user.customMenus, user.useCustomMenus)) {
     redirect("/attendance");
   }
 

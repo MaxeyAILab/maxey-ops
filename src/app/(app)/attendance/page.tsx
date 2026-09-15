@@ -10,7 +10,7 @@ import {
   RemovePersonnelButton,
 } from "@/components/personnel-actions";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
-import type { Attendance } from "@prisma/client";
+import type { Attendance, Role } from "@prisma/client";
 
 export const metadata = { title: "Attendance" };
 export const dynamic = "force-dynamic";
@@ -104,6 +104,9 @@ export default async function AttendancePage() {
       dailyRate: number | null;
       phone: string | null;
       email: string | null;
+      role: Role;
+      useCustomMenus: boolean;
+      customMenus: string[];
       summary: ReturnType<typeof summarize>;
     }[];
   }[] = [];
@@ -115,6 +118,9 @@ export default async function AttendancePage() {
     dailyRate: number | null;
     phone: string | null;
     email: string | null;
+    role: Role;
+    useCustomMenus: boolean;
+    customMenus: string[];
     summary: ReturnType<typeof summarize>;
   }[] = [];
 
@@ -136,6 +142,9 @@ export default async function AttendancePage() {
                   dailyRate: true,
                   phone: true,
                   email: true,
+                  role: true,
+                  useCustomMenus: true,
+                  customMenus: true,
                 },
               },
             },
@@ -157,6 +166,9 @@ export default async function AttendancePage() {
           dailyRate: true,
           phone: true,
           email: true,
+          role: true,
+          useCustomMenus: true,
+          customMenus: true,
         },
       }),
       prisma.attendance.findMany({
@@ -174,6 +186,9 @@ export default async function AttendancePage() {
         dailyRate: a.user.dailyRate ? Number(a.user.dailyRate) : null,
         phone: a.user.phone,
         email: a.user.email,
+        role: a.user.role,
+        useCustomMenus: a.user.useCustomMenus,
+        customMenus: a.user.customMenus,
         summary: summarize(
           weekAttendance.filter((r) => r.userId === a.userId && r.projectId === p.id),
           todayStart
@@ -189,6 +204,9 @@ export default async function AttendancePage() {
       dailyRate: u.dailyRate ? Number(u.dailyRate) : null,
       phone: u.phone,
       email: u.email,
+      role: u.role,
+      useCustomMenus: u.useCustomMenus,
+      customMenus: u.customMenus,
       summary: summarize(
         weekAttendance.filter((r) => r.userId === u.id),
         todayStart
@@ -224,6 +242,9 @@ export default async function AttendancePage() {
       dailyRate: number | null;
       phone: string | null;
       email: string | null;
+      role: Role;
+      useCustomMenus: boolean;
+      customMenus: string[];
       summary: ReturnType<typeof summarize>;
       department?: string;
     }[],
@@ -261,6 +282,9 @@ export default async function AttendancePage() {
                   dailyRate={r.dailyRate}
                   phone={r.phone}
                   email={r.email}
+                  role={r.role}
+                  useCustomMenus={r.useCustomMenus}
+                  customMenus={r.customMenus}
                 />
                 <RemovePersonnelButton userId={r.userId} name={r.name} />
               </Td>

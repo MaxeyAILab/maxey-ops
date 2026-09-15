@@ -23,7 +23,9 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
   const user = await getSessionUser();
   if (!user) redirect("/login");
   if (user.role === "CLIENT") redirect("/portal");
-  if (!canAccess(user.role, user.department, "/projects")) redirect("/attendance");
+  if (!canAccess(user.role, user.department, "/projects", user.customMenus, user.useCustomMenus)) {
+    redirect("/attendance");
+  }
 
   const p = await prisma.project.findUnique({
     where: { id: params.id },

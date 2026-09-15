@@ -6,14 +6,16 @@ import { Badge, Card, CardBody, CardHeader, Table, Td, Th } from "@/components/u
 import { AddItemForm, MovementForm, ProjectMaterialQuickActions } from "@/components/inventory-forms";
 import { AddToolForm, ToolActions } from "@/components/tool-forms";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
+import { canAccess } from "@/lib/access";
 
 export const metadata = { title: "Inventory" };
 export const dynamic = "force-dynamic";
 
 export default async function InventoryPage() {
   const user = await getSessionUser();
-  // Drivers no longer have inventory access (owner's rule)
-  if (!user || !["FOREMAN", "PM", "OWNER", "PURCHASING", "ACCOUNTING"].includes(user.role)) {
+  // Drivers no longer have inventory access by default (owner's rule) —
+  // unless explicitly granted via that account's tab checklist.
+  if (!user || !canAccess(user.role, user.department, "/inventory", user.customMenus, user.useCustomMenus)) {
     redirect("/attendance");
   }
 

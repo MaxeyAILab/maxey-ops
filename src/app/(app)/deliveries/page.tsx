@@ -6,6 +6,7 @@ import { fmtDate, fmtDateTime, php } from "@/lib/format";
 import { Badge, Card, CardBody, CardHeader, Table, Td, Th } from "@/components/ui";
 import { DeleteDeliveryButton } from "@/components/delivery-actions";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
+import { canAccess } from "@/lib/access";
 
 export const metadata = { title: "Deliveries" };
 export const dynamic = "force-dynamic";
@@ -36,7 +37,7 @@ function deliveredCost(poItems: unknown, checklist: unknown): number {
 
 export default async function DeliveriesPage() {
   const user = await getSessionUser();
-  if (!user || !["FOREMAN", "PM", "OWNER", "PURCHASING", "ACCOUNTING", "DRIVER"].includes(user.role)) {
+  if (!user || !canAccess(user.role, user.department, "/deliveries", user.customMenus, user.useCustomMenus)) {
     redirect("/attendance");
   }
 

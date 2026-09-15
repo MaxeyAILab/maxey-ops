@@ -6,13 +6,14 @@ import { fmtDate, fmtDateTime, php } from "@/lib/format";
 import { Badge, Card, CardHeader, Table, Td, Th } from "@/components/ui";
 import { CancelPoButton } from "@/components/requisition-actions";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
+import { canAccess } from "@/lib/access";
 
 export const metadata = { title: "Purchasing" };
 export const dynamic = "force-dynamic";
 
 export default async function PurchasingPage() {
   const user = await getSessionUser();
-  if (!user || !["OWNER", "PURCHASING", "ACCOUNTING", "FOREMAN", "DRIVER"].includes(user.role)) {
+  if (!user || !canAccess(user.role, user.department, "/purchasing", user.customMenus, user.useCustomMenus)) {
     redirect("/attendance");
   }
 

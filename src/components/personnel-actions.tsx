@@ -1,8 +1,77 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, CardBody, CardHeader, Input, Label, Select } from "@/components/ui";
+import { ASSIGNABLE_MENUS, allowedMenus } from "@/lib/access";
+import type { Role } from "@prisma/client";
+
+const ASSIGNABLE_ROLES: { value: Role; label: string }[] = [
+  { value: "OFFICE", label: "Office Staff" },
+  { value: "FOREMAN", label: "Foreman" },
+  { value: "PM", label: "Project Manager" },
+  { value: "PURCHASING", label: "Purchasing" },
+  { value: "ACCOUNTING", label: "Accounting" },
+  { value: "DRIVER", label: "Driver" },
+];
+
+/** Role picker + tab checklist — what a sign-in account can see and do.
+ * Checking a role pre-checks its normal tabs; the checklist is then the
+ * authoritative list actually granted (can add or remove from the default). */
+function SignInAccessFields({
+  role,
+  onRoleChange,
+  checkedMenus,
+  onCheckedMenusChange,
+}: {
+  role: Role;
+  onRoleChange: (r: Role) => void;
+  checkedMenus: Set<string>;
+  onCheckedMenusChange: (m: Set<string>) => void;
+}) {
+  return (
+    <div className="space-y-3 rounded-lg border border-ink-100 bg-ink-50/50 p-3">
+      <div>
+        <Label htmlFor="pRole">Role (only matters if they will log in)</Label>
+        <Select
+          id="pRole"
+          value={role}
+          onChange={(e) => onRoleChange(e.target.value as Role)}
+        >
+          {ASSIGNABLE_ROLES.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.label}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <div>
+        <Label>Tabs they can access</Label>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-4">
+          {ASSIGNABLE_MENUS.map((m) => (
+            <label key={m.href} className="flex items-center gap-1.5 text-sm text-ink-700">
+              <input
+                type="checkbox"
+                checked={checkedMenus.has(m.href)}
+                onChange={(e) => {
+                  const next = new Set(checkedMenus);
+                  if (e.target.checked) next.add(m.href);
+                  else next.delete(m.href);
+                  onCheckedMenusChange(next);
+                }}
+              />
+              {m.label}
+            </label>
+          ))}
+        </div>
+        <p className="mt-1 text-xs text-ink-400">
+          Pre-checked from the role above — check or uncheck any tab to customize exactly what
+          this account can see.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 const POSITIONS = [
   "Foreman",
@@ -38,6 +107,18 @@ export function AddPersonnelForm({
   const [error, setError] = useState("");
   const [created, setCreated] = useState("");
   const [department, setDepartment] = useState("SITE");
+  const [role, setRole] = useState<Role>("OFFICE");
+  const [checkedMenus, setCheckedMenus] = useState<Set<string>>(new Set(allowedMenus("OFFICE", null)));
+
+  useEffect(() => {
+    setCheckedMenus(new Set(allowedMenus(role, null)));
+  }, [role]);
+
+  function onDepartmentChange(next: string) {
+    setDepartment(next);
+    if (next === "DRIVER") setRole("DRIVER");
+    else if (role === "DRIVER") setRole("OFFICE");
+  }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -58,6 +139,9 @@ export function AddPersonnelForm({
         projectId: department === "SITE" ? fd.get("projectId") : undefined,
         projectStartDate:
           department === "SITE" && fd.get("projectId") ? fd.get("projectStartDate") : undefined,
+        role,
+        useCustomMenus: true,
+        customMenus: Array.from(checkedMenus),
       }),
     });
     setBusy(false);
@@ -65,6 +149,7 @@ export function AddPersonnelForm({
       const j = await res.json();
       setCreated(j.project ? `${j.name} added and assigned to ${j.project}.` : `${j.name} added.`);
       (e.target as HTMLFormElement).reset?.();
+      setRole("OFFICE");
       router.refresh();
       onDone?.();
     } else {
@@ -97,7 +182,7 @@ export function AddPersonnelForm({
           <Select
             id="pDept"
             value={department}
-            onChange={(e) => setDepartment(e.target.value)}
+            onChange={(e) => onDepartmentChange(e.target.value)}
             required
           >
             <option value="SITE">On Site (worker)</option>
@@ -155,6 +240,12 @@ export function AddPersonnelForm({
           <Input id="pPass" name="password" type="text" minLength={6} placeholder="min 6 characters" />
         </div>
       </div>
+      <SignInAccessFields
+        role={role}
+        onRoleChange={setRole}
+        checkedMenus={checkedMenus}
+        onCheckedMenusChange={setCheckedMenus}
+      />
       {error && <p className="text-sm text-red-600">{error}</p>}
       {created && <p className="text-sm text-emerald-600">{created}</p>}
       <Button type="submit" disabled={busy}>
@@ -192,7 +283,7 @@ export function AddPersonnelSection({ projects = [] }: { projects?: ProjectOptio
   );
 }
 
-/** "Edit personnel" — update name, position, rate, and contact info. */
+/** "Edit personnel" — update name, position, rate, contact info, and sign-in access. */
 export function EditPersonnelButton({
   userId,
   name,
@@ -200,6 +291,9 @@ export function EditPersonnelButton({
   dailyRate,
   phone,
   email,
+  role: initialRole,
+  useCustomMenus: initialUseCustomMenus,
+  customMenus: initialCustomMenus,
 }: {
   userId: string;
   name: string;
@@ -207,11 +301,27 @@ export function EditPersonnelButton({
   dailyRate?: number | null;
   phone?: string | null;
   email?: string | null;
+  role?: Role;
+  useCustomMenus?: boolean;
+  customMenus?: string[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [role, setRole] = useState<Role>(initialRole ?? "OFFICE");
+  const [checkedMenus, setCheckedMenus] = useState<Set<string>>(
+    new Set(
+      initialUseCustomMenus && initialCustomMenus
+        ? initialCustomMenus
+        : allowedMenus(initialRole ?? "OFFICE", null)
+    )
+  );
+
+  function onRoleChange(next: Role) {
+    setRole(next);
+    setCheckedMenus(new Set(allowedMenus(next, null)));
+  }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -227,6 +337,9 @@ export function EditPersonnelButton({
         dailyRate: fd.get("dailyRate") || undefined,
         phone: fd.get("phone"),
         email: fd.get("email"),
+        role,
+        useCustomMenus: true,
+        customMenus: Array.from(checkedMenus),
       }),
     });
     setBusy(false);
@@ -307,6 +420,12 @@ export function EditPersonnelButton({
                     <Label htmlFor={`eEmail-${userId}`}>Email</Label>
                     <Input id={`eEmail-${userId}`} name="email" type="email" defaultValue={email ?? ""} />
                   </div>
+                  <SignInAccessFields
+                    role={role}
+                    onRoleChange={onRoleChange}
+                    checkedMenus={checkedMenus}
+                    onCheckedMenusChange={setCheckedMenus}
+                  />
                   {error && <p className="text-sm text-red-600">{error}</p>}
                   <div className="flex justify-end gap-2 pt-1">
                     <Button type="button" variant="secondary" onClick={() => setOpen(false)}>

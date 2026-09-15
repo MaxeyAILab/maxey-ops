@@ -50,7 +50,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (user.role === "CLIENT") redirect("/portal");
   if (user.mustChangePassword) redirect("/change-password"); // temp password issued
 
-  const menus = allowedMenus(user.role, user.department);
+  const menus = allowedMenus(user.role, user.department, user.customMenus, user.useCustomMenus);
   const items = nav.filter((n) => menus.includes(n.href));
 
   return (

@@ -192,6 +192,8 @@ model User {
   hourlyRate   Decimal?    @db.Decimal(12, 2)
   active       Boolean     @default(true)
   mustChangePassword Boolean @default(false) // temp password issued — force change on first login
+  useCustomMenus Boolean   @default(false) // true = customMenus is authoritative, ignore role's default tabs
+  customMenus  String[]    @default([]) // Owner's per-account tab checklist override, when useCustomMenus
   clientId     String? // portal accounts link to a Client
   client       Client?     @relation(fields: [clientId], references: [id])
   createdAt    DateTime    @default(now())

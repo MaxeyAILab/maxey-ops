@@ -12,12 +12,13 @@ import {
   ItemsCostingTable,
 } from "@/components/requisition-actions";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
+import { canAccess } from "@/lib/access";
 
 export const dynamic = "force-dynamic";
 
 export default async function RequisitionDetailPage({ params }: { params: { id: string } }) {
   const user = await getSessionUser();
-  if (!user || !["OWNER", "PM", "FOREMAN", "PURCHASING", "ACCOUNTING", "DRIVER"].includes(user.role)) {
+  if (!user || !canAccess(user.role, user.department, "/requisitions", user.customMenus, user.useCustomMenus)) {
     redirect("/attendance");
   }
 

@@ -1,6 +1,22 @@
 import type { Department, Role } from "@prisma/client";
 
 /**
+ * Tabs an Owner can grant to a staff account via the sign-in checklist
+ * (Attendance → Add/Edit personnel). Owner-only tabs (Dashboard, Finance,
+ * Leads, People) are never offered here — those stay tied to the OWNER role.
+ */
+export const ASSIGNABLE_MENUS: { href: string; label: string }[] = [
+  { href: "/projects", label: "Projects" },
+  { href: "/requisitions", label: "Requisitions" },
+  { href: "/purchasing", label: "Purchasing" },
+  { href: "/deliveries", label: "Deliveries" },
+  { href: "/inventory", label: "Inventory" },
+  { href: "/instructions", label: "Instructions" },
+  { href: "/attendance", label: "Attendance" },
+  { href: "/payroll", label: "Payroll" },
+];
+
+/**
  * Menu access matrix (owner's rules, 2026-07-06):
  * - Owner only: Dashboard, Leads, People (and all account creation)
  * - Foreman: Projects, Requisitions, Purchasing, Deliveries, Inventory,
@@ -12,8 +28,13 @@ import type { Department, Role } from "@prisma/client";
  * PM/Purchasing/Accounting keep their working menus minus Owner-only ones.
  * Instructions now doubles as the employee assignment tracker (2026-08-14)
  * — every non-Client role gets it so an assignee can reach their own task.
+ *
+ * A per-account checklist can override this default (2026-09-15): when a
+ * user has useCustomMenus set, their customMenus list is authoritative
+ * instead of the role default below, so the Owner can grant (or withhold)
+ * exactly the tabs a specific hire needs regardless of their role bundle.
  */
-export function allowedMenus(role: Role, _department: Department | null): string[] {
+function roleDefaultMenus(role: Role): string[] {
   switch (role) {
     case "OWNER":
       return [
@@ -72,10 +93,26 @@ export function allowedMenus(role: Role, _department: Department | null): string
   }
 }
 
+const OWNER_ONLY_MENUS = new Set(["/dashboard", "/finance", "/leads", "/people"]);
+
+export function allowedMenus(
+  role: Role,
+  _department: Department | null,
+  customMenus: string[] = [],
+  useCustomMenus = false
+): string[] {
+  if (!useCustomMenus) return roleDefaultMenus(role);
+  // Even an explicit checklist can never reach Owner-only tabs — those stay
+  // tied to the OWNER role, not to any per-account override.
+  return customMenus.filter((m) => !OWNER_ONLY_MENUS.has(m));
+}
+
 export function canAccess(
   role: Role,
   department: Department | null,
-  menu: string
+  menu: string,
+  customMenus: string[] = [],
+  useCustomMenus = false
 ): boolean {
-  return allowedMenus(role, department).includes(menu);
+  return allowedMenus(role, department, customMenus, useCustomMenus).includes(menu);
 }

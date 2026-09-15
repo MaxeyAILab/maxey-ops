@@ -39,7 +39,9 @@ export default async function ProjectsPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
   if (user.role === "CLIENT") redirect("/portal");
-  if (!canAccess(user.role, user.department, "/projects")) redirect("/attendance");
+  if (!canAccess(user.role, user.department, "/projects", user.customMenus, user.useCustomMenus)) {
+    redirect("/attendance");
+  }
 
   const projects = await getProjects();
   const showMoney = FINANCE_ROLES.includes(user.role) || user.role === "PM";
