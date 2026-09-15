@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import { VCDC_HEADER_JPG_BASE64 } from "./vcdc-header-image";
 
 /**
  * Renders the company's paper "Requisition for Tools and Materials" slip as
@@ -30,6 +31,7 @@ const PAGE_W = 612; // US Letter, matching the source form
 const PAGE_H = 792;
 const MARGIN = 48;
 const MIN_ROWS = 12; // the paper form has 12 blank lines
+const HEADER_IMG_ASPECT = 400 / 2048; // height / width of the source banner
 
 function fmtQty(n: number): string {
   return Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
@@ -86,7 +88,17 @@ export async function buildRequisitionPdf(rawData: RequisitionPdfData): Promise<
   const ink = rgb(0.09, 0.1, 0.11);
   const rule = rgb(0.6, 0.63, 0.62);
 
-  let y = PAGE_H - MARGIN;
+  const headerImage = await doc.embedJpg(Buffer.from(VCDC_HEADER_JPG_BASE64, "base64"));
+  const headerImgW = PAGE_W - MARGIN * 2;
+  const headerImgH = headerImgW * HEADER_IMG_ASPECT;
+  page.drawImage(headerImage, {
+    x: MARGIN,
+    y: PAGE_H - MARGIN - headerImgH,
+    width: headerImgW,
+    height: headerImgH,
+  });
+
+  let y = PAGE_H - MARGIN - headerImgH - 22;
 
   drawCenteredText(page, "REQUISITION FOR TOOLS AND MATERIALS", PAGE_W / 2, y, 14, bold);
   y -= 30;
