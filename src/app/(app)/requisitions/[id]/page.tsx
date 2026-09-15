@@ -73,6 +73,12 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
         <div className="flex items-center gap-3">
           <Badge value={r.urgency} />
           <Badge value={r.status} />
+          <a
+            href={`/api/requisitions/${r.id}/pdf`}
+            className="rounded-lg border border-ink-200 px-3 py-1.5 text-sm font-medium text-ink-700 hover:bg-ink-50"
+          >
+            ⬇ Download
+          </a>
           {canDeleteRequisition && (
             <DeleteRequisitionButton requisitionId={r.id} redirectTo="/requisitions" />
           )}
