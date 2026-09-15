@@ -117,7 +117,7 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <Card style={{ backgroundColor: "#fffbeb", borderColor: "#fde68a" }}>
+      <Card className="border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/30">
         <CardHeader
           title="Non-project expenses"
           subtitle="Emergency, office, and warehouse-supply purchases — not counted toward any project's contract, cost, or margin above"

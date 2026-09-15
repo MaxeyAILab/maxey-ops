@@ -4,6 +4,75 @@
 
 :root {
   color-scheme: light;
+
+  /* ink (sage-cement neutrals) and brand (teal) as "R G B" triples so
+     Tailwind's rgb(var(--x) / <alpha-value>) pattern can apply opacity
+     modifiers (e.g. bg-ink-50/40). Values match tailwind.config.ts's old
+     fixed hex palette exactly — light mode is visually unchanged. */
+  --ink-50: 250 251 250;
+  --ink-100: 230 233 230;
+  --ink-200: 210 215 211;
+  --ink-300: 185 192 186;
+  --ink-400: 139 148 145;
+  --ink-500: 116 128 124;
+  --ink-600: 90 100 98;
+  --ink-700: 60 68 66;
+  --ink-800: 38 45 43;
+  --ink-900: 22 26 27;
+  --ink-950: 13 16 16;
+
+  --brand-50: 234 245 242;
+  --brand-100: 211 233 227;
+  --brand-200: 168 211 199;
+  --brand-300: 120 184 167;
+  --brand-400: 66 150 133;
+  --brand-500: 11 110 90;
+  --brand-600: 9 92 75;
+  --brand-700: 7 73 60;
+  --brand-800: 5 54 44;
+  --brand-900: 3 35 29;
+  --brand-950: 1 21 18;
+}
+
+/* Dark theme — the same 11-step ramps, re-authored (not a naive invert) so
+   the sage/teal hue still reads as intentional against a dark ground.
+   Index meaning stays the same everywhere it's used (ink-50 = lightest
+   surface weight, ink-900 = strongest text weight): the SHADE VALUES flip
+   so bg-ink-50 becomes a dark elevated surface, text-ink-900 becomes
+   near-white, etc. — every existing utility class picks this up with zero
+   per-component changes.
+
+   Scoped to .app-shell (the authenticated app's own layout, not :root)
+   deliberately: the "dark" class still lands on <html> immediately so the
+   toggle can apply before first paint (see THEME_INIT_SCRIPT), but the
+   public marketing site and the client portal don't render .app-shell, so
+   toggling dark mode in the staff app never bleeds into those pages. */
+html.dark .app-shell {
+  color-scheme: dark;
+
+  --ink-50: 30 36 34; /* elevated surface (cards, hover) */
+  --ink-100: 20 24 23; /* page background */
+  --ink-200: 45 53 50; /* hairline borders */
+  --ink-300: 65 75 71; /* stronger borders */
+  --ink-400: 122 132 128; /* muted text/icons */
+  --ink-500: 139 148 145; /* mid gray */
+  --ink-600: 170 179 175; /* secondary text */
+  --ink-700: 198 205 201; /* stronger secondary text */
+  --ink-800: 221 226 223; /* near-primary text */
+  --ink-900: 241 243 241; /* primary text */
+  --ink-950: 251 252 251; /* max-contrast text */
+
+  --brand-50: 20 38 31;
+  --brand-100: 27 53 44;
+  --brand-200: 32 74 61;
+  --brand-300: 31 101 82;
+  --brand-400: 34 136 111;
+  --brand-500: 17 125 102; /* primary button fill — still supports white text */
+  --brand-600: 20 160 133; /* links/accents — brightened for contrast on dark */
+  --brand-700: 61 193 163;
+  --brand-800: 120 217 193;
+  --brand-900: 179 236 223;
+  --brand-950: 217 245 236;
 }
 
 body {

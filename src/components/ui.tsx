@@ -12,7 +12,7 @@ export function Card({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cx("rounded-sm border border-ink-200 bg-white", className)}
+      className={cx("rounded-sm border border-ink-200 bg-ink-50", className)}
       {...props}
     />
   );
@@ -55,7 +55,7 @@ export function Button({
   const styles: Record<ButtonVariant, string> = {
     primary: "bg-brand-500 text-white hover:bg-brand-600 focus-visible:ring-brand-500",
     secondary:
-      "border border-ink-200 bg-white text-ink-700 hover:bg-ink-50 focus-visible:ring-ink-400",
+      "border border-ink-200 bg-ink-50 text-ink-700 hover:bg-ink-100 focus-visible:ring-ink-400",
     danger: "bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500",
     success: "bg-emerald-600 text-white hover:bg-emerald-700 focus-visible:ring-emerald-500",
     ghost: "text-ink-600 hover:bg-ink-100 focus-visible:ring-ink-400",
@@ -80,7 +80,7 @@ export function Input({
   return (
     <input
       className={cx(
-        "block min-h-[44px] w-full rounded-sm border border-ink-200 bg-white px-3 text-sm text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500",
+        "block min-h-[44px] w-full rounded-sm border border-ink-200 bg-ink-50 px-3 text-sm text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500",
         className
       )}
       {...props}
@@ -95,7 +95,7 @@ export function Textarea({
   return (
     <textarea
       className={cx(
-        "block w-full rounded-sm border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500",
+        "block w-full rounded-sm border border-ink-200 bg-ink-50 px-3 py-2.5 text-sm text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500",
         className
       )}
       {...props}
@@ -110,7 +110,7 @@ export function Select({
   return (
     <select
       className={cx(
-        "block min-h-[44px] w-full rounded-sm border border-ink-200 bg-white px-3 text-sm text-ink-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500",
+        "block min-h-[44px] w-full rounded-sm border border-ink-200 bg-ink-50 px-3 text-sm text-ink-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500",
         className
       )}
       {...props}
@@ -130,56 +130,66 @@ export function Label({
   );
 }
 
+// Each pastel tone gets a dark: variant (translucent-on-dark background,
+// lightened text) so status chips stay legible against a dark page — the
+// ink-100/ink-600 tones already flip for free via CSS-variable colors.
+const blue = "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300";
+const amber = "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300";
+const violet = "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300";
+const cyan = "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-300";
+const teal = "bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300";
+const red = "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300";
+
 const badgeTones: Record<string, string> = {
   // lead pipeline
-  NEW: "bg-blue-100 text-blue-800",
-  UNDER_REVIEW: "bg-amber-100 text-amber-800",
-  ESTIMATE_IN_PROGRESS: "bg-violet-100 text-violet-800",
-  QUOTATION_SENT: "bg-cyan-100 text-cyan-800",
-  WON: "bg-teal-100 text-teal-800",
-  LOST: "bg-red-100 text-red-800", // shared with tool/equipment "Lost" status
+  NEW: blue,
+  UNDER_REVIEW: amber,
+  ESTIMATE_IN_PROGRESS: violet,
+  QUOTATION_SENT: cyan,
+  WON: teal,
+  LOST: red, // shared with tool/equipment "Lost" status
   // requisitions
-  SUBMITTED: "bg-blue-100 text-blue-800",
-  APPROVED: "bg-teal-100 text-teal-800",
-  REJECTED: "bg-red-100 text-red-800",
-  PO_ISSUED: "bg-cyan-100 text-cyan-800",
-  DELIVERED: "bg-teal-100 text-teal-800",
+  SUBMITTED: blue,
+  APPROVED: teal,
+  REJECTED: red,
+  PO_ISSUED: cyan,
+  DELIVERED: teal,
   // change orders / payments
-  PENDING_CLIENT: "bg-amber-100 text-amber-800",
+  PENDING_CLIENT: amber,
   PENDING: "bg-ink-100 text-ink-600",
-  DUE: "bg-amber-100 text-amber-800",
-  PAID: "bg-teal-100 text-teal-800",
+  DUE: amber,
+  PAID: teal,
   // projects (construction lifecycle)
-  SITE_SURVEY: "bg-violet-100 text-violet-800",
-  MOBILIZATION: "bg-blue-100 text-blue-800",
-  ONGOING_CONSTRUCTION: "bg-teal-100 text-teal-800",
+  SITE_SURVEY: violet,
+  MOBILIZATION: blue,
+  ONGOING_CONSTRUCTION: teal,
   NOT_ACTIVE: "bg-ink-100 text-ink-600",
-  ON_HOLD: "bg-amber-100 text-amber-800",
-  FOR_PUNCHLIST: "bg-cyan-100 text-cyan-800",
-  TURNED_OVER: "bg-blue-100 text-blue-800",
+  ON_HOLD: amber,
+  FOR_PUNCHLIST: cyan,
+  TURNED_OVER: blue,
   CANCELLED: "bg-ink-100 text-ink-600", // PO status
   // urgency
   LOW: "bg-ink-100 text-ink-600",
-  NORMAL: "bg-blue-100 text-blue-800",
-  HIGH: "bg-amber-100 text-amber-800",
-  CRITICAL: "bg-red-100 text-red-800",
+  NORMAL: blue,
+  HIGH: amber,
+  CRITICAL: red,
   // PO
-  OPEN: "bg-blue-100 text-blue-800",
-  PARTIALLY_DELIVERED: "bg-amber-100 text-amber-800",
+  OPEN: blue,
+  PARTIALLY_DELIVERED: amber,
   // quotation
   DRAFT: "bg-ink-100 text-ink-600",
-  SENT: "bg-cyan-100 text-cyan-800",
-  ACCEPTED: "bg-teal-100 text-teal-800",
+  SENT: cyan,
+  ACCEPTED: teal,
   // tool/equipment status
   IN_WAREHOUSE: "bg-ink-100 text-ink-600",
-  ON_SITE: "bg-teal-100 text-teal-800",
-  UNDER_REPAIR: "bg-amber-100 text-amber-800",
+  ON_SITE: teal,
+  UNDER_REPAIR: amber,
   // site instructions / assignments
   NOT_STARTED: "bg-ink-100 text-ink-600",
-  IN_PROGRESS: "bg-blue-100 text-blue-800",
-  FOR_REVIEW: "bg-violet-100 text-violet-800",
-  COMPLETED: "bg-teal-100 text-teal-800",
-  NEEDS_REVISION: "bg-red-100 text-red-800",
+  IN_PROGRESS: blue,
+  FOR_REVIEW: violet,
+  COMPLETED: teal,
+  NEEDS_REVISION: red,
 };
 
 export function Badge({ value, label }: { value: string; label?: string }) {

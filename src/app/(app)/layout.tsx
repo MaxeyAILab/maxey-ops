@@ -4,6 +4,7 @@ import { getSessionUser } from "@/lib/auth";
 import { allowedMenus } from "@/lib/access";
 import { SyncStatus } from "@/components/sync-status";
 import { SignOutButton } from "@/components/signout-button";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface NavItem {
   href: string;
@@ -54,9 +55,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const items = nav.filter((n) => menus.includes(n.href));
 
   return (
-    <div className="min-h-screen md:flex">
+    <div className="app-shell min-h-screen bg-ink-100 text-ink-900 md:flex">
       {/* Left sidebar — command panel (desktop) */}
-      <aside className="no-print hidden w-56 shrink-0 flex-col border-r border-ink-200 bg-white md:flex">
+      <aside className="no-print hidden w-56 shrink-0 flex-col border-r border-ink-200 bg-ink-50 md:flex">
         <div className="sticky top-0 flex h-screen flex-col">
           <div className="flex items-center gap-2 border-b border-ink-100 px-4 py-4">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#8a1a28] text-sm font-black text-white">
@@ -91,7 +92,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <div className="text-[10px] uppercase tracking-wide text-ink-400">{user.role}</div>
             <div className="mt-2 flex items-center justify-between gap-2">
               <SyncStatus />
-              <SignOutButton />
+              <div className="flex items-center gap-1">
+                <ThemeToggle />
+                <SignOutButton />
+              </div>
             </div>
           </div>
         </div>
@@ -99,7 +103,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
       {/* Mobile top bar (field phones) */}
       <div className="min-w-0 flex-1">
-        <header className="no-print sticky top-0 z-20 border-b border-ink-200 bg-white md:hidden">
+        <header className="no-print sticky top-0 z-20 border-b border-ink-200 bg-ink-50 md:hidden">
           <div className="flex items-center justify-between gap-3 px-4 py-2.5">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#8a1a28] text-sm font-black text-white">
               M
@@ -117,6 +121,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </nav>
             <div className="flex shrink-0 items-center gap-2">
               <SyncStatus />
+              <ThemeToggle />
               <SignOutButton />
             </div>
           </div>

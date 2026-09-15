@@ -45,7 +45,7 @@ export function CreatePortalAccessForm({ projectId }: { projectId: string }) {
         <p className="mt-2 text-emerald-900">
           Send these to the client — the temporary password is shown only once:
         </p>
-        <div className="mt-2 rounded-lg bg-white p-3 font-mono text-sm text-ink-800">
+        <div className="mt-2 rounded-lg bg-ink-50 p-3 font-mono text-sm text-ink-800">
           <div>Portal: {typeof window !== "undefined" ? window.location.origin : ""}/login</div>
           <div>Email: {issued.email}</div>
           <div>Temporary password: {issued.tempPassword}</div>

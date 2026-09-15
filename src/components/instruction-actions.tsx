@@ -290,20 +290,22 @@ export function InstructionReviewForm({
   );
 }
 
-const STATUS_CELL_COLORS: Record<string, { bg: string; text: string }> = {
-  NOT_STARTED: { bg: "#f1f5f9", text: "#475569" },
-  IN_PROGRESS: { bg: "#dbeafe", text: "#1e40af" },
-  ON_HOLD: { bg: "#fef3c7", text: "#92400e" },
-  FOR_REVIEW: { bg: "#ede9fe", text: "#5b21b6" },
-  COMPLETED: { bg: "#d1fae5", text: "#065f46" },
-  CANCELLED: { bg: "#f1f5f9", text: "#475569" },
+// Tailwind classes (not inline hex) so these pills pick up a dark: variant
+// like Badge's tones do, instead of staying a fixed light color always.
+const STATUS_CELL_COLORS: Record<string, string> = {
+  NOT_STARTED: "bg-slate-100 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300",
+  IN_PROGRESS: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
+  ON_HOLD: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
+  FOR_REVIEW: "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300",
+  COMPLETED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
+  CANCELLED: "bg-slate-100 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300",
 };
 
-const PRIORITY_CELL_COLORS: Record<string, { bg: string; text: string }> = {
-  LOW: { bg: "#f1f5f9", text: "#475569" },
-  NORMAL: { bg: "#dbeafe", text: "#1e40af" },
-  HIGH: { bg: "#fef3c7", text: "#92400e" },
-  CRITICAL: { bg: "#fee2e2", text: "#991b1b" },
+const PRIORITY_CELL_COLORS: Record<string, string> = {
+  LOW: "bg-slate-100 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300",
+  NORMAL: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
+  HIGH: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
+  CRITICAL: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
 };
 
 const pillSelectClass =
@@ -329,10 +331,7 @@ export function BoardStatusCell({
 
   if (!canUpdate) {
     return (
-      <span
-        className="inline-block rounded-md px-2 py-1 text-xs font-medium"
-        style={{ backgroundColor: tone.bg, color: tone.text }}
-      >
+      <span className={`inline-block rounded-md px-2 py-1 text-xs font-medium ${tone}`}>
         {STATUS_OPTIONS.find((o) => o.value === value)?.label ?? value}
       </span>
     );
@@ -356,8 +355,7 @@ export function BoardStatusCell({
       value={value}
       onChange={onChange}
       disabled={busy}
-      style={{ backgroundColor: tone.bg, color: tone.text }}
-      className={pillSelectClass}
+      className={`${pillSelectClass} ${tone}`}
     >
       {STATUS_OPTIONS.map((o) => (
         <option key={o.value} value={o.value}>
@@ -385,10 +383,7 @@ export function BoardPriorityCell({
 
   if (!canEdit) {
     return (
-      <span
-        className="inline-block rounded-md px-2 py-1 text-xs font-medium"
-        style={{ backgroundColor: tone.bg, color: tone.text }}
-      >
+      <span className={`inline-block rounded-md px-2 py-1 text-xs font-medium ${tone}`}>
         {PRIORITY_OPTIONS.find((o) => o.value === value)?.label ?? value}
       </span>
     );
@@ -412,8 +407,7 @@ export function BoardPriorityCell({
       value={value}
       onChange={onChange}
       disabled={busy}
-      style={{ backgroundColor: tone.bg, color: tone.text }}
-      className={pillSelectClass}
+      className={`${pillSelectClass} ${tone}`}
     >
       {PRIORITY_OPTIONS.map((o) => (
         <option key={o.value} value={o.value}>

@@ -156,7 +156,7 @@ export function ProjectStatusSelect({
       value={current}
       disabled={busy}
       onChange={(e) => change(e.target.value)}
-      className="min-h-[38px] rounded-lg border border-ink-200 bg-white px-2 text-xs font-medium text-ink-700 focus:border-brand-500 focus:outline-none"
+      className="min-h-[38px] rounded-lg border border-ink-200 bg-ink-50 px-2 text-xs font-medium text-ink-700 focus:border-brand-500 focus:outline-none"
     >
       <optgroup label="Prospective">
         {PROSPECTIVE_STATUSES.map((s) => (

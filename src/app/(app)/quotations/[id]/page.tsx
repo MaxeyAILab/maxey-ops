@@ -46,7 +46,7 @@ export default async function QuotationPage({ params }: { params: { id: string }
       </div>
 
       {/* Letterhead document */}
-      <div className="mx-auto max-w-3xl rounded-xl border border-ink-200 bg-white p-8 shadow-sm print:border-0 print:shadow-none">
+      <div className="mx-auto max-w-3xl rounded-xl border border-ink-200 bg-ink-50 p-8 shadow-sm print:border-0 print:shadow-none">
         <div className="flex items-start justify-between border-b-4 border-brand-500 pb-5">
           <div className="flex items-center gap-3">
             <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-500 text-xl font-black text-white">
@@ -131,7 +131,7 @@ export default async function QuotationPage({ params }: { params: { id: string }
         </div>
 
         {q.notes && (
-          <p className="mt-6 whitespace-pre-wrap rounded-lg bg-ink-50 p-3 text-xs text-ink-600 print:bg-transparent print:p-0">
+          <p className="mt-6 whitespace-pre-wrap rounded-lg bg-ink-100 p-3 text-xs text-ink-600 print:bg-transparent print:p-0">
             {q.notes}
           </p>
         )}

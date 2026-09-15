@@ -93,13 +93,13 @@ export function LeadsBoard({
                 e.preventDefault();
                 drop(col.status);
               }}
-              className={`flex w-72 shrink-0 flex-col rounded-xl border-t-4 bg-ink-50 ${col.accent} ${
+              className={`flex w-72 shrink-0 flex-col rounded-xl border-t-4 bg-ink-100 ${col.accent} ${
                 overColumn === col.status ? "ring-2 ring-brand-400" : ""
               }`}
             >
               <div className="flex items-center justify-between px-3 py-2.5">
                 <span className="text-sm font-semibold text-ink-700">{col.label}</span>
-                <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-ink-500">
+                <span className="rounded-full bg-ink-50 px-2 py-0.5 text-xs font-medium text-ink-500">
                   {items.length}
                 </span>
               </div>
@@ -115,7 +115,7 @@ export function LeadsBoard({
                       draggable
                       onDragStart={() => setDraggingId(lead.id)}
                       onDragEnd={() => setDraggingId(null)}
-                      className={`cursor-grab rounded-lg border border-ink-100 bg-white p-3 shadow-sm transition-opacity hover:shadow-md active:cursor-grabbing ${
+                      className={`cursor-grab rounded-lg border border-ink-100 bg-ink-50 p-3 shadow-sm transition-opacity hover:shadow-md active:cursor-grabbing ${
                         draggingId === lead.id ? "opacity-40" : ""
                       }`}
                     >

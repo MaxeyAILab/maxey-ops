@@ -318,7 +318,7 @@ export default async function AttendancePage() {
       </div>
 
       {isAdmin && sharedDeviceWarnings.length > 0 && (
-        <Card style={{ borderColor: "#fecaca", backgroundColor: "#fef2f2" }}>
+        <Card className="border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/30">
           <CardHeader
             title={`⚠ ${sharedDeviceWarnings.length} device${sharedDeviceWarnings.length === 1 ? "" : "s"} shared across staff this week`}
             subtitle="The same browser/device tapped Time In for more than one person — not proof of anything (a shared office tablet triggers this too), just worth a look"

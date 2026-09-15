@@ -66,7 +66,7 @@ export default async function ProjectReportPage({ params }: { params: { id: stri
         <PrintButton label="Print / PDF" />
       </div>
 
-      <div className="mx-auto max-w-3xl rounded-xl border border-ink-200 bg-white p-8 shadow-sm print:border-0 print:shadow-none">
+      <div className="mx-auto max-w-3xl rounded-xl border border-ink-200 bg-ink-50 p-8 shadow-sm print:border-0 print:shadow-none">
         {/* Letterhead */}
         <div className="flex items-start justify-between border-b-4 border-brand-500 pb-5">
           <div className="flex items-center gap-3">
@@ -112,7 +112,7 @@ export default async function ProjectReportPage({ params }: { params: { id: stri
         </div>
 
         {showMoney && (
-          <div className="mt-4 grid grid-cols-3 gap-4 rounded-lg bg-ink-50 p-4 text-sm print:bg-transparent print:p-0">
+          <div className="mt-4 grid grid-cols-3 gap-4 rounded-lg bg-ink-100 p-4 text-sm print:bg-transparent print:p-0">
             <div>
               <div className="text-xs uppercase text-ink-400">Contract value</div>
               <div className="font-semibold tabular-nums">{php(p.contractValue.toString())}</div>

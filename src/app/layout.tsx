@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Archivo } from "next/font/google";
 import "./globals.css";
 import { SwRegister } from "@/components/sw-register";
+import { THEME_INIT_SCRIPT } from "@/components/theme-toggle";
 
 // App-wide typeface (2026-09 retheme, matching the Finance tab). The public
 // marketing page (src/app/page.tsx) sets its own fonts via next/font and
@@ -27,6 +28,11 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
+      <head>
+        {/* Runs before paint so the stored/OS theme applies immediately —
+            without this, the page would flash light before hydrating dark. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className={archivo.className}>
         <SwRegister />
         {children}
