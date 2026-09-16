@@ -20,6 +20,47 @@ interface EmployeeOption {
   position: string | null;
 }
 
+/** Checklist of specific assignees, or broadcast to everyone when none are
+ * checked — mutually exclusive with picking people, matching how an
+ * unassigned instruction has always meant "whole site team". */
+function AssigneeChecklist({
+  employees,
+  selected,
+  onChange,
+}: {
+  employees: EmployeeOption[];
+  selected: Set<string>;
+  onChange: (next: Set<string>) => void;
+}) {
+  const broadcast = selected.size === 0;
+  return (
+    <div className="rounded-lg border border-ink-200 bg-ink-50">
+      <label className="flex items-center gap-2 border-b border-ink-200 px-3 py-2 text-sm font-medium text-ink-800">
+        <input type="checkbox" checked={broadcast} onChange={() => onChange(new Set())} />
+        Whole site team (broadcast)
+      </label>
+      <div className="max-h-40 space-y-0.5 overflow-y-auto px-3 py-1.5">
+        {employees.map((e) => (
+          <label key={e.id} className="flex items-center gap-2 py-0.5 text-sm text-ink-700">
+            <input
+              type="checkbox"
+              checked={selected.has(e.id)}
+              onChange={(ev) => {
+                const next = new Set(selected);
+                if (ev.target.checked) next.add(e.id);
+                else next.delete(e.id);
+                onChange(next);
+              }}
+            />
+            {e.name}
+            {e.position ? ` — ${e.position}` : ""}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** Jacob/PM posts a dated assignment — against a project, or a category
  * (office/site/deliveries/warehouse/other) when there's no active project. */
 export function PostInstructionForm({
@@ -31,6 +72,7 @@ export function PostInstructionForm({
 }) {
   const router = useRouter();
   const [photos, setPhotos] = useState<string[]>([]);
+  const [assigneeIds, setAssigneeIds] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -49,7 +91,7 @@ export function PostInstructionForm({
         category: isCategory ? selection.slice(CATEGORY_PREFIX.length) : undefined,
         text: fd.get("text"),
         photos,
-        assignedToId: fd.get("assignedToId") || undefined,
+        assigneeIds: Array.from(assigneeIds),
         dueDate: fd.get("dueDate") || undefined,
         priority: fd.get("priority") || undefined,
       }),
@@ -58,6 +100,7 @@ export function PostInstructionForm({
     if (res.ok) {
       (e.target as HTMLFormElement).reset?.();
       setPhotos([]);
+      setAssigneeIds(new Set());
       router.refresh();
     } else {
       setError((await res.json()).error ?? "Failed to post instruction");
@@ -97,19 +140,11 @@ export function PostInstructionForm({
           placeholder="e.g., Re-check column C4 alignment before pouring; use the revised drawing."
         />
       </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div>
-          <Label htmlFor="insAssignee">Assigned to</Label>
-          <Select id="insAssignee" name="assignedToId" defaultValue="">
-            <option value="">Whole site team (broadcast)</option>
-            {employees.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.name}
-                {e.position ? ` — ${e.position}` : ""}
-              </option>
-            ))}
-          </Select>
-        </div>
+      <div>
+        <Label>Assigned to</Label>
+        <AssigneeChecklist employees={employees} selected={assigneeIds} onChange={setAssigneeIds} />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <Label htmlFor="insDue">Target completion date</Label>
           <Input id="insDue" name="dueDate" type="date" />
@@ -423,7 +458,7 @@ interface InstructionEditable {
   text: string;
   projectId: string | null;
   category: string | null;
-  assignedToId: string | null;
+  assigneeIds: string[];
   dueDate: string | null; // yyyy-mm-dd, or "" if unset
 }
 
@@ -443,6 +478,7 @@ export function EditInstructionForm({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [assigneeIds, setAssigneeIds] = useState<Set<string>>(new Set(instruction.assigneeIds));
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -459,7 +495,7 @@ export function EditInstructionForm({
         text: fd.get("text"),
         projectId: isCategory ? undefined : selection,
         category: isCategory ? selection.slice(CATEGORY_PREFIX.length) : undefined,
-        assignedToId: fd.get("assignedToId") || undefined,
+        assigneeIds: Array.from(assigneeIds),
         dueDate: fd.get("dueDate") || null,
       }),
     });
@@ -516,32 +552,18 @@ export function EditInstructionForm({
         <Label htmlFor={`eiText-${instruction.id}`}>Assignment / job</Label>
         <Textarea id={`eiText-${instruction.id}`} name="text" rows={3} required defaultValue={instruction.text} />
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <Label htmlFor={`eiAssignee-${instruction.id}`}>Assigned to</Label>
-          <Select
-            id={`eiAssignee-${instruction.id}`}
-            name="assignedToId"
-            defaultValue={instruction.assignedToId ?? ""}
-          >
-            <option value="">Whole site team (broadcast)</option>
-            {employees.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.name}
-                {e.position ? ` — ${e.position}` : ""}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div>
-          <Label htmlFor={`eiDue-${instruction.id}`}>Target completion date</Label>
-          <Input
-            id={`eiDue-${instruction.id}`}
-            name="dueDate"
-            type="date"
-            defaultValue={instruction.dueDate ?? ""}
-          />
-        </div>
+      <div>
+        <Label>Assigned to</Label>
+        <AssigneeChecklist employees={employees} selected={assigneeIds} onChange={setAssigneeIds} />
+      </div>
+      <div>
+        <Label htmlFor={`eiDue-${instruction.id}`}>Target completion date</Label>
+        <Input
+          id={`eiDue-${instruction.id}`}
+          name="dueDate"
+          type="date"
+          defaultValue={instruction.dueDate ?? ""}
+        />
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
       <div className="flex justify-end gap-2">

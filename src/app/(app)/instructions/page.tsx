@@ -48,7 +48,7 @@ export default async function InstructionsPage({
       include: {
         project: { select: { name: true } },
         postedBy: { select: { name: true } },
-        assignedTo: { select: { id: true, name: true } },
+        assignees: { select: { id: true, name: true } },
       },
     }),
     prisma.project.findMany({
@@ -121,10 +121,13 @@ export default async function InstructionsPage({
   }
   const folders = Array.from(folderMap.values()).sort((a, b) => (a.key < b.key ? 1 : -1));
 
+  const assigneeLabel = (list: { name: string }[]): string =>
+    list.length > 0 ? list.map((a) => a.name).join(", ") : "Whole site team";
+
   const canUpdateFor = (i: (typeof instructions)[number]): boolean =>
     ["OWNER", "PM"].includes(user.role) ||
-    i.assignedToId === user.id ||
-    (!i.assignedToId && user.role === "FOREMAN");
+    i.assignees.some((a) => a.id === user.id) ||
+    (i.assignees.length === 0 && user.role === "FOREMAN");
 
   // Board view (Spec: spreadsheet-style, grouped by week) — same underlying
   // data as the feed, respects the active calendar/project search.
@@ -199,9 +202,7 @@ export default async function InstructionsPage({
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-500">
               <span>
                 Assigned to:{" "}
-                <span className="font-medium text-ink-700">
-                  {i.assignedTo?.name ?? "Whole site team"}
-                </span>
+                <span className="font-medium text-ink-700">{assigneeLabel(i.assignees)}</span>
               </span>
               {i.dueDate && (
                 <span className={overdue ? "font-medium text-red-600" : ""}>
@@ -238,7 +239,7 @@ export default async function InstructionsPage({
                 text: i.text,
                 projectId: i.projectId,
                 category: i.category,
-                assignedToId: i.assignedToId,
+                assigneeIds: i.assignees.map((a) => a.id),
                 dueDate: i.dueDate ? i.dueDate.toISOString().slice(0, 10) : "",
               }}
               projects={projects}
@@ -397,7 +398,7 @@ export default async function InstructionsPage({
                         const canUpdate = canUpdateFor(i);
                         const overdue =
                           !!i.dueDate && i.dueDate < new Date() && !CLOSED_STATUSES.includes(i.status);
-                        const assigneeName = i.assignedTo?.name ?? "Whole site team";
+                        const assigneeName = assigneeLabel(i.assignees);
                         return (
                           <tr key={i.id} className={overdue ? "bg-red-50/40 hover:bg-red-50" : "hover:bg-ink-50"}>
                             <Td className="max-w-[240px]">
@@ -405,13 +406,35 @@ export default async function InstructionsPage({
                             </Td>
                             <Td className="whitespace-nowrap">
                               <span className="inline-flex items-center gap-1.5">
-                                <span
-                                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-                                  style={{ backgroundColor: avatarColor(assigneeName) }}
-                                >
-                                  {i.assignedTo ? initials(assigneeName) : "ST"}
+                                {i.assignees.length === 0 ? (
+                                  <span
+                                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+                                    style={{ backgroundColor: avatarColor("Whole site team") }}
+                                  >
+                                    ST
+                                  </span>
+                                ) : (
+                                  <span className="flex -space-x-1.5">
+                                    {i.assignees.slice(0, 3).map((a) => (
+                                      <span
+                                        key={a.id}
+                                        title={a.name}
+                                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-ink-50 text-[10px] font-semibold text-white"
+                                        style={{ backgroundColor: avatarColor(a.name) }}
+                                      >
+                                        {initials(a.name)}
+                                      </span>
+                                    ))}
+                                    {i.assignees.length > 3 && (
+                                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-ink-50 bg-ink-400 text-[10px] font-semibold text-white">
+                                        +{i.assignees.length - 3}
+                                      </span>
+                                    )}
+                                  </span>
+                                )}
+                                <span className="max-w-[140px] truncate text-xs text-ink-700" title={assigneeName}>
+                                  {assigneeName}
                                 </span>
-                                <span className="text-xs text-ink-700">{assigneeName}</span>
                               </span>
                             </Td>
                             <Td className="text-xs text-ink-600">{instructionProjectOrCategoryLabel(i)}</Td>
@@ -510,7 +533,7 @@ export default async function InstructionsPage({
                           <Td className="max-w-[220px]">
                             <span className="line-clamp-2 text-xs text-ink-600">{i.text}</span>
                           </Td>
-                          <Td className="text-xs">{i.assignedTo?.name ?? "Whole site team"}</Td>
+                          <Td className="text-xs">{assigneeLabel(i.assignees)}</Td>
                           <Td className="text-xs">{i.dueDate ? fmtDate(i.dueDate) : "—"}</Td>
                           <Td>
                             <Badge value={i.status} />

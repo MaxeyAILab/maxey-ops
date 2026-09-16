@@ -28,7 +28,7 @@ const patchSchema = z.discriminatedUnion("action", [
     text: z.string().min(1).max(5000),
     projectId: z.string().optional().or(z.literal("")),
     category: z.enum(["OFFICE", "SITE", "DELIVERIES", "WAREHOUSE", "OTHER"]).optional(),
-    assignedToId: z.string().optional().or(z.literal("")),
+    assigneeIds: z.array(z.string()).max(50).optional().default([]), // empty = broadcast
     dueDate: z.coerce.date().optional().nullable(),
   }),
 ]);
@@ -51,7 +51,7 @@ export const PATCH = handleApi(
 
     const instruction = await prisma.siteInstruction.findUnique({
       where: { id: params.id },
-      include: { project: { select: { name: true } } },
+      include: { project: { select: { name: true } }, assignees: { select: { id: true } } },
     });
     if (!instruction) throw new ApiError(404, "Instruction not found");
 
@@ -87,10 +87,15 @@ export const PATCH = handleApi(
       if (body.projectId && !project) throw new ApiError(404, "Project not found");
       const category = body.projectId ? null : body.category ?? "OTHER";
 
-      let assignee = null;
-      if (body.assignedToId) {
-        assignee = await prisma.user.findUnique({ where: { id: body.assignedToId } });
-        if (!assignee || !assignee.active) throw new ApiError(400, "Unknown or inactive assignee");
+      let assignees: { id: string; name: string }[] = [];
+      if (body.assigneeIds.length > 0) {
+        assignees = await prisma.user.findMany({
+          where: { id: { in: body.assigneeIds }, active: true },
+          select: { id: true, name: true },
+        });
+        if (assignees.length !== body.assigneeIds.length) {
+          throw new ApiError(400, "Unknown or inactive assignee");
+        }
       }
 
       const updated = await prisma.siteInstruction.update({
@@ -99,7 +104,7 @@ export const PATCH = handleApi(
           text: body.text,
           projectId: body.projectId || null,
           category,
-          assignedToId: assignee?.id ?? null,
+          assignees: { set: assignees.map((a) => ({ id: a.id })) },
           dueDate: body.dueDate ?? null,
         },
       });
@@ -145,8 +150,8 @@ export const PATCH = handleApi(
 
     const canUpdate =
       ["OWNER", "PM"].includes(user.role) ||
-      instruction.assignedToId === user.id ||
-      (!instruction.assignedToId && user.role === "FOREMAN");
+      instruction.assignees.some((a) => a.id === user.id) ||
+      (instruction.assignees.length === 0 && user.role === "FOREMAN");
     if (!canUpdate) throw new ApiError(403, "Not authorized to update this assignment");
 
     const updated = await prisma.siteInstruction.update({

@@ -207,7 +207,8 @@ model User {
   paymentsRecorded      Payment[]
   progressEntries       ProgressEntry[]
   instructionsPosted    SiteInstruction[]   @relation("InstructionPostedBy")
-  instructionsAssigned  SiteInstruction[]   @relation("InstructionAssignedTo")
+  instructionsAssigned  SiteInstruction[]   @relation("InstructionAssignedTo") // legacy single-assignee, superseded by assignedInstructions below
+  assignedInstructions  SiteInstruction[]   @relation("InstructionAssignees")
   changeOrdersCreated   ChangeOrder[]   @relation("COCreator")
   changeOrdersResponded ChangeOrder[]   @relation("COResponder")
   quotationsCreated     Quotation[]
@@ -648,8 +649,9 @@ model SiteInstruction {
   category          InstructionCategory? // set when projectId is blank — office/site/deliveries/etc.
   postedById        String
   postedBy          User                @relation("InstructionPostedBy", fields: [postedById], references: [id])
-  assignedToId      String? // blank = broadcast to the whole site team, as before
+  assignedToId      String? // legacy single-assignee column — superseded by assignees below, kept for old rows, no longer written
   assignedTo        User?               @relation("InstructionAssignedTo", fields: [assignedToId], references: [id])
+  assignees         User[]              @relation("InstructionAssignees") // empty = broadcast to the whole site team
   text              String
   photoUrl          String?
   status            InstructionStatus   @default(NOT_STARTED)

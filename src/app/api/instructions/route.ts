@@ -12,7 +12,7 @@ const createSchema = z.object({
   category: z.enum(["OFFICE", "SITE", "DELIVERIES", "WAREHOUSE", "OTHER"]).optional(), // only meaningful when projectId is empty
   text: z.string().min(1).max(5000),
   photos: z.array(z.string()).max(2).optional(),
-  assignedToId: z.string().optional().or(z.literal("")), // blank = broadcast to the whole site team
+  assigneeIds: z.array(z.string()).max(50).optional().default([]), // empty = broadcast to the whole site team
   dueDate: z.coerce.date().optional(),
   priority: z.enum(["LOW", "NORMAL", "HIGH", "CRITICAL"]).default("NORMAL"),
 });
@@ -34,10 +34,15 @@ export const POST = handleApi(async (req: NextRequest) => {
   const category = body.projectId ? null : body.category ?? "OTHER";
   const label = instructionProjectOrCategoryLabel({ project, category });
 
-  let assignee = null;
-  if (body.assignedToId) {
-    assignee = await prisma.user.findUnique({ where: { id: body.assignedToId } });
-    if (!assignee || !assignee.active) throw new ApiError(400, "Unknown or inactive assignee");
+  let assignees: { id: string; name: string }[] = [];
+  if (body.assigneeIds.length > 0) {
+    assignees = await prisma.user.findMany({
+      where: { id: { in: body.assigneeIds }, active: true },
+      select: { id: true, name: true },
+    });
+    if (assignees.length !== body.assigneeIds.length) {
+      throw new ApiError(400, "Unknown or inactive assignee");
+    }
   }
 
   const photoUrls = await savePhotos(body.photos);
@@ -46,7 +51,7 @@ export const POST = handleApi(async (req: NextRequest) => {
       projectId: body.projectId || null,
       category,
       postedById: user.id,
-      assignedToId: assignee?.id ?? null,
+      assignees: { connect: assignees.map((a) => ({ id: a.id })) },
       text: body.text,
       photoUrl: photoUrls[0] ?? null,
       dueDate: body.dueDate ?? null,
@@ -62,13 +67,13 @@ export const POST = handleApi(async (req: NextRequest) => {
     action: "INSTRUCTION_POSTED",
     diff: {
       project: label,
-      assignedTo: assignee?.name ?? null,
+      assignedTo: assignees.length > 0 ? assignees.map((a) => a.name).join(", ") : null,
       dueDate: body.dueDate ?? null,
       priority: body.priority,
     },
   });
   await notify({
-    to: { name: assignee?.name ?? "Site team" },
+    to: { name: assignees.length > 0 ? assignees.map((a) => a.name).join(", ") : "Site team" },
     subject: `New site instruction — ${label}`,
     message: body.text.slice(0, 120),
   });
