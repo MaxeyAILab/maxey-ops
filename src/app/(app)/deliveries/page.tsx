@@ -196,6 +196,12 @@ export default async function DeliveriesPage() {
                     {fmtDateTime(d.verifiedAt ?? d.createdAt)} · by{" "}
                     {verifierNames.get(d.verifiedById) ?? "—"}
                   </span>
+                  <a
+                    href={`/api/deliveries/${d.id}/pdf`}
+                    className="text-xs font-medium text-brand-600 hover:underline"
+                  >
+                    ⬇ Download
+                  </a>
                   {isOwner && <DeleteDeliveryButton deliveryId={d.id} poNumber={d.po.poNumber} />}
                 </div>
               </div>
@@ -254,7 +260,7 @@ export default async function DeliveriesPage() {
                         <Th>Verified by</Th>
                         <Th className="text-right">Value received</Th>
                         <Th>Status</Th>
-                        {isOwner && <Th />}
+                        <Th />
                       </tr>
                     </thead>
                     <tbody>
@@ -275,11 +281,19 @@ export default async function DeliveriesPage() {
                               <span className="text-xs font-medium text-emerald-600">✓ Complete</span>
                             )}
                           </Td>
-                          {isOwner && (
-                            <Td className="text-right">
-                              <DeleteDeliveryButton deliveryId={d.id} poNumber={d.po.poNumber} />
-                            </Td>
-                          )}
+                          <Td className="text-right whitespace-nowrap">
+                            <a
+                              href={`/api/deliveries/${d.id}/pdf`}
+                              className="text-xs font-medium text-brand-600 hover:underline"
+                            >
+                              ⬇
+                            </a>
+                            {isOwner && (
+                              <span className="ml-2">
+                                <DeleteDeliveryButton deliveryId={d.id} poNumber={d.po.poNumber} />
+                              </span>
+                            )}
+                          </Td>
                         </tr>
                       ))}
                     </tbody>

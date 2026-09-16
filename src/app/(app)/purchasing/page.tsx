@@ -113,7 +113,11 @@ export default async function PurchasingPage() {
           <tbody>
             {pos.map((po) => (
               <tr key={po.id} className="hover:bg-ink-50">
-                <Td className="font-medium">{po.poNumber}</Td>
+                <Td className="font-medium">
+                  <Link href={`/purchasing/${po.id}`} className="text-brand-600 hover:underline">
+                    {po.poNumber}
+                  </Link>
+                </Td>
                 <Td>
                   {po.requisition.project ? (
                     po.requisition.project.name
