@@ -194,6 +194,9 @@ model User {
   mustChangePassword Boolean @default(false) // temp password issued — force change on first login
   useCustomMenus Boolean   @default(false) // true = customMenus is authoritative, ignore role's default tabs
   customMenus  String[]    @default([]) // Owner's per-account tab checklist override, when useCustomMenus
+  currentSessionId String? // single-device login (every role but OWNER): each
+  // login overwrites this, so a session from an older device fails its next
+  // check in getSessionUser() and is treated as signed out
   clientId     String? // portal accounts link to a Client
   client       Client?     @relation(fields: [clientId], references: [id])
   createdAt    DateTime    @default(now())

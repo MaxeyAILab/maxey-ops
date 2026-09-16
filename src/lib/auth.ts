@@ -2,6 +2,7 @@ import type { NextAuthOptions } from "next-auth";
 import { getServerSession } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
+import crypto from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import type { Department, Role } from "@prisma/client";
 
@@ -15,6 +16,9 @@ export interface SessionUser {
   mustChangePassword: boolean;
   useCustomMenus: boolean;
   customMenus: string[];
+  /** Single-device login tag (every role but OWNER) — undefined for Owner,
+   * who is exempt and may be signed in on multiple devices at once. */
+  sessionId?: string;
 }
 
 export const authOptions: NextAuthOptions = {
@@ -35,12 +39,25 @@ export const authOptions: NextAuthOptions = {
         if (!user || !user.active) return null;
         const ok = await bcrypt.compare(credentials.password, user.passwordHash);
         if (!ok) return null;
+
+        // Single-device login (every role but Owner, per business rule —
+        // shared/simultaneous logins were driving load concerns). Each
+        // successful login overwrites currentSessionId, so whatever session
+        // a previous device was holding stops matching on its next request
+        // and getSessionUser() treats it as signed out.
+        let sessionId: string | undefined;
+        if (user.role !== "OWNER") {
+          sessionId = crypto.randomBytes(24).toString("hex");
+          await prisma.user.update({ where: { id: user.id }, data: { currentSessionId: sessionId } });
+        }
+
         return {
           id: user.id,
           name: user.name,
           email: user.email,
           role: user.role,
           clientId: user.clientId,
+          sessionId,
         } as never;
       },
     }),
@@ -51,6 +68,7 @@ export const authOptions: NextAuthOptions = {
         token.id = (user as never as SessionUser).id;
         token.role = (user as never as SessionUser).role;
         token.clientId = (user as never as SessionUser).clientId;
+        token.sessionId = (user as never as SessionUser).sessionId;
       }
       return token;
     },
@@ -60,6 +78,7 @@ export const authOptions: NextAuthOptions = {
         (session.user as never as SessionUser).role = token.role as Role;
         (session.user as never as SessionUser).clientId =
           (token.clientId as string | null) ?? null;
+        (session.user as never as SessionUser).sessionId = token.sessionId as string | undefined;
       }
       return session;
     },
@@ -70,7 +89,9 @@ export const authOptions: NextAuthOptions = {
  * Server-side session user, or null. Cross-checks the database on every call
  * so a deactivated account (client after turnover, resigned staff) loses
  * access immediately — not just at next login — and so password-change state
- * is always fresh.
+ * is always fresh. This is also the enforcement point for single-device
+ * login: every role but Owner is logged out the instant a newer login
+ * elsewhere has overwritten currentSessionId.
  */
 export async function getSessionUser(): Promise<SessionUser | null> {
   const session = await getServerSession(authOptions);
@@ -87,9 +108,13 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       name: true,
       useCustomMenus: true,
       customMenus: true,
+      currentSessionId: true,
     },
   });
   if (!dbUser?.active) return null;
+  if (dbUser.role !== "OWNER" && dbUser.currentSessionId !== su.sessionId) {
+    return null; // signed in from another device since this session started
+  }
   return {
     ...su,
     name: dbUser.name,
