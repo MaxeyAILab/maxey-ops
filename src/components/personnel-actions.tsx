@@ -190,11 +190,16 @@ export function AddPersonnelForm({
             <option value="DRIVER">As Driver</option>
           </Select>
         </div>
-        {/* Box 2: for site workers — which project they are assigned to */}
+        {/* Box 2: for site workers — which project they are assigned to.
+            Not required: a foreman/worker can be hired ahead of a project
+            being set up, so "TBA" leaves them off any roster until the
+            Owner assigns one later (e.g. by editing them once a project
+            exists). */}
         {department === "SITE" && (
           <div>
-            <Label htmlFor="pProject">Assigned project *</Label>
-            <Select id="pProject" name="projectId" required>
+            <Label htmlFor="pProject">Assigned project</Label>
+            <Select id="pProject" name="projectId">
+              <option value="">TBA — assign later</option>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -202,7 +207,9 @@ export function AddPersonnelForm({
               ))}
             </Select>
             {projects.length === 0 && (
-              <p className="mt-1 text-xs text-amber-600">No active projects to assign to.</p>
+              <p className="mt-1 text-xs text-amber-600">
+                No active projects yet — leave as TBA and assign one later.
+              </p>
             )}
           </div>
         )}
