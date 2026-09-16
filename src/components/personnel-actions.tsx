@@ -188,6 +188,8 @@ export function AddPersonnelForm({
             <option value="SITE">On Site (worker)</option>
             <option value="OFFICE">On Office</option>
             <option value="DRIVER">As Driver</option>
+            <option value="ARCHITECT">Architect</option>
+            <option value="ENGINEER">Engineer</option>
           </Select>
         </div>
         {/* Box 2: for site workers — which project they are assigned to.
@@ -295,6 +297,7 @@ export function EditPersonnelButton({
   userId,
   name,
   position,
+  department: initialDepartment,
   dailyRate,
   phone,
   email,
@@ -305,6 +308,7 @@ export function EditPersonnelButton({
   userId: string;
   name: string;
   position: string;
+  department?: string | null;
   dailyRate?: number | null;
   phone?: string | null;
   email?: string | null;
@@ -317,6 +321,7 @@ export function EditPersonnelButton({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [role, setRole] = useState<Role>(initialRole ?? "OFFICE");
+  const [department, setDepartment] = useState(initialDepartment ?? "OFFICE");
   const [checkedMenus, setCheckedMenus] = useState<Set<string>>(
     new Set(
       initialUseCustomMenus && initialCustomMenus
@@ -341,6 +346,7 @@ export function EditPersonnelButton({
       body: JSON.stringify({
         name: fd.get("name"),
         position: fd.get("position"),
+        department,
         dailyRate: fd.get("dailyRate") || undefined,
         phone: fd.get("phone"),
         email: fd.get("email"),
@@ -375,7 +381,7 @@ export function EditPersonnelButton({
             <Card>
               <CardHeader
                 title={`Edit ${name}`}
-                subtitle="Name, position, rate, and contact info"
+                subtitle="Name, position, department, rate, and contact info"
                 action={
                   <button
                     onClick={() => setOpen(false)}
@@ -405,6 +411,20 @@ export function EditPersonnelButton({
                         <option key={p} value={p} />
                       ))}
                     </datalist>
+                  </div>
+                  <div>
+                    <Label htmlFor={`eDept-${userId}`}>Department</Label>
+                    <Select
+                      id={`eDept-${userId}`}
+                      value={department}
+                      onChange={(e) => setDepartment(e.target.value)}
+                    >
+                      <option value="SITE">Site Workers</option>
+                      <option value="OFFICE">Office</option>
+                      <option value="DRIVER">Drivers</option>
+                      <option value="ARCHITECT">Architect</option>
+                      <option value="ENGINEER">Engineer</option>
+                    </Select>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div>

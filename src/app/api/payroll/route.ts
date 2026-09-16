@@ -11,7 +11,7 @@ const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const createSchema = z
   .object({
     projectId: z.string().min(1).optional(),
-    department: z.enum(["OFFICE", "DRIVER"]).optional(),
+    department: z.enum(["OFFICE", "DRIVER", "ARCHITECT", "ENGINEER"]).optional(),
     periodStart: dateStr,
     periodEnd: dateStr,
   })

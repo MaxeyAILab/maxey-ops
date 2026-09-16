@@ -144,6 +144,7 @@ export default async function AttendancePage() {
                   id: true,
                   name: true,
                   position: true,
+                  department: true,
                   dailyRate: true,
                   phone: true,
                   email: true,
@@ -160,7 +161,7 @@ export default async function AttendancePage() {
         where: {
           active: true,
           role: { not: "CLIENT" },
-          department: { in: ["OFFICE", "DRIVER"] },
+          department: { in: ["OFFICE", "DRIVER", "ARCHITECT", "ENGINEER"] },
         },
         orderBy: [{ department: "asc" }, { name: "asc" }],
         select: {
@@ -207,6 +208,7 @@ export default async function AttendancePage() {
         userId: a.user.id,
         name: a.user.name,
         position: a.user.position ?? "—",
+        department: a.user.department ?? "SITE",
         dailyRate: a.user.dailyRate ? Number(a.user.dailyRate) : null,
         phone: a.user.phone,
         email: a.user.email,
@@ -241,7 +243,7 @@ export default async function AttendancePage() {
       userId: u.id,
       name: u.name,
       position: u.position ?? "—",
-      department: "TBA",
+      department: "SITE", // real value for the edit form; displayed as "TBA" since they have no roster yet
       dailyRate: u.dailyRate ? Number(u.dailyRate) : null,
       phone: u.phone,
       email: u.email,
@@ -308,7 +310,9 @@ export default async function AttendancePage() {
           <tr key={r.userId} className={!r.summary.loggedToday ? "bg-red-50/40" : ""}>
             <Td className="font-medium">{r.name}</Td>
             <Td className="text-ink-600">{r.position}</Td>
-            {showDept && <Td className="text-xs text-ink-500">{r.department}</Td>}
+            {showDept && (
+              <Td className="text-xs text-ink-500">{r.department === "SITE" ? "TBA" : r.department}</Td>
+            )}
             <Td>
               <StatusCell open={r.summary.open} loggedToday={r.summary.loggedToday} />
             </Td>
@@ -320,6 +324,7 @@ export default async function AttendancePage() {
                   userId={r.userId}
                   name={r.name}
                   position={r.position}
+                  department={r.department}
                   dailyRate={r.dailyRate}
                   phone={r.phone}
                   email={r.email}
@@ -420,8 +425,8 @@ export default async function AttendancePage() {
 
           <Card>
             <CardHeader
-              title={`Office workers & drivers (${officeRows.length})`}
-              subtitle="Staff without a project — office admin, purchasing, accounting, drivers"
+              title={`Office, drivers & professional staff (${officeRows.length})`}
+              subtitle="Staff without a project — office admin, purchasing, accounting, drivers, architects, engineers"
             />
             {summaryTable(officeRows, true)}
           </Card>

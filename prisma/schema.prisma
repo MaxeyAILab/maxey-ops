@@ -29,6 +29,8 @@ enum Department {
   OFFICE
   SITE
   DRIVER
+  ARCHITECT
+  ENGINEER
 }
 
 enum LeadSource {

@@ -13,7 +13,7 @@ const ASSIGNABLE_MENU_HREFS = new Set(ASSIGNABLE_MENUS.map((m) => m.href));
 const createSchema = z.object({
   name: z.string().min(1).max(200),
   position: z.string().min(1).max(100), // Foreman, Mason, Carpenter, Welder…
-  department: z.enum(["SITE", "OFFICE", "DRIVER"]),
+  department: z.enum(["SITE", "OFFICE", "DRIVER", "ARCHITECT", "ENGINEER"]),
   dailyRate: z.coerce.number().positive().optional(),
   hourlyRate: z.coerce.number().positive().optional(),
   phone: z.string().max(30).optional().or(z.literal("")),

@@ -8,9 +8,12 @@ import { ASSIGNABLE_MENUS } from "@/lib/access";
 const ASSIGNABLE_ROLES = ["PM", "FOREMAN", "PURCHASING", "ACCOUNTING", "DRIVER", "OFFICE"] as const;
 const ASSIGNABLE_MENU_HREFS = new Set(ASSIGNABLE_MENUS.map((m) => m.href));
 
+const ASSIGNABLE_DEPARTMENTS = ["SITE", "OFFICE", "DRIVER", "ARCHITECT", "ENGINEER"] as const;
+
 const updateSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   position: z.string().min(1).max(100).optional(),
+  department: z.enum(ASSIGNABLE_DEPARTMENTS).optional(),
   dailyRate: z.coerce.number().positive().optional(),
   hourlyRate: z.coerce.number().positive().optional(),
   phone: z.string().max(30).optional().or(z.literal("")),
@@ -22,9 +25,9 @@ const updateSchema = z.object({
 });
 
 /**
- * PATCH /api/personnel/[id] — edit personnel details (name, position, rate,
- * contact info). Project assignment/department changes stay in the Payroll
- * tab, which already owns that workflow.
+ * PATCH /api/personnel/[id] — edit personnel details (name, position,
+ * department, rate, contact info). Project assignment itself (which roster
+ * someone's on) stays in the Payroll tab, which already owns that workflow.
  */
 export const PATCH = handleApi(
   async (req: NextRequest, { params }: { params: { id: string } }) => {
@@ -60,6 +63,7 @@ export const PATCH = handleApi(
       data: {
         name: body.name ?? target.name,
         position: body.position ?? target.position,
+        department: body.department ?? target.department,
         phone: body.phone !== undefined ? body.phone || null : target.phone,
         email,
         dailyRate,
@@ -79,6 +83,7 @@ export const PATCH = handleApi(
       diff: {
         name: updated.name,
         position: updated.position,
+        department: updated.department,
         dailyRate: updated.dailyRate ? Number(updated.dailyRate) : null,
         hourlyRate: updated.hourlyRate ? Number(updated.hourlyRate) : null,
         phone: updated.phone,

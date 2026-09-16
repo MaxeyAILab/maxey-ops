@@ -105,12 +105,14 @@ export function RemoveEmployeeButton({ assignmentId, name }: { assignmentId: str
 }
 
 /** Generate a payroll run for one project (or a department when projectId is absent). */
+type PayrollDepartment = "OFFICE" | "DRIVER" | "ARCHITECT" | "ENGINEER";
+
 export function GenerateRunForm({
   projectId,
   department,
 }: {
   projectId?: string;
-  department?: "OFFICE" | "DRIVER";
+  department?: PayrollDepartment;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -149,9 +151,11 @@ export function GenerateRunForm({
       {!projectId && (
         <div>
           <Label>Department</Label>
-          <Select value={dept} onChange={(e) => setDept(e.target.value as "OFFICE" | "DRIVER")}>
+          <Select value={dept} onChange={(e) => setDept(e.target.value as PayrollDepartment)}>
             <option value="OFFICE">Office</option>
             <option value="DRIVER">Drivers</option>
+            <option value="ARCHITECT">Architects</option>
+            <option value="ENGINEER">Engineers</option>
           </Select>
         </div>
       )}
