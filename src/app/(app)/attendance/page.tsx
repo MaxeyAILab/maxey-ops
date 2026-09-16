@@ -123,9 +123,14 @@ export default async function AttendancePage() {
     customMenus: string[];
     summary: ReturnType<typeof summarize>;
   }[] = [];
+  // Site workers hired ahead of a project (Add personnel → project "TBA") —
+  // no ProjectAssignment yet, so they'd otherwise never appear anywhere:
+  // excluded from every project roster (no assignment) and from the office
+  // list below (department is SITE, not OFFICE/DRIVER).
+  let tbaRows: typeof officeRows = [];
 
   if (isAdmin) {
-    const [rosters, officeStaff, weekAttendance] = await Promise.all([
+    const [rosters, officeStaff, tbaWorkers, weekAttendance] = await Promise.all([
       prisma.project.findMany({
         where: { status: { in: CHARGEABLE_STATUSES }, assignments: { some: { active: true } } },
         orderBy: { name: "asc" },
@@ -171,6 +176,25 @@ export default async function AttendancePage() {
           customMenus: true,
         },
       }),
+      prisma.user.findMany({
+        where: {
+          active: true,
+          department: "SITE",
+          assignments: { none: { active: true } },
+        },
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          name: true,
+          position: true,
+          dailyRate: true,
+          phone: true,
+          email: true,
+          role: true,
+          useCustomMenus: true,
+          customMenus: true,
+        },
+      }),
       prisma.attendance.findMany({
         where: { OR: [{ timeIn: { gte: weekStart } }, { timeOut: null }] },
       }),
@@ -201,6 +225,23 @@ export default async function AttendancePage() {
       name: u.name,
       position: u.position ?? "—",
       department: u.department ?? "",
+      dailyRate: u.dailyRate ? Number(u.dailyRate) : null,
+      phone: u.phone,
+      email: u.email,
+      role: u.role,
+      useCustomMenus: u.useCustomMenus,
+      customMenus: u.customMenus,
+      summary: summarize(
+        weekAttendance.filter((r) => r.userId === u.id),
+        todayStart
+      ),
+    }));
+
+    tbaRows = tbaWorkers.map((u) => ({
+      userId: u.id,
+      name: u.name,
+      position: u.position ?? "—",
+      department: "TBA",
       dailyRate: u.dailyRate ? Number(u.dailyRate) : null,
       phone: u.phone,
       email: u.email,
@@ -364,6 +405,16 @@ export default async function AttendancePage() {
               <CardBody className="text-sm text-ink-400">
                 No site rosters yet — assign workers to a project in the Payroll tab.
               </CardBody>
+            </Card>
+          )}
+
+          {tbaRows.length > 0 && (
+            <Card>
+              <CardHeader
+                title={`Unassigned (TBA) site workers (${tbaRows.length})`}
+                subtitle="Hired ahead of a project — clock in/out is tracked here until assigned to one in the Payroll tab"
+              />
+              {summaryTable(tbaRows, true)}
             </Card>
           )}
 
