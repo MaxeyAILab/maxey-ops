@@ -42,8 +42,18 @@ export default async function InstructionsPage({
   const user = await getSessionUser();
   if (!user || user.role === "CLIENT") redirect("/projects");
 
+  const isSupervisor = ["OWNER", "PM"].includes(user.role);
+  // Privacy: an instruction aimed at specific people is only visible to
+  // them (and Owner/PM, who need full oversight to post/review). A
+  // broadcast (no specific assignees) is still meant for the whole site
+  // team, so it stays visible to everyone as before.
+  const visibilityFilter = isSupervisor
+    ? {}
+    : { OR: [{ assignees: { none: {} } }, { assignees: { some: { id: user.id } } }] };
+
   const [instructions, projects, allProjects, employees] = await Promise.all([
     prisma.siteInstruction.findMany({
+      where: visibilityFilter,
       orderBy: { createdAt: "desc" },
       include: {
         project: { select: { name: true } },
@@ -69,8 +79,7 @@ export default async function InstructionsPage({
     }),
   ]);
 
-  const canPost = ["OWNER", "PM"].includes(user.role);
-  const isSupervisor = ["OWNER", "PM"].includes(user.role);
+  const canPost = isSupervisor;
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
   const today = instructions.filter((i) => i.createdAt >= startOfToday);
