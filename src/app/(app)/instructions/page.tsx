@@ -411,7 +411,12 @@ export default async function InstructionsPage({
                         return (
                           <tr key={i.id} className={overdue ? "bg-red-50/40 hover:bg-red-50" : "hover:bg-ink-50"}>
                             <Td className="max-w-[240px]">
-                              <span className="line-clamp-2 text-sm text-ink-800">{i.text}</span>
+                              <Link
+                                href={`/instructions/${i.id}`}
+                                className="line-clamp-2 text-sm text-ink-800 hover:text-brand-600 hover:underline"
+                              >
+                                {i.text}
+                              </Link>
                             </Td>
                             <Td className="whitespace-nowrap">
                               <span className="inline-flex items-center gap-1.5">

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getSessionUser } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { allowedMenus } from "@/lib/access";
 import { SyncStatus } from "@/components/sync-status";
 import { SignOutButton } from "@/components/signout-button";
@@ -54,6 +55,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const menus = allowedMenus(user.role, user.department, user.customMenus, user.useCustomMenus);
   const items = nav.filter((n) => menus.includes(n.href));
 
+  // Open tasks addressed to this person — a specific assignment, or (for
+  // Foremen) a broadcast to the whole site team, same as who can act on one
+  // per canUpdateFor() in the Instructions tab itself.
+  let instructionsBadge = 0;
+  if (menus.includes("/instructions")) {
+    instructionsBadge = await prisma.siteInstruction.count({
+      where: {
+        status: { notIn: ["COMPLETED", "CANCELLED"] },
+        OR: [
+          { assignees: { some: { id: user.id } } },
+          ...(user.role === "FOREMAN" ? [{ assignees: { none: {} } }] : []),
+        ],
+      },
+    });
+  }
+
   return (
     <div className="app-shell min-h-screen bg-ink-100 text-ink-900 md:flex">
       {/* Left sidebar — command panel (desktop) */}
@@ -71,21 +88,33 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </div>
           </div>
           <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-            {items.map((n) => (
-              <Link
-                key={n.href}
-                href={n.href}
-                className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-ink-600 hover:bg-brand-50 hover:text-brand-700"
-              >
-                <span
-                  aria-hidden
-                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-base ${CHIP_TONES[n.chip]}`}
+            {items.map((n) => {
+              const badge = n.href === "/instructions" ? instructionsBadge : 0;
+              return (
+                <Link
+                  key={n.href}
+                  href={n.href}
+                  className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium ${
+                    badge > 0
+                      ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                      : "text-ink-600 hover:bg-brand-50 hover:text-brand-700"
+                  }`}
                 >
-                  {n.icon}
-                </span>
-                {n.label}
-              </Link>
-            ))}
+                  <span
+                    aria-hidden
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-base ${CHIP_TONES[n.chip]}`}
+                  >
+                    {n.icon}
+                  </span>
+                  <span className="flex-1">{n.label}</span>
+                  {badge > 0 && (
+                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-bold text-white">
+                      {badge}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
           </nav>
           <div className="border-t border-ink-100 px-4 py-3">
             <div className="text-xs font-semibold text-ink-900">{user.name}</div>
@@ -109,15 +138,25 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               M
             </span>
             <nav className="flex items-center gap-1 overflow-x-auto text-sm">
-              {items.map((n) => (
-                <Link
-                  key={n.href}
-                  href={n.href}
-                  className="whitespace-nowrap rounded-lg px-3 py-2 font-medium text-ink-900 hover:bg-ink-100"
-                >
-                  {n.label}
-                </Link>
-              ))}
+              {items.map((n) => {
+                const badge = n.href === "/instructions" ? instructionsBadge : 0;
+                return (
+                  <Link
+                    key={n.href}
+                    href={n.href}
+                    className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 font-medium ${
+                      badge > 0 ? "bg-emerald-50 text-emerald-700" : "text-ink-900 hover:bg-ink-100"
+                    }`}
+                  >
+                    {n.label}
+                    {badge > 0 && (
+                      <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-bold text-white">
+                        {badge}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
             </nav>
             <div className="flex shrink-0 items-center gap-2">
               <SyncStatus />
