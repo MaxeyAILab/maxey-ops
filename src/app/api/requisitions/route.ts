@@ -30,7 +30,11 @@ const createSchema = z.object({
  * the outbox treats as already-synced.
  */
 export const POST = handleApi(async (req: NextRequest) => {
-  const user = await requireUser(["FOREMAN", "PM", "OWNER"]);
+  const user = await requireUser();
+  const canCreate =
+    ["FOREMAN", "PM", "OWNER", "DRIVER"].includes(user.role) ||
+    ["ARCHITECT", "ENGINEER"].includes(user.department ?? "");
+  if (!canCreate) throw new ApiError(403, "Not authorized for this action");
   const body = createSchema.parse(await req.json());
 
   const existing = await prisma.requisition.findUnique({

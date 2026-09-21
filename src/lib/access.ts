@@ -97,14 +97,23 @@ const OWNER_ONLY_MENUS = new Set(["/dashboard", "/finance", "/leads", "/people"]
 
 export function allowedMenus(
   role: Role,
-  _department: Department | null,
+  department: Department | null,
   customMenus: string[] = [],
   useCustomMenus = false
 ): string[] {
-  if (!useCustomMenus) return roleDefaultMenus(role);
-  // Even an explicit checklist can never reach Owner-only tabs — those stay
-  // tied to the OWNER role, not to any per-account override.
-  return customMenus.filter((m) => !OWNER_ONLY_MENUS.has(m));
+  if (useCustomMenus) {
+    // Even an explicit checklist can never reach Owner-only tabs — those
+    // stay tied to the OWNER role, not to any per-account override.
+    return customMenus.filter((m) => !OWNER_ONLY_MENUS.has(m));
+  }
+  const base = roleDefaultMenus(role);
+  // Architects/engineers can submit requisitions regardless of their role
+  // bundle (2026-09-21) — they're commonly hired under OFFICE, which
+  // otherwise wouldn't reach this tab at all.
+  if (department === "ARCHITECT" || department === "ENGINEER") {
+    return Array.from(new Set([...base, "/requisitions"]));
+  }
+  return base;
 }
 
 export function canAccess(

@@ -25,7 +25,14 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
   const r = await prisma.requisition.findUnique({
     where: { id: params.id },
     include: {
-      items: true,
+      items: {
+        include: {
+          quotes: {
+            orderBy: { createdAt: "asc" },
+            include: { submittedBy: { select: { name: true } } },
+          },
+        },
+      },
       project: { select: { id: true, name: true } },
       submittedBy: { select: { name: true } },
       approvedBy: { select: { name: true } },
@@ -91,7 +98,7 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
           title="Requested items"
           subtitle={
             canCost
-              ? "Enter a unit price and supplier per item to canvass — the total computes itself"
+              ? "Record a quote per supplier for each item, then pick which one to approve"
               : "Canvassed pricing, once available"
           }
         />
@@ -106,6 +113,14 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
             unit: i.unit,
             estUnitCost: i.estUnitCost != null ? Number(i.estUnitCost) : null,
             remarks: i.remarks,
+            selectedQuoteId: i.selectedQuoteId,
+            quotes: i.quotes.map((q) => ({
+              id: q.id,
+              supplier: q.supplier,
+              unitCost: Number(q.unitCost),
+              notes: q.notes,
+              submittedByName: q.submittedBy.name,
+            })),
           }))}
         />
         {r.notes && (

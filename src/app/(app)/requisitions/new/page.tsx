@@ -9,7 +9,11 @@ export const dynamic = "force-dynamic";
 
 export default async function NewRequisitionPage() {
   const user = await getSessionUser();
-  if (!user || !["FOREMAN", "PM", "OWNER"].includes(user.role)) redirect("/requisitions");
+  const canCreate =
+    !!user &&
+    (["FOREMAN", "PM", "OWNER", "DRIVER"].includes(user.role) ||
+      ["ARCHITECT", "ENGINEER"].includes(user.department ?? ""));
+  if (!canCreate) redirect("/requisitions");
 
   const projects = await prisma.project.findMany({
     where: { status: { in: CHARGEABLE_STATUSES } },

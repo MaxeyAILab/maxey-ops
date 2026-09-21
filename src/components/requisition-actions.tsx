@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Input, Label, Table, Td, Th } from "@/components/ui";
+import { Button, Input, Label } from "@/components/ui";
 import { php } from "@/lib/format";
 
 async function patch(id: string, body: unknown): Promise<string | null> {
@@ -15,6 +15,14 @@ async function patch(id: string, body: unknown): Promise<string | null> {
   return (await res.json()).error ?? "Action failed";
 }
 
+export interface CostableQuote {
+  id: string;
+  supplier: string;
+  unitCost: number;
+  notes: string | null;
+  submittedByName: string;
+}
+
 export interface CostableItem {
   id: string;
   name: string;
@@ -23,14 +31,163 @@ export interface CostableItem {
   unit: string;
   estUnitCost: number | null;
   remarks: string | null;
+  quotes: CostableQuote[];
+  selectedQuoteId: string | null;
+}
+
+/** One item's canvassing sheet: every supplier quote recorded so far, an
+ * inline form to add another, and a way to pick which one to approve. */
+function ItemQuotes({
+  requisitionId,
+  item,
+  editable,
+}: {
+  requisitionId: string;
+  item: CostableItem;
+  editable: boolean;
+}) {
+  const router = useRouter();
+  const [supplier, setSupplier] = useState("");
+  const [unitCost, setUnitCost] = useState("");
+  const [notes, setNotes] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function addQuote(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    const err = await patch(requisitionId, {
+      action: "add_quote",
+      itemId: item.id,
+      supplier,
+      unitCost: Number(unitCost) || 0,
+      notes,
+    });
+    setBusy(false);
+    if (err) {
+      setError(err);
+    } else {
+      setSupplier("");
+      setUnitCost("");
+      setNotes("");
+      router.refresh();
+    }
+  }
+
+  async function selectQuote(quoteId: string) {
+    setBusy(true);
+    setError("");
+    const err = await patch(requisitionId, { action: "select_quote", itemId: item.id, quoteId });
+    setBusy(false);
+    if (err) setError(err);
+    else router.refresh();
+  }
+
+  return (
+    <div className="space-y-2">
+      {item.quotes.length > 0 && (
+        <div className="space-y-1">
+          {item.quotes.map((q) => {
+            const selected = q.id === item.selectedQuoteId;
+            return (
+              <div
+                key={q.id}
+                className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-xs ${
+                  selected ? "border-brand-300 bg-brand-50" : "border-ink-100"
+                }`}
+              >
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                  <span className="font-medium text-ink-800">{q.supplier}</span>
+                  <span className="tabular-nums text-ink-600">
+                    {php(q.unitCost)}/{item.unit} · {php(q.unitCost * item.qty)} total
+                  </span>
+                  <span className="text-ink-400">by {q.submittedByName}</span>
+                  {q.notes && <span className="text-ink-400">— {q.notes}</span>}
+                </div>
+                {editable &&
+                  (selected ? (
+                    <span className="font-medium text-brand-700">✓ Selected</span>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => selectQuote(q.id)}
+                      className="font-medium text-brand-600 hover:underline disabled:opacity-50"
+                    >
+                      Select this
+                    </button>
+                  ))}
+                {!editable && selected && <span className="font-medium text-brand-700">✓ Selected</span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {item.quotes.length === 0 && (
+        <p className="text-xs text-ink-400">No pricing recorded yet.</p>
+      )}
+      {editable && (
+        <form onSubmit={addQuote} className="flex flex-wrap items-end gap-2 pt-1">
+          <div>
+            <Label className="mb-1 text-[11px]" htmlFor={`sup-${item.id}`}>
+              Supplier
+            </Label>
+            <Input
+              id={`sup-${item.id}`}
+              className="h-8 w-36 text-xs"
+              placeholder="e.g. ABC Hardware"
+              value={supplier}
+              onChange={(e) => setSupplier(e.target.value)}
+              required
+            />
+          </div>
+          <div>
+            <Label className="mb-1 text-[11px]" htmlFor={`cost-${item.id}`}>
+              Price/unit
+            </Label>
+            <Input
+              id={`cost-${item.id}`}
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              className="h-8 w-24 text-xs"
+              value={unitCost}
+              onChange={(e) => setUnitCost(e.target.value)}
+              required
+            />
+          </div>
+          <div>
+            <Label className="mb-1 text-[11px]" htmlFor={`notes-${item.id}`}>
+              Notes (optional)
+            </Label>
+            <Input
+              id={`notes-${item.id}`}
+              className="h-8 w-36 text-xs"
+              placeholder="e.g. 3-day lead time"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </div>
+          <Button type="submit" variant="secondary" disabled={busy} className="h-8 px-3 text-xs">
+            {busy ? "Adding…" : "+ Add quote"}
+          </Button>
+        </form>
+      )}
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </div>
+  );
 }
 
 /**
  * Requested items, doubling as the canvassing sheet (Spec 6.2): whoever is
- * pricing the order (Purchasing, PM, Accounting, Owner) enters a per-item
- * unit price and which supplier it's from — the subtotal and grand total
- * compute themselves. Once costed, everyone reviewing the requisition
- * (including the Owner approving it) sees the same breakdown read-only.
+ * pricing the order (Purchasing, PM, Accounting, Owner) can record a quote
+ * from more than one supplier per item, then choose which one to approve —
+ * the subtotal and grand total always reflect whichever quote is currently
+ * selected. Once costed, everyone reviewing the requisition (including the
+ * Owner approving it) sees the same breakdown, with every quote considered
+ * still visible for context.
  */
 export function ItemsCostingTable({
   requisitionId,
@@ -41,109 +198,28 @@ export function ItemsCostingTable({
   items: CostableItem[];
   editable: boolean;
 }) {
-  const router = useRouter();
-  const [rows, setRows] = useState(
-    items.map((i) => ({
-      unitCost: i.estUnitCost != null ? String(i.estUnitCost) : "",
-      remarks: i.remarks ?? "",
-    }))
-  );
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  function update(i: number, patch: Partial<{ unitCost: string; remarks: string }>) {
-    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
-  }
-
-  const subtotal = (i: number) => items[i].qty * (Number(rows[i].unitCost) || 0);
-  const total = items.reduce((s, _i, i) => s + subtotal(i), 0);
-
-  async function onSave() {
-    setBusy(true);
-    setError("");
-    const err = await patch(requisitionId, {
-      action: "review",
-      items: items.map((it, i) => ({
-        id: it.id,
-        unitCost: Number(rows[i].unitCost) || 0,
-        remarks: rows[i].remarks,
-      })),
-    });
-    setBusy(false);
-    if (err) setError(err);
-    else router.refresh();
-  }
+  const total = items.reduce((s, it) => s + it.qty * (it.estUnitCost ?? 0), 0);
 
   return (
-    <div>
-      <Table>
-        <thead>
-          <tr>
-            <Th>Item</Th>
-            <Th>Specification</Th>
-            <Th className="text-right">Qty</Th>
-            <Th>Unit</Th>
-            <Th className="text-right">Price/unit</Th>
-            <Th className="text-right">Subtotal</Th>
-            <Th>Remarks (supplier)</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((it, i) => (
-            <tr key={it.id}>
-              <Td className="font-medium">{it.name}</Td>
-              <Td className="text-ink-500">{it.spec ?? "—"}</Td>
-              <Td className="text-right tabular-nums">{it.qty}</Td>
-              <Td>{it.unit}</Td>
-              <Td className="text-right">
-                {editable ? (
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    inputMode="decimal"
-                    className="ml-auto w-28 text-right"
-                    value={rows[i].unitCost}
-                    onChange={(e) => update(i, { unitCost: e.target.value })}
-                  />
-                ) : it.estUnitCost != null ? (
-                  php(it.estUnitCost)
-                ) : (
-                  "—"
-                )}
-              </Td>
-              <Td className="text-right tabular-nums">{php(subtotal(i))}</Td>
-              <Td>
-                {editable ? (
-                  <Input
-                    placeholder="e.g. ABC Hardware"
-                    className="w-40"
-                    value={rows[i].remarks}
-                    onChange={(e) => update(i, { remarks: e.target.value })}
-                  />
-                ) : (
-                  it.remarks ?? "—"
-                )}
-              </Td>
-            </tr>
-          ))}
-          <tr className="border-t-2 border-ink-200 font-semibold">
-            <Td colSpan={5} className="text-right">
-              Total
-            </Td>
-            <Td className="text-right tabular-nums">{php(total)}</Td>
-            <Td />
-          </tr>
-        </tbody>
-      </Table>
-      {editable && (
-        <div className="flex items-center gap-3 border-t border-ink-100 p-3">
-          <Button type="button" variant="secondary" disabled={busy} onClick={onSave}>
-            {busy ? "Saving…" : "Save costing"}
-          </Button>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+    <div className="divide-y divide-ink-100">
+      {items.map((it) => (
+        <div key={it.id} className="space-y-2 p-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div>
+              <span className="font-medium text-ink-900">{it.name}</span>
+              {it.spec && <span className="ml-2 text-xs text-ink-500">{it.spec}</span>}
+            </div>
+            <span className="text-xs text-ink-500">
+              {it.qty} {it.unit}
+            </span>
+          </div>
+          <ItemQuotes requisitionId={requisitionId} item={it} editable={editable} />
         </div>
-      )}
+      ))}
+      <div className="flex items-center justify-between p-3 font-semibold">
+        <span>Total</span>
+        <span className="tabular-nums">{php(total)}</span>
+      </div>
     </div>
   );
 }
