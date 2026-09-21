@@ -107,13 +107,14 @@ export function allowedMenus(
     return customMenus.filter((m) => !OWNER_ONLY_MENUS.has(m));
   }
   const base = roleDefaultMenus(role);
+  const extra: string[] = [];
   // Architects/engineers can submit requisitions regardless of their role
   // bundle (2026-09-21) — they're commonly hired under OFFICE, which
   // otherwise wouldn't reach this tab at all.
-  if (department === "ARCHITECT" || department === "ENGINEER") {
-    return Array.from(new Set([...base, "/requisitions"]));
-  }
-  return base;
+  if (department === "ARCHITECT" || department === "ENGINEER") extra.push("/requisitions");
+  // Engineers can also verify deliveries (2026-09-21) — see canVerifyDelivery.
+  if (department === "ENGINEER") extra.push("/deliveries");
+  return extra.length ? Array.from(new Set([...base, ...extra])) : base;
 }
 
 export function canAccess(
@@ -124,4 +125,11 @@ export function canAccess(
   useCustomMenus = false
 ): boolean {
   return allowedMenus(role, department, customMenus, useCustomMenus).includes(menu);
+}
+
+/** Who can submit a delivery verification (Spec 6.3) — Foreman/PM/Owner by
+ * role, plus Drivers and Engineers (2026-09-21). Deliberately separate from
+ * delete, which stays Owner-only regardless of this. */
+export function canVerifyDelivery(role: Role, department: Department | null): boolean {
+  return ["FOREMAN", "PM", "OWNER", "DRIVER"].includes(role) || department === "ENGINEER";
 }

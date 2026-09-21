@@ -6,6 +6,7 @@ import { notify } from "@/lib/notify";
 import { savePhotos } from "@/lib/storage";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
+import { canVerifyDelivery } from "@/lib/access";
 
 const checkItemSchema = z.object({
   item: z.string().min(1),
@@ -32,7 +33,10 @@ const createSchema = z.object({
  * PO/requisition status, and flags discrepancies to PM + Purchasing.
  */
 export const POST = handleApi(async (req: NextRequest) => {
-  const user = await requireUser(["FOREMAN", "PM", "OWNER"]);
+  const user = await requireUser();
+  if (!canVerifyDelivery(user.role, user.department)) {
+    throw new ApiError(403, "Not authorized for this action");
+  }
   const body = createSchema.parse(await req.json());
 
   const dup = await prisma.delivery.findUnique({ where: { clientUuid: body.clientUuid } });

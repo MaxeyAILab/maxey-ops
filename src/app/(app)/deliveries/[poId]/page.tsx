@@ -6,12 +6,13 @@ import { fmtDate } from "@/lib/format";
 import { Badge } from "@/components/ui";
 import { DeliveryChecklistForm } from "@/components/delivery-form";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
+import { canVerifyDelivery } from "@/lib/access";
 
 export const dynamic = "force-dynamic";
 
 export default async function VerifyDeliveryPage({ params }: { params: { poId: string } }) {
   const user = await getSessionUser();
-  if (!user || !["FOREMAN", "PM", "OWNER"].includes(user.role)) redirect("/deliveries");
+  if (!user || !canVerifyDelivery(user.role, user.department)) redirect("/deliveries");
 
   const po = await prisma.purchaseOrder.findUnique({
     where: { id: params.poId },

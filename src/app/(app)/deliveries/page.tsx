@@ -6,7 +6,7 @@ import { fmtDate, fmtDateTime, php } from "@/lib/format";
 import { Badge, Card, CardBody, CardHeader, Table, Td, Th } from "@/components/ui";
 import { DeleteDeliveryButton } from "@/components/delivery-actions";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
-import { canAccess } from "@/lib/access";
+import { canAccess, canVerifyDelivery } from "@/lib/access";
 
 export const metadata = { title: "Deliveries" };
 export const dynamic = "force-dynamic";
@@ -63,7 +63,7 @@ export default async function DeliveriesPage() {
     }),
   ]);
 
-  const canVerify = ["FOREMAN", "PM", "OWNER"].includes(user.role);
+  const canVerify = canVerifyDelivery(user.role, user.department);
   const isOwner = user.role === "OWNER";
   const verifierNames = new Map(
     (
