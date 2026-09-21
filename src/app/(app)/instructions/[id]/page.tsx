@@ -4,7 +4,11 @@ import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fmtDate, fmtDateTime } from "@/lib/format";
 import { Badge, Card, CardBody, CardHeader } from "@/components/ui";
-import { InstructionReviewForm, InstructionUpdateForm } from "@/components/instruction-actions";
+import {
+  AssigneeSeenList,
+  InstructionReviewForm,
+  InstructionUpdateForm,
+} from "@/components/instruction-actions";
 import { instructionProjectOrCategoryLabel } from "@/lib/instructions";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +25,7 @@ export default async function InstructionDetailPage({ params }: { params: { id: 
       project: { select: { name: true } },
       postedBy: { select: { name: true } },
       assignees: { select: { id: true, name: true } },
+      seenBy: { select: { userId: true } },
     },
   });
   if (!instruction) notFound();
@@ -34,12 +39,20 @@ export default async function InstructionDetailPage({ params }: { params: { id: 
   const canView = isSupervisor || isAssignee || instruction.assignees.length === 0;
   if (!canView) redirect("/instructions");
 
+  // Broadcasts have no fixed roster, so only a real assignee opening their
+  // own task counts as "seen" here.
+  if (isAssignee && !instruction.seenBy.some((s) => s.userId === user.id)) {
+    await prisma.instructionSeen.createMany({
+      data: [{ instructionId: instruction.id, userId: user.id }],
+      skipDuplicates: true,
+    });
+    instruction.seenBy.push({ userId: user.id });
+  }
+
   const canUpdate = isSupervisor || isAssignee || isBroadcastForForeman;
   const showReview = isSupervisor && ["FOR_REVIEW", "COMPLETED"].includes(instruction.status);
   const overdue =
     !!instruction.dueDate && instruction.dueDate < new Date() && !CLOSED_STATUSES.includes(instruction.status);
-  const assigneeLabel =
-    instruction.assignees.length > 0 ? instruction.assignees.map((a) => a.name).join(", ") : "Whole site team";
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -51,8 +64,15 @@ export default async function InstructionDetailPage({ params }: { params: { id: 
 
       <Card>
         <CardHeader
-          title={instructionProjectOrCategoryLabel(instruction)}
-          subtitle={`${fmtDateTime(instruction.createdAt)} · assigned by ${instruction.postedBy.name}`}
+          title={instruction.title ?? instructionProjectOrCategoryLabel(instruction)}
+          subtitle={
+            <>
+              {instruction.taskId && <span className="font-mono">{instruction.taskId}</span>}
+              {instruction.taskId && " · "}
+              {instructionProjectOrCategoryLabel(instruction)} · {fmtDateTime(instruction.createdAt)} · created
+              by {instruction.postedBy.name}
+            </>
+          }
           action={
             <div className="flex items-center gap-1.5">
               <Badge value={instruction.status} />
@@ -73,7 +93,15 @@ export default async function InstructionDetailPage({ params }: { params: { id: 
           )}
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-500">
             <span>
-              Assigned to: <span className="font-medium text-ink-700">{assigneeLabel}</span>
+              Assigned to:{" "}
+              {instruction.assignees.length > 0 ? (
+                <AssigneeSeenList
+                  assignees={instruction.assignees}
+                  seenUserIds={instruction.seenBy.map((s) => s.userId)}
+                />
+              ) : (
+                <span className="font-medium text-ink-700">Whole site team</span>
+              )}
             </span>
             {instruction.dueDate && (
               <span className={overdue ? "font-medium text-red-600" : ""}>

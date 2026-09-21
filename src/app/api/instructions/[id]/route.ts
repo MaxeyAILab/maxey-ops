@@ -25,6 +25,7 @@ const patchSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("edit"),
+    title: z.string().min(1).max(200),
     text: z.string().min(1).max(5000),
     projectId: z.string().optional().or(z.literal("")),
     category: z.enum(["OFFICE", "SITE", "DELIVERIES", "WAREHOUSE", "OTHER"]).optional(),
@@ -101,6 +102,7 @@ export const PATCH = handleApi(
       const updated = await prisma.siteInstruction.update({
         where: { id: params.id },
         data: {
+          title: body.title,
           text: body.text,
           projectId: body.projectId || null,
           category,
@@ -116,8 +118,8 @@ export const PATCH = handleApi(
         actorName: user.name,
         action: "INSTRUCTION_EDITED",
         diff: {
-          from: { text: instruction.text, project: instructionProjectOrCategoryLabel(instruction) },
-          to: { text: body.text, project: instructionProjectOrCategoryLabel({ project, category }) },
+          from: { title: instruction.title, text: instruction.text, project: instructionProjectOrCategoryLabel(instruction) },
+          to: { title: body.title, text: body.text, project: instructionProjectOrCategoryLabel({ project, category }) },
         },
       });
 

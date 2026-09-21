@@ -212,6 +212,7 @@ model User {
   instructionsPosted    SiteInstruction[]   @relation("InstructionPostedBy")
   instructionsAssigned  SiteInstruction[]   @relation("InstructionAssignedTo") // legacy single-assignee, superseded by assignedInstructions below
   assignedInstructions  SiteInstruction[]   @relation("InstructionAssignees")
+  instructionsSeen      InstructionSeen[]
   changeOrdersCreated   ChangeOrder[]   @relation("COCreator")
   changeOrdersResponded ChangeOrder[]   @relation("COResponder")
   quotationsCreated     Quotation[]
@@ -312,6 +313,7 @@ model Project {
   leadId        String?
   lead          Lead?         @relation(fields: [leadId], references: [id])
   name          String
+  code          String?       @unique // short project code, e.g. "CTC" — prefixes this project's site instruction Task IDs
   address       String?
   contractValue Decimal       @default(0) @db.Decimal(14, 2)
   termsJson     Json?
@@ -670,6 +672,8 @@ model PayrollRun {
 
 model SiteInstruction {
   id                String              @id @default(cuid())
+  taskId            String?             @unique // e.g. OOT-2026-0001, DOT-2026-0001, or {ProjectCode}-2026-0001 — assigned once at creation, never changes
+  title             String? // short task title; nullable so pre-existing rows (created before this field) stay valid
   projectId         String? // nullable: not every instruction needs an active project
   project           Project?            @relation(fields: [projectId], references: [id])
   category          InstructionCategory? // set when projectId is blank — office/site/deliveries/etc.
@@ -678,7 +682,7 @@ model SiteInstruction {
   assignedToId      String? // legacy single-assignee column — superseded by assignees below, kept for old rows, no longer written
   assignedTo        User?               @relation("InstructionAssignedTo", fields: [assignedToId], references: [id])
   assignees         User[]              @relation("InstructionAssignees") // empty = broadcast to the whole site team
-  text              String
+  text              String // the task's purpose/description
   photoUrl          String?
   status            InstructionStatus   @default(NOT_STARTED)
   priority          InstructionPriority @default(NORMAL)
@@ -688,6 +692,22 @@ model SiteInstruction {
   supervisorRemarks String?
   approval          InstructionApproval @default(PENDING)
   createdAt         DateTime            @default(now())
+
+  seenBy InstructionSeen[]
+}
+
+// One row per (instruction, assignee) the moment that assignee first opens/
+// views it — lets the poster see who has acknowledged their specific task.
+// Only meaningful for specific assignees; a broadcast has no fixed roster.
+model InstructionSeen {
+  id            String          @id @default(cuid())
+  instructionId String
+  instruction   SiteInstruction @relation(fields: [instructionId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User            @relation(fields: [userId], references: [id])
+  seenAt        DateTime        @default(now())
+
+  @@unique([instructionId, userId])
 }
 
 model Meeting {

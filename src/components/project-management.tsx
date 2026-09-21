@@ -26,6 +26,7 @@ export function AddProjectForm({ onDone }: { onDone?: () => void }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: fd.get("name"),
+        code: fd.get("code"),
         address: fd.get("address"),
         ownerName: fd.get("ownerName"),
         contractValue: fd.get("contractValue"),
@@ -54,9 +55,15 @@ export function AddProjectForm({ onDone }: { onDone?: () => void }) {
           <Input id="pjOwner" name="ownerName" required placeholder="Client / company name" />
         </div>
       </div>
-      <div>
-        <Label htmlFor="pjAddress">Project address</Label>
-        <Input id="pjAddress" name="address" placeholder="Street, barangay, city, province" />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <Label htmlFor="pjAddress">Project address</Label>
+          <Input id="pjAddress" name="address" placeholder="Street, barangay, city, province" />
+        </div>
+        <div>
+          <Label htmlFor="pjCode">Project code (unique ID)</Label>
+          <Input id="pjCode" name="code" placeholder="e.g., CTC" maxLength={20} />
+        </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
@@ -74,7 +81,8 @@ export function AddProjectForm({ onDone }: { onDone?: () => void }) {
       </Button>
       <p className="text-xs text-ink-400">
         New projects start under Prospective as “For Site Survey” — change the status from the
-        dropdown once work begins.
+        dropdown once work begins. The project code (optional) prefixes this project's Task IDs
+        in Instructions, e.g. CTC-2026-0001 — leave blank to use a generic prefix instead.
       </p>
     </form>
   );

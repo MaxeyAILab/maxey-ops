@@ -61,14 +61,50 @@ function AssigneeChecklist({
   );
 }
 
+/** Per-assignee Seen/Unread — only meaningful for specific assignees; a
+ * broadcast has no fixed roster to check off, so callers should fall back
+ * to the plain "Whole site team" label instead of rendering this. */
+export function AssigneeSeenList({
+  assignees,
+  seenUserIds,
+}: {
+  assignees: { id: string; name: string }[];
+  seenUserIds: string[];
+}) {
+  const seen = new Set(seenUserIds);
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      {assignees.map((a, i) => (
+        <span key={a.id} className="inline-flex items-center gap-1">
+          {i > 0 && <span className="text-ink-300">,</span>}
+          <span className="font-medium text-ink-700">{a.name}</span>
+          {seen.has(a.id) ? (
+            <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+              Seen
+            </span>
+          ) : (
+            <span className="rounded-full bg-ink-100 px-1.5 py-0.5 text-[10px] font-medium text-ink-500">
+              Unread
+            </span>
+          )}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 /** Jacob/PM posts a dated assignment — against a project, or a category
- * (office/site/deliveries/warehouse/other) when there's no active project. */
+ * (office/site/deliveries/warehouse/other) when there's no active project.
+ * A Task ID (e.g. OOT-2026-0007, DOT-2026-0007, or {ProjectCode}-2026-0007)
+ * is assigned automatically on the server — there's nothing to fill in for it. */
 export function PostInstructionForm({
   projects,
   employees,
+  postedByName,
 }: {
   projects: ProjectOption[];
   employees: EmployeeOption[];
+  postedByName: string;
 }) {
   const router = useRouter();
   const [photos, setPhotos] = useState<string[]>([]);
@@ -89,6 +125,7 @@ export function PostInstructionForm({
       body: JSON.stringify({
         projectId: isCategory ? undefined : selection,
         category: isCategory ? selection.slice(CATEGORY_PREFIX.length) : undefined,
+        title: fd.get("title"),
         text: fd.get("text"),
         photos,
         assigneeIds: Array.from(assigneeIds),
@@ -109,6 +146,10 @@ export function PostInstructionForm({
 
   return (
     <form onSubmit={onSubmit} className="space-y-3">
+      <p className="text-xs text-ink-400">
+        Task ID: <span className="font-mono">assigned automatically on posting</span> · Created
+        by: <span className="font-medium text-ink-600">{postedByName}</span>
+      </p>
       <div>
         <Label htmlFor="insProject">Project</Label>
         <Select id="insProject" name="projectId" defaultValue={`${CATEGORY_PREFIX}OTHER`}>
@@ -131,13 +172,23 @@ export function PostInstructionForm({
         </Select>
       </div>
       <div>
-        <Label htmlFor="insText">Assignment / job</Label>
+        <Label htmlFor="insTitle">Title of task</Label>
+        <Input
+          id="insTitle"
+          name="title"
+          required
+          maxLength={200}
+          placeholder="e.g., Re-check column C4 alignment"
+        />
+      </div>
+      <div>
+        <Label htmlFor="insText">Purpose</Label>
         <Textarea
           id="insText"
           name="text"
           rows={3}
           required
-          placeholder="e.g., Re-check column C4 alignment before pouring; use the revised drawing."
+          placeholder="What needs to happen and why — e.g., before pouring; use the revised drawing."
         />
       </div>
       <div>
@@ -146,7 +197,7 @@ export function PostInstructionForm({
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <Label htmlFor="insDue">Target completion date</Label>
+          <Label htmlFor="insDue">Date to be completed</Label>
           <Input id="insDue" name="dueDate" type="date" />
         </div>
         <div>
@@ -455,6 +506,8 @@ export function BoardPriorityCell({
 
 interface InstructionEditable {
   id: string;
+  taskId: string | null;
+  title: string | null;
   text: string;
   projectId: string | null;
   category: string | null;
@@ -492,6 +545,7 @@ export function EditInstructionForm({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "edit",
+        title: fd.get("title"),
         text: fd.get("text"),
         projectId: isCategory ? undefined : selection,
         category: isCategory ? selection.slice(CATEGORY_PREFIX.length) : undefined,
@@ -527,6 +581,9 @@ export function EditInstructionForm({
       onSubmit={onSubmit}
       className="mt-2 space-y-3 rounded-lg border border-brand-100 bg-brand-50/40 p-3"
     >
+      {instruction.taskId && (
+        <p className="font-mono text-xs text-ink-500">Task ID: {instruction.taskId}</p>
+      )}
       <div>
         <Label htmlFor={`eiProject-${instruction.id}`}>Project</Label>
         <Select id={`eiProject-${instruction.id}`} name="projectId" defaultValue={currentSelection}>
@@ -549,7 +606,17 @@ export function EditInstructionForm({
         </Select>
       </div>
       <div>
-        <Label htmlFor={`eiText-${instruction.id}`}>Assignment / job</Label>
+        <Label htmlFor={`eiTitle-${instruction.id}`}>Title of task</Label>
+        <Input
+          id={`eiTitle-${instruction.id}`}
+          name="title"
+          required
+          maxLength={200}
+          defaultValue={instruction.title ?? ""}
+        />
+      </div>
+      <div>
+        <Label htmlFor={`eiText-${instruction.id}`}>Purpose</Label>
         <Textarea id={`eiText-${instruction.id}`} name="text" rows={3} required defaultValue={instruction.text} />
       </div>
       <div>
@@ -557,7 +624,7 @@ export function EditInstructionForm({
         <AssigneeChecklist employees={employees} selected={assigneeIds} onChange={setAssigneeIds} />
       </div>
       <div>
-        <Label htmlFor={`eiDue-${instruction.id}`}>Target completion date</Label>
+        <Label htmlFor={`eiDue-${instruction.id}`}>Date to be completed</Label>
         <Input
           id={`eiDue-${instruction.id}`}
           name="dueDate"

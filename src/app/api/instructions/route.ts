@@ -5,11 +5,12 @@ import { audit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
 import { savePhotos } from "@/lib/storage";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
-import { instructionProjectOrCategoryLabel } from "@/lib/instructions";
+import { instructionProjectOrCategoryLabel, taskIdPrefix } from "@/lib/instructions";
 
 const createSchema = z.object({
   projectId: z.string().min(1).optional().or(z.literal("")), // omitted/empty for non-project instructions
   category: z.enum(["OFFICE", "SITE", "DELIVERIES", "WAREHOUSE", "OTHER"]).optional(), // only meaningful when projectId is empty
+  title: z.string().min(1).max(200),
   text: z.string().min(1).max(5000),
   photos: z.array(z.string()).max(2).optional(),
   assigneeIds: z.array(z.string()).max(50).optional().default([]), // empty = broadcast to the whole site team
@@ -45,9 +46,21 @@ export const POST = handleApi(async (req: NextRequest) => {
     }
   }
 
+  // Task ID assigned once, at creation, and never changed afterward — a
+  // real project's own code, else DOT for deliveries or OOT for everything
+  // else non-project (Spec: office/general-site/warehouse/other).
+  const prefix = taskIdPrefix(project?.code, category);
+  const year = new Date().getFullYear();
+  const seqCount = await prisma.siteInstruction.count({
+    where: { taskId: { startsWith: `${prefix}-${year}-` } },
+  });
+  const taskId = `${prefix}-${year}-${String(seqCount + 1).padStart(4, "0")}`;
+
   const photoUrls = await savePhotos(body.photos);
   const instruction = await prisma.siteInstruction.create({
     data: {
+      taskId,
+      title: body.title,
       projectId: body.projectId || null,
       category,
       postedById: user.id,
@@ -66,6 +79,8 @@ export const POST = handleApi(async (req: NextRequest) => {
     actorName: user.name,
     action: "INSTRUCTION_POSTED",
     diff: {
+      taskId,
+      title: body.title,
       project: label,
       assignedTo: assignees.length > 0 ? assignees.map((a) => a.name).join(", ") : null,
       dueDate: body.dueDate ?? null,
@@ -74,8 +89,8 @@ export const POST = handleApi(async (req: NextRequest) => {
   });
   await notify({
     to: { name: assignees.length > 0 ? assignees.map((a) => a.name).join(", ") : "Site team" },
-    subject: `New site instruction — ${label}`,
-    message: body.text.slice(0, 120),
+    subject: `New site instruction — ${label} (${taskId})`,
+    message: `${body.title}: ${body.text.slice(0, 120)}`,
   });
 
   return NextResponse.json(instruction, { status: 201 });

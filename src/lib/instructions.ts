@@ -26,3 +26,12 @@ export function instructionProjectOrCategoryLabel(i: {
   if (i.project) return i.project.name;
   return INSTRUCTION_CATEGORY_LABELS[i.category ?? "OTHER"] ?? "No project";
 }
+
+/** Task ID prefix: a real project's own code when it has one, DOT (Driver's
+ * Operation Task) for deliveries, otherwise OOT (Office Operations Task) —
+ * the catch-all for office/general-site/warehouse/other non-project work. */
+export function taskIdPrefix(projectCode: string | null | undefined, category: string | null | undefined): string {
+  if (projectCode) return projectCode;
+  if (category === "DELIVERIES") return "DOT";
+  return "OOT";
+}

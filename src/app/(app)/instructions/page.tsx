@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { fmtDate, fmtDateTime } from "@/lib/format";
 import { Badge, Button, Card, CardBody, CardHeader, Input, Label, Select, Table, Td, Th } from "@/components/ui";
 import {
+  AssigneeSeenList,
   BoardPriorityCell,
   BoardStatusCell,
   DeleteInstructionButton,
@@ -59,6 +60,7 @@ export default async function InstructionsPage({
         project: { select: { name: true } },
         postedBy: { select: { name: true } },
         assignees: { select: { id: true, name: true } },
+        seenBy: { select: { userId: true } },
       },
     }),
     prisma.project.findMany({
@@ -78,6 +80,20 @@ export default async function InstructionsPage({
       orderBy: { name: "asc" },
     }),
   ]);
+
+  // Mark seen: viewing the feed is how most people actually interact with
+  // their tasks, so the moment their own specifically-assigned instructions
+  // are loaded here counts as "seen" — skipDuplicates means this never
+  // touches (or resets) an already-recorded first-seen timestamp.
+  const myUnseenAssigned = instructions
+    .filter((i) => i.assignees.some((a) => a.id === user.id) && !i.seenBy.some((s) => s.userId === user.id))
+    .map((i) => i.id);
+  if (myUnseenAssigned.length > 0) {
+    await prisma.instructionSeen.createMany({
+      data: myUnseenAssigned.map((instructionId) => ({ instructionId, userId: user.id })),
+      skipDuplicates: true,
+    });
+  }
 
   const canPost = isSupervisor;
   const startOfToday = new Date();
@@ -212,7 +228,12 @@ export default async function InstructionsPage({
         )}
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-500">
           <span>
-            Assigned to: <span className="font-medium text-ink-700">{assigneeLabel(i.assignees)}</span>
+            Assigned to:{" "}
+            {i.assignees.length > 0 ? (
+              <AssigneeSeenList assignees={i.assignees} seenUserIds={i.seenBy.map((s) => s.userId)} />
+            ) : (
+              <span className="font-medium text-ink-700">Whole site team</span>
+            )}
           </span>
           {i.dueDate && (
             <span className={overdue ? "font-medium text-red-600" : ""}>
@@ -240,6 +261,8 @@ export default async function InstructionsPage({
             <EditInstructionForm
               instruction={{
                 id: i.id,
+                taskId: i.taskId,
+                title: i.title,
                 text: i.text,
                 projectId: i.projectId,
                 category: i.category,
@@ -275,10 +298,13 @@ export default async function InstructionsPage({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="text-xs text-ink-400">
-                {instructionProjectOrCategoryLabel(i)} · {fmtDateTime(i.createdAt)} · assigned by{" "}
+                {i.taskId && <span className="font-mono font-medium text-ink-500">{i.taskId}</span>}
+                {i.taskId && " · "}
+                {instructionProjectOrCategoryLabel(i)} · {fmtDateTime(i.createdAt)} · created by{" "}
                 {i.postedBy.name}
               </div>
-              <p className="mt-1 whitespace-pre-wrap text-sm text-ink-800">{i.text}</p>
+              {i.title && <p className="mt-1 text-sm font-semibold text-ink-900">{i.title}</p>}
+              <p className="mt-0.5 whitespace-pre-wrap text-sm text-ink-800">{i.text}</p>
               {details}
             </div>
             {badges}
@@ -298,18 +324,26 @@ export default async function InstructionsPage({
             <span className="mt-0.5 shrink-0 text-ink-400 transition-transform group-open:rotate-90">▶</span>
             <div className="min-w-0 flex-1">
               <div className="text-xs text-ink-400">
-                {instructionProjectOrCategoryLabel(i)} · assigned by {i.postedBy.name}
+                {i.taskId && <span className="font-mono font-medium text-ink-500">{i.taskId}</span>}
+                {i.taskId && " · "}
+                {instructionProjectOrCategoryLabel(i)} · created by {i.postedBy.name}
               </div>
-              <p className="truncate text-sm text-ink-800">{i.text}</p>
+              <p className="truncate text-sm text-ink-800">{i.title ?? i.text}</p>
               <div className="text-xs text-ink-500">
-                Assigned to: <span className="font-medium text-ink-700">{assigneeLabel(i.assignees)}</span>
+                Assigned to:{" "}
+                {i.assignees.length > 0 ? (
+                  <AssigneeSeenList assignees={i.assignees} seenUserIds={i.seenBy.map((s) => s.userId)} />
+                ) : (
+                  <span className="font-medium text-ink-700">Whole site team</span>
+                )}
               </div>
             </div>
           </div>
           {badges}
         </summary>
         <div className="border-t border-ink-100 p-3">
-          <p className="whitespace-pre-wrap text-sm text-ink-800">{i.text}</p>
+          {i.title && <p className="text-sm font-semibold text-ink-900">{i.title}</p>}
+          <p className="mt-0.5 whitespace-pre-wrap text-sm text-ink-800">{i.text}</p>
           {details}
           {actions}
         </div>
@@ -352,7 +386,7 @@ export default async function InstructionsPage({
             subtitle="Against a project, or Office/Site/Deliveries/Warehouse/Other when there's no active project — assign to one person or broadcast to the whole site team"
           />
           <CardBody>
-            <PostInstructionForm projects={projects} employees={employees} />
+            <PostInstructionForm projects={projects} employees={employees} postedByName={user.name} />
           </CardBody>
         </Card>
       )}
@@ -453,11 +487,14 @@ export default async function InstructionsPage({
                         return (
                           <tr key={i.id} className={overdue ? "bg-red-50/40 hover:bg-red-50" : "hover:bg-ink-50"}>
                             <Td className="max-w-[240px]">
+                              {i.taskId && (
+                                <div className="font-mono text-[10px] text-ink-400">{i.taskId}</div>
+                              )}
                               <Link
                                 href={`/instructions/${i.id}`}
                                 className="line-clamp-2 text-sm text-ink-800 hover:text-brand-600 hover:underline"
                               >
-                                {i.text}
+                                {i.title ?? i.text}
                               </Link>
                             </Td>
                             <Td className="whitespace-nowrap">
@@ -580,6 +617,7 @@ export default async function InstructionsPage({
                   <Table>
                     <thead>
                       <tr>
+                        <Th>Task ID</Th>
                         <Th>Date</Th>
                         <Th>Project</Th>
                         <Th>Assignment</Th>
@@ -593,9 +631,13 @@ export default async function InstructionsPage({
                     <tbody>
                       {f.items.map((i) => (
                         <tr key={i.id} className="hover:bg-ink-50">
+                          <Td className="whitespace-nowrap font-mono text-[11px] text-ink-500">
+                            {i.taskId ?? "—"}
+                          </Td>
                           <Td className="text-xs">{fmtDateTime(i.createdAt)}</Td>
                           <Td className="text-xs">{instructionProjectOrCategoryLabel(i)}</Td>
                           <Td className="max-w-[220px]">
+                            {i.title && <div className="text-xs font-medium text-ink-800">{i.title}</div>}
                             <span className="line-clamp-2 text-xs text-ink-600">{i.text}</span>
                           </Td>
                           <Td className="text-xs">{assigneeLabel(i.assignees)}</Td>
