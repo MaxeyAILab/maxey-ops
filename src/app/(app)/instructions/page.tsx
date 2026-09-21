@@ -190,56 +190,51 @@ export default async function InstructionsPage({
     return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase();
   }
 
-  const renderItem = (i: (typeof instructions)[number]) => {
+  const renderItem = (i: (typeof instructions)[number], opts?: { collapsible?: boolean }) => {
     const canUpdate = canUpdateFor(i);
     const overdue = !!i.dueDate && i.dueDate < new Date() && !CLOSED_STATUSES.includes(i.status);
     const showReview = isSupervisor && ["FOR_REVIEW", "COMPLETED"].includes(i.status);
+    const collapsible = opts?.collapsible ?? false;
 
-    return (
-      <div key={i.id} className="rounded-lg border border-ink-100 p-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="text-xs text-ink-400">
-              {instructionProjectOrCategoryLabel(i)} · {fmtDateTime(i.createdAt)} · assigned by{" "}
-              {i.postedBy.name}
-            </div>
-            <p className="mt-1 whitespace-pre-wrap text-sm text-ink-800">{i.text}</p>
-            {i.photoUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={i.photoUrl} alt="" className="mt-2 max-h-40 rounded-lg object-cover" />
-            )}
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-500">
-              <span>
-                Assigned to:{" "}
-                <span className="font-medium text-ink-700">{assigneeLabel(i.assignees)}</span>
-              </span>
-              {i.dueDate && (
-                <span className={overdue ? "font-medium text-red-600" : ""}>
-                  Target: {fmtDate(i.dueDate)}
-                  {overdue && " ⚠ overdue"}
-                </span>
-              )}
-              {i.completedAt && (
-                <span className="font-medium text-emerald-600">
-                  Completed: {fmtDate(i.completedAt)}
-                </span>
-              )}
-            </div>
-            {i.remarks && (
-              <p className="mt-1.5 rounded bg-ink-50 p-2 text-xs text-ink-600">📝 {i.remarks}</p>
-            )}
-            {i.supervisorRemarks && (
-              <p className="mt-1.5 rounded bg-brand-50 p-2 text-xs text-brand-700">
-                Supervisor: {i.supervisorRemarks}
-              </p>
-            )}
-          </div>
-          <div className="flex shrink-0 flex-col items-end gap-1.5">
-            <Badge value={i.status} />
-            <Badge value={i.priority} />
-            {i.approval !== "PENDING" && <Badge value={i.approval} />}
-          </div>
+    const badges = (
+      <div className="flex shrink-0 flex-col items-end gap-1.5">
+        <Badge value={i.status} />
+        <Badge value={i.priority} />
+        {i.approval !== "PENDING" && <Badge value={i.approval} />}
+      </div>
+    );
+
+    const details = (
+      <>
+        {i.photoUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={i.photoUrl} alt="" className="mt-2 max-h-40 rounded-lg object-cover" />
+        )}
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-500">
+          <span>
+            Assigned to: <span className="font-medium text-ink-700">{assigneeLabel(i.assignees)}</span>
+          </span>
+          {i.dueDate && (
+            <span className={overdue ? "font-medium text-red-600" : ""}>
+              Target: {fmtDate(i.dueDate)}
+              {overdue && " ⚠ overdue"}
+            </span>
+          )}
+          {i.completedAt && (
+            <span className="font-medium text-emerald-600">Completed: {fmtDate(i.completedAt)}</span>
+          )}
         </div>
+        {i.remarks && <p className="mt-1.5 rounded bg-ink-50 p-2 text-xs text-ink-600">📝 {i.remarks}</p>}
+        {i.supervisorRemarks && (
+          <p className="mt-1.5 rounded bg-brand-50 p-2 text-xs text-brand-700">
+            Supervisor: {i.supervisorRemarks}
+          </p>
+        )}
+      </>
+    );
+
+    const actions = (
+      <>
         {isSupervisor && (
           <div className="mt-2 flex items-center gap-3">
             <EditInstructionForm
@@ -271,12 +266,59 @@ export default async function InstructionsPage({
             />
           </div>
         )}
-      </div>
+      </>
+    );
+
+    if (!collapsible) {
+      return (
+        <div key={i.id} className="rounded-lg border border-ink-100 p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="text-xs text-ink-400">
+                {instructionProjectOrCategoryLabel(i)} · {fmtDateTime(i.createdAt)} · assigned by{" "}
+                {i.postedBy.name}
+              </div>
+              <p className="mt-1 whitespace-pre-wrap text-sm text-ink-800">{i.text}</p>
+              {details}
+            </div>
+            {badges}
+          </div>
+          {actions}
+        </div>
+      );
+    }
+
+    // Completed items default to collapsed — a one-line summary that pulls
+    // down to the full card, so a long completed list doesn't dominate the
+    // page the way always-expanded cards did.
+    return (
+      <details key={i.id} className="group rounded-lg border border-ink-100">
+        <summary className="flex cursor-pointer list-none items-start justify-between gap-3 p-3 hover:bg-ink-50">
+          <div className="flex min-w-0 flex-1 items-start gap-2">
+            <span className="mt-0.5 shrink-0 text-ink-400 transition-transform group-open:rotate-90">▶</span>
+            <div className="min-w-0 flex-1">
+              <div className="text-xs text-ink-400">
+                {instructionProjectOrCategoryLabel(i)} · assigned by {i.postedBy.name}
+              </div>
+              <p className="truncate text-sm text-ink-800">{i.text}</p>
+              <div className="text-xs text-ink-500">
+                Assigned to: <span className="font-medium text-ink-700">{assigneeLabel(i.assignees)}</span>
+              </div>
+            </div>
+          </div>
+          {badges}
+        </summary>
+        <div className="border-t border-ink-100 p-3">
+          <p className="whitespace-pre-wrap text-sm text-ink-800">{i.text}</p>
+          {details}
+          {actions}
+        </div>
+      </details>
     );
   };
 
   return (
-    <div className={isBoard ? "mx-auto max-w-6xl space-y-6" : "mx-auto max-w-3xl space-y-6"}>
+    <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-bold text-ink-900">Site Instructions</h1>
         <div className="flex overflow-hidden rounded-lg border border-ink-200 text-sm">
@@ -366,7 +408,7 @@ export default async function InstructionsPage({
             }
           />
           <CardBody className="space-y-3">
-            {searchResults.map(renderItem)}
+            {searchResults.map((i) => renderItem(i))}
             {searchResults.length === 0 && (
               <p className="text-sm text-ink-400">No assignments found for this range.</p>
             )}
@@ -478,33 +520,42 @@ export default async function InstructionsPage({
       )}
 
       {!isBoard && (
-        <>
-          <Card>
-            <CardHeader title={`Today (${today.length})`} subtitle="Assignments issued today" />
-            <CardBody className="space-y-3">
-              {today.map(renderItem)}
-              {today.length === 0 && <p className="text-sm text-ink-400">Nothing new today.</p>}
-            </CardBody>
-          </Card>
-
-          <Card>
-            <CardHeader
-              title={`Still open (${open.length})`}
-              subtitle="Earlier assignments not yet done — surfaced until closed"
-            />
-            <CardBody className="space-y-3">
-              {open.map(renderItem)}
-              {open.length === 0 && <p className="text-sm text-ink-400">Nothing outstanding.</p>}
-            </CardBody>
-          </Card>
-
-          {done.length > 0 && (
+        <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+          {/* Scheduling — active work, left column */}
+          <div className="space-y-6">
             <Card>
-              <CardHeader title={`Completed (${done.length})`} />
-              <CardBody className="space-y-3">{done.slice(0, 20).map(renderItem)}</CardBody>
+              <CardHeader title={`Today (${today.length})`} subtitle="Assignments issued today" />
+              <CardBody className="space-y-3">
+                {today.map((i) => renderItem(i))}
+                {today.length === 0 && <p className="text-sm text-ink-400">Nothing new today.</p>}
+              </CardBody>
             </Card>
-          )}
-        </>
+
+            <Card>
+              <CardHeader
+                title={`Still open (${open.length})`}
+                subtitle="Earlier assignments not yet done — surfaced until closed"
+              />
+              <CardBody className="space-y-3">
+                {open.map((i) => renderItem(i))}
+                {open.length === 0 && <p className="text-sm text-ink-400">Nothing outstanding.</p>}
+              </CardBody>
+            </Card>
+          </div>
+
+          {/* Completed — right column, each item collapsed to a one-line
+              summary by default so a long history doesn't dominate the page */}
+          <div className="space-y-6">
+            {done.length > 0 && (
+              <Card>
+                <CardHeader title={`Completed (${done.length})`} subtitle="Click a task to expand it" />
+                <CardBody className="space-y-2">
+                  {done.slice(0, 20).map((i) => renderItem(i, { collapsible: true }))}
+                </CardBody>
+              </Card>
+            )}
+          </div>
+        </div>
       )}
 
       {folders.length > 0 && (
