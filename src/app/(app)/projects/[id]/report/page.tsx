@@ -48,6 +48,8 @@ export default async function ProjectReportPage({ params }: { params: { id: stri
   if (!p) notFound();
 
   const showMoney = ["OWNER", "PM", "ACCOUNTING"].includes(user.role);
+  // Same rule as the project detail page: committed cost stays Owner-only.
+  const showCommitted = user.role === "OWNER";
   const received = p.payments.reduce((s, x) => s + Number(x.amount), 0);
   const committed =
     p.payrollRuns.reduce((s, r) => s + runGross(r.entries), 0) +
@@ -112,7 +114,9 @@ export default async function ProjectReportPage({ params }: { params: { id: stri
         </div>
 
         {showMoney && (
-          <div className="mt-4 grid grid-cols-3 gap-4 rounded-lg bg-ink-100 p-4 text-sm print:bg-transparent print:p-0">
+          <div
+            className={`mt-4 grid gap-4 rounded-lg bg-ink-100 p-4 text-sm print:bg-transparent print:p-0 ${showCommitted ? "grid-cols-3" : "grid-cols-2"}`}
+          >
             <div>
               <div className="text-xs uppercase text-ink-400">Contract value</div>
               <div className="font-semibold tabular-nums">{php(p.contractValue.toString())}</div>
@@ -121,10 +125,12 @@ export default async function ProjectReportPage({ params }: { params: { id: stri
               <div className="text-xs uppercase text-ink-400">Payments received</div>
               <div className="font-semibold tabular-nums text-emerald-700">{php(received)}</div>
             </div>
-            <div>
-              <div className="text-xs uppercase text-ink-400">Cost committed to date</div>
-              <div className="font-semibold tabular-nums">{php(committed)}</div>
-            </div>
+            {showCommitted && (
+              <div>
+                <div className="text-xs uppercase text-ink-400">Cost committed to date</div>
+                <div className="font-semibold tabular-nums">{php(committed)}</div>
+              </div>
+            )}
           </div>
         )}
 

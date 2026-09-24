@@ -57,6 +57,10 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
   if (!p) notFound();
 
   const showMoney = ["OWNER", "ACCOUNTING", "PM"].includes(user.role);
+  // Committed cost and margin reveal the company's actual profitability on
+  // the job — kept to Owner only, even though Accounting/PM see the rest of
+  // the money figures (contract value, received, progress).
+  const showMargin = user.role === "OWNER";
   const canRecordPayment = ["OWNER", "ACCOUNTING"].includes(user.role);
   const canCreateCO = ["OWNER", "PM"].includes(user.role);
   const canProgress = ["OWNER", "PM", "FOREMAN"].includes(user.role);
@@ -127,20 +131,24 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
       </div>
 
       {showMoney && (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <div className={`grid grid-cols-2 gap-3 ${showMargin ? "lg:grid-cols-5" : "lg:grid-cols-3"}`}>
           <Stat label="Contract value" value={php(contractValue)} />
           <Stat label="Received" value={php(received)} tone="good" />
-          <Stat
-            label="Committed cost"
-            value={php(committed)}
-            tone="bad"
-            sub={`incl. payroll ${php(laborCost)}`}
-          />
-          <Stat
-            label="Est. margin"
-            value={php(contractValue - committed)}
-            tone={contractValue - committed >= 0 ? "good" : "bad"}
-          />
+          {showMargin && (
+            <>
+              <Stat
+                label="Committed cost"
+                value={php(committed)}
+                tone="bad"
+                sub={`incl. payroll ${php(laborCost)}`}
+              />
+              <Stat
+                label="Est. margin"
+                value={php(contractValue - committed)}
+                tone={contractValue - committed >= 0 ? "good" : "bad"}
+              />
+            </>
+          )}
           <Stat label="Progress" value={`${accomplishmentPct.toFixed(0)}%`} tone="brand" sub={`retention held ${php(retentionHeld)}`} />
         </div>
       )}
