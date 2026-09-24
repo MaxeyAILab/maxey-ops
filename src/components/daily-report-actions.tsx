@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button, Input, Label, Textarea } from "@/components/ui";
 import { PhotoInput } from "@/components/photo-input";
 import { fmtDate, fmtDateTime } from "@/lib/format";
+import { dailyReportExpiresAt } from "@/lib/daily-reports";
 
 interface DeliveryItem {
   material: string;
@@ -586,31 +587,36 @@ export function DailyReportCard({
             <p className="text-[10px] text-ink-400">
               Prepared by {report.submittedByName} · {fmtDateTime(report.createdAt)}
               {report.editedAt && " · edited"}
+              {" · "}auto-deletes {fmtDate(dailyReportExpiresAt(report.createdAt))}
             </p>
 
-            {(canEdit || canDelete) && (
-              <div className="flex items-center gap-3">
-                {canEdit && (
-                  <button
-                    type="button"
-                    onClick={() => setEditing(true)}
-                    className="text-xs font-medium text-brand-600 hover:underline"
-                  >
-                    Edit
-                  </button>
-                )}
-                {canDelete && (
-                  <button
-                    type="button"
-                    onClick={onDelete}
-                    disabled={busyDelete}
-                    className="text-xs font-medium text-red-600 hover:underline disabled:opacity-50"
-                  >
-                    {busyDelete ? "Deleting…" : "Delete"}
-                  </button>
-                )}
-              </div>
-            )}
+            <div className="flex items-center gap-3">
+              <a
+                href={`/api/daily-reports/${report.id}/pdf`}
+                className="text-xs font-medium text-brand-600 hover:underline"
+              >
+                ⬇ Download PDF
+              </a>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => setEditing(true)}
+                  className="text-xs font-medium text-brand-600 hover:underline"
+                >
+                  Edit
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  disabled={busyDelete}
+                  className="text-xs font-medium text-red-600 hover:underline disabled:opacity-50"
+                >
+                  {busyDelete ? "Deleting…" : "Delete"}
+                </button>
+              )}
+            </div>
           </>
         )}
       </div>

@@ -14,6 +14,7 @@ import { PaymentList } from "@/components/payment-list";
 import { AccountToggleButton, CreatePortalAccessForm } from "@/components/portal-access";
 import { AccomplishmentRadial, WorkItemWeightBars } from "@/components/charts";
 import { DailyReportCard, DailyReportForm, type DailyReportDisplay } from "@/components/daily-report-actions";
+import { DAILY_REPORT_LIFETIME_DAYS } from "@/lib/daily-reports";
 import { runGross } from "@/lib/finance";
 import { canAccess } from "@/lib/access";
 import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
@@ -411,7 +412,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
       <Card>
         <CardHeader
           title={`Daily construction reports (${dailyReports.length})`}
-          subtitle="End-of-day site record — reports marked visible to client also appear in their portal"
+          subtitle={`End-of-day site record — visible reports also appear in the client portal. Download the PDF to keep a copy; reports auto-delete ${DAILY_REPORT_LIFETIME_DAYS} days after posting.`}
         />
         <CardBody className="space-y-3">
           {canProgress && (

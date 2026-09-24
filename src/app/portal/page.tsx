@@ -8,6 +8,7 @@ import { SignOutButton } from "@/components/signout-button";
 import { computeWorkItemStatuses } from "@/lib/progress";
 import { AccomplishmentRadial, WorkItemWeightBars } from "@/components/charts";
 import { DailyReportCard, type DailyReportDisplay } from "@/components/daily-report-actions";
+import { DAILY_REPORT_LIFETIME_DAYS } from "@/lib/daily-reports";
 
 export const metadata = { title: "Client Portal" };
 export const dynamic = "force-dynamic";
@@ -245,7 +246,10 @@ export default async function PortalPage() {
 
               {dailyReports.length > 0 && (
                 <Card>
-                  <CardHeader title="Daily construction reports" subtitle="Filed from site, newest first" />
+                  <CardHeader
+                    title="Daily construction reports"
+                    subtitle={`Filed from site, newest first — download a PDF copy before it auto-deletes ${DAILY_REPORT_LIFETIME_DAYS} days after posting`}
+                  />
                   <CardBody className="space-y-2">
                     {dailyReports.map((r) => (
                       <DailyReportCard key={r.id} report={r} canEdit={false} canDelete={false} />
