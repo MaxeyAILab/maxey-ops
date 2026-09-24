@@ -9,6 +9,7 @@ import { computeWorkItemStatuses } from "@/lib/progress";
 import { AccomplishmentRadial, WorkItemWeightBars } from "@/components/charts";
 import { DailyReportCard, type DailyReportDisplay } from "@/components/daily-report-actions";
 import { DAILY_REPORT_LIFETIME_DAYS } from "@/lib/daily-reports";
+import { PhotoThumbnails } from "@/components/photo-viewer";
 
 export const metadata = { title: "Client Portal" };
 export const dynamic = "force-dynamic";
@@ -167,16 +168,10 @@ export default async function PortalPage() {
                           )}
                           {e.notes && <p className="text-xs text-ink-500">{e.notes}</p>}
                           {Array.isArray(e.photos) && (e.photos as string[]).length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {(e.photos as string[]).map((src) => (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  key={src}
-                                  src={src}
-                                  alt="Site photo"
-                                  className="h-24 w-24 rounded-lg object-cover"
-                                />
-                              ))}
+                            <div className="mt-2">
+                              <PhotoThumbnails
+                                photos={(e.photos as string[]).map((src) => ({ src, label: fmtDateTime(e.createdAt) }))}
+                              />
                             </div>
                           )}
                           <div className="mt-1 text-[10px] text-ink-400">

@@ -6,6 +6,7 @@ import { Button, Input, Label, Textarea } from "@/components/ui";
 import { PhotoInput } from "@/components/photo-input";
 import { fmtDate, fmtDateTime } from "@/lib/format";
 import { dailyReportExpiresAt } from "@/lib/daily-reports";
+import { PhotoThumbnails } from "@/components/photo-viewer";
 
 interface DeliveryItem {
   material: string;
@@ -576,12 +577,9 @@ export function DailyReportCard({
             )}
 
             {report.photos.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {report.photos.map((src) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img key={src} src={src} alt="" className="h-20 w-20 rounded-lg object-cover" />
-                ))}
-              </div>
+              <PhotoThumbnails
+                photos={report.photos.map((src) => ({ src, label: fmtDateTime(report.createdAt) }))}
+              />
             )}
 
             <p className="text-[10px] text-ink-400">

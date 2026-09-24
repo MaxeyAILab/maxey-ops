@@ -15,6 +15,7 @@ import { AccountToggleButton, CreatePortalAccessForm } from "@/components/portal
 import { AccomplishmentRadial, WorkItemWeightBars } from "@/components/charts";
 import { DailyReportCard, DailyReportForm, type DailyReportDisplay } from "@/components/daily-report-actions";
 import { DAILY_REPORT_LIFETIME_DAYS } from "@/lib/daily-reports";
+import { PhotoThumbnails } from "@/components/photo-viewer";
 import { runGross } from "@/lib/finance";
 import { canAccess } from "@/lib/access";
 import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
@@ -348,16 +349,10 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                     )}
                     {e.notes && <p className="text-xs text-ink-500">{e.notes}</p>}
                     {Array.isArray(e.photos) && (e.photos as string[]).length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {(e.photos as string[]).map((src) => (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            key={src}
-                            src={src}
-                            alt=""
-                            className="h-20 w-20 rounded-lg object-cover"
-                          />
-                        ))}
+                      <div className="mt-2">
+                        <PhotoThumbnails
+                          photos={(e.photos as string[]).map((src) => ({ src, label: fmtDateTime(e.createdAt) }))}
+                        />
                       </div>
                     )}
                     {canEditEntry && (
