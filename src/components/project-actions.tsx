@@ -164,6 +164,121 @@ export function ChangeOrderForm({ projectId }: { projectId: string }) {
   );
 }
 
+interface ChangeOrderEditable {
+  id: string;
+  title: string;
+  description: string;
+  costImpact: number;
+  timeImpactDays: number;
+}
+
+/** Owner-only correction for a typo'd/mistaken change order — only while it's
+ * still pending, before the client has responded. */
+export function EditChangeOrderButton({ co }: { co: ChangeOrderEditable }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    const fd = new FormData(e.currentTarget);
+    const res = await fetch(`/api/change-orders/${co.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: fd.get("title"),
+        description: fd.get("description"),
+        costImpact: fd.get("costImpact"),
+        timeImpactDays: fd.get("timeImpactDays"),
+      }),
+    });
+    setBusy(false);
+    if (res.ok) {
+      setOpen(false);
+      router.refresh();
+    } else {
+      setError((await res.json()).error ?? "Failed to save changes");
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="text-xs font-medium text-brand-600 hover:underline"
+      >
+        Edit
+      </button>
+    );
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="mt-2 space-y-3 rounded-lg border border-brand-100 bg-brand-50/40 p-3">
+      <div>
+        <Label htmlFor={`coTitle-${co.id}`}>Title *</Label>
+        <Input id={`coTitle-${co.id}`} name="title" required defaultValue={co.title} />
+      </div>
+      <div>
+        <Label htmlFor={`coDesc-${co.id}`}>Description / scope *</Label>
+        <Textarea id={`coDesc-${co.id}`} name="description" rows={3} required defaultValue={co.description} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label htmlFor={`coCost-${co.id}`}>Cost impact (PHP)</Label>
+          <Input id={`coCost-${co.id}`} name="costImpact" type="number" step="0.01" defaultValue={co.costImpact} />
+        </div>
+        <div>
+          <Label htmlFor={`coDays-${co.id}`}>Time impact (days)</Label>
+          <Input id={`coDays-${co.id}`} name="timeImpactDays" type="number" defaultValue={co.timeImpactDays} />
+        </div>
+      </div>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="secondary" onClick={() => setOpen(false)} className="text-xs">
+          Cancel
+        </Button>
+        <Button type="submit" disabled={busy} className="text-xs">
+          {busy ? "Saving…" : "Save changes"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/** Owner-only cancel for a mistaken/duplicate change order — only while it's
+ * still pending. Once the client has responded it's a permanent record. */
+export function DeleteChangeOrderButton({ changeOrderId }: { changeOrderId: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+
+  async function onDelete() {
+    if (!confirm("Cancel this change order? This cannot be undone.")) return;
+    setBusy(true);
+    const res = await fetch(`/api/change-orders/${changeOrderId}`, { method: "DELETE" });
+    setBusy(false);
+    if (res.ok) {
+      router.refresh();
+    } else {
+      alert((await res.json()).error ?? "Failed to delete");
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onDelete}
+      disabled={busy}
+      className="text-xs font-medium text-red-600 hover:underline disabled:opacity-50"
+    >
+      {busy ? "Deleting…" : "Delete"}
+    </button>
+  );
+}
+
 /** PM/foreman daily progress entry — offline-capable, with photos (Spec 6.7). */
 export function ProgressForm({ projectId }: { projectId: string }) {
   const router = useRouter();

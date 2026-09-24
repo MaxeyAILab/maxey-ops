@@ -6,6 +6,8 @@ import { fmtDate, fmtDateTime, php } from "@/lib/format";
 import { Badge, Card, CardBody, CardHeader, Stat, Table, Td, Th } from "@/components/ui";
 import {
   ChangeOrderForm,
+  DeleteChangeOrderButton,
+  EditChangeOrderButton,
   EditProgressEntryButton,
   PaymentForm,
   ProgressForm,
@@ -229,6 +231,20 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                   {co.timeImpactDays} day(s)
                   {co.clientResponseAt && ` · responded ${fmtDateTime(co.clientResponseAt)}`}
                 </p>
+                {user.role === "OWNER" && co.status === "PENDING_CLIENT" && (
+                  <div className="mt-2 flex items-center gap-3">
+                    <EditChangeOrderButton
+                      co={{
+                        id: co.id,
+                        title: co.title,
+                        description: co.description,
+                        costImpact: Number(co.costImpact),
+                        timeImpactDays: co.timeImpactDays,
+                      }}
+                    />
+                    <DeleteChangeOrderButton changeOrderId={co.id} />
+                  </div>
+                )}
               </div>
             ))}
             {p.changeOrders.length === 0 && (
