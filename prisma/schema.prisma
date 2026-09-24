@@ -209,6 +209,7 @@ model User {
   purchaseOrders        PurchaseOrder[]
   paymentsRecorded      Payment[]
   progressEntries       ProgressEntry[]
+  dailyReportsSubmitted DailyConstructionReport[]
   instructionsPosted    SiteInstruction[]   @relation("InstructionPostedBy")
   instructionsAssigned  SiteInstruction[]   @relation("InstructionAssignedTo") // legacy single-assignee, superseded by assignedInstructions below
   assignedInstructions  SiteInstruction[]   @relation("InstructionAssignees")
@@ -329,6 +330,7 @@ model Project {
   requisitions    Requisition[]
   changeOrders    ChangeOrder[]
   progressEntries ProgressEntry[]
+  dailyReports    DailyConstructionReport[]
   instructions    SiteInstruction[]
   deliveries      Delivery[]
   meetings        Meeting[]
@@ -504,6 +506,40 @@ model ProgressEntry {
   createdAt     DateTime @default(now())
   editedById    String?
   editedAt      DateTime?
+}
+
+// Daily Construction Report (DCR) — a fuller end-of-day site record than a
+// ProgressEntry: work performed by trade, deliveries received, manpower and
+// equipment on site, site events, issues, safety, and next-day plan. Posted
+// on the project page and, when visibleToClient, mirrored into the client
+// portal alongside the progress timeline/radial chart.
+model DailyConstructionReport {
+  id              String    @id @default(cuid())
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id])
+  reportNo        String // sequential per project, e.g. "DCR-023"
+  reportDate      DateTime // the date the work was performed
+  weather         String?
+  workingHours    String? // e.g. "7:00 AM – 5:00 PM"
+  workProgress    String // work performed today, by trade
+  deliveries      Json? // [{ material, qty, supplier, condition }]
+  manpower        Json? // [{ role, count }]
+  equipment       String? // equipment on site, freeform list
+  siteEvents      String? // toolbox meetings, inspections, coordination
+  issues          String? // issues / observations
+  safety          String? // safety notes/incidents
+  weatherNotes    String? // narrative on working conditions, beyond the `weather` tag
+  plannedNextDay  String? // planned activities for the next working day
+  overallProgress String? // overall daily progress summary
+  photos          Json?
+  submittedById   String
+  submittedBy     User      @relation(fields: [submittedById], references: [id])
+  visibleToClient Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  editedById      String?
+  editedAt        DateTime?
+
+  @@unique([projectId, reportNo])
 }
 
 // ---------- Phase 2+ models (schema defined now, UI later) ----------

@@ -13,6 +13,7 @@ import {
 import { PaymentList } from "@/components/payment-list";
 import { AccountToggleButton, CreatePortalAccessForm } from "@/components/portal-access";
 import { AccomplishmentRadial, WorkItemWeightBars } from "@/components/charts";
+import { DailyReportCard, DailyReportForm, type DailyReportDisplay } from "@/components/daily-report-actions";
 import { runGross } from "@/lib/finance";
 import { canAccess } from "@/lib/access";
 import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
@@ -43,6 +44,10 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
         orderBy: { createdAt: "desc" },
         include: { submittedBy: { select: { name: true } } },
       },
+      dailyReports: {
+        orderBy: { reportDate: "desc" },
+        include: { submittedBy: { select: { name: true } } },
+      },
     },
   });
   if (!p) notFound();
@@ -68,6 +73,30 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
     .reduce((s, t) => s + Number(t.amount), 0);
   const workItemStatuses = computeWorkItemStatuses(p.progressEntries);
   const accomplishmentPct = weightedAccomplishment(workItemStatuses);
+
+  const dailyReports: DailyReportDisplay[] = p.dailyReports.map((r) => ({
+    id: r.id,
+    reportNo: r.reportNo,
+    reportDate: r.reportDate.toISOString().slice(0, 10),
+    weather: r.weather,
+    workingHours: r.workingHours,
+    workProgress: r.workProgress,
+    deliveries: (r.deliveries as { material: string; qty: string; supplier: string; condition: string }[] | null) ?? [],
+    manpower: (r.manpower as { role: string; count: number }[] | null) ?? [],
+    equipment: r.equipment,
+    siteEvents: r.siteEvents,
+    issues: r.issues,
+    safety: r.safety,
+    weatherNotes: r.weatherNotes,
+    plannedNextDay: r.plannedNextDay,
+    overallProgress: r.overallProgress,
+    visibleToClient: r.visibleToClient,
+    submittedById: r.submittedById,
+    submittedByName: r.submittedBy.name,
+    createdAt: r.createdAt.toISOString(),
+    editedAt: r.editedAt ? r.editedAt.toISOString() : null,
+    photos: (r.photos as string[] | null) ?? [],
+  }));
 
   return (
     <div className="space-y-6">
@@ -378,6 +407,36 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
           </CardBody>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader
+          title={`Daily construction reports (${dailyReports.length})`}
+          subtitle="End-of-day site record — reports marked visible to client also appear in their portal"
+        />
+        <CardBody className="space-y-3">
+          {canProgress && (
+            <details className="rounded-lg border border-dashed border-ink-200 p-3">
+              <summary className="cursor-pointer text-sm font-medium text-ink-700">
+                + New daily report
+              </summary>
+              <div className="mt-3">
+                <DailyReportForm projectId={p.id} />
+              </div>
+            </details>
+          )}
+          {dailyReports.map((r) => (
+            <DailyReportCard
+              key={r.id}
+              report={r}
+              canEdit={["OWNER", "PM"].includes(user.role) || r.submittedById === user.id}
+              canDelete={user.role === "OWNER"}
+            />
+          ))}
+          {dailyReports.length === 0 && (
+            <p className="text-sm text-ink-400">No daily reports posted yet.</p>
+          )}
+        </CardBody>
+      </Card>
     </div>
   );
 }

@@ -5,7 +5,9 @@ import { fmtDate, fmtDateTime, php } from "@/lib/format";
 import { Badge, Card, CardBody, CardHeader } from "@/components/ui";
 import { ChangeOrderRespond } from "@/components/co-respond";
 import { SignOutButton } from "@/components/signout-button";
-import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
+import { computeWorkItemStatuses } from "@/lib/progress";
+import { AccomplishmentRadial, WorkItemWeightBars } from "@/components/charts";
+import { DailyReportCard, type DailyReportDisplay } from "@/components/daily-report-actions";
 
 export const metadata = { title: "Client Portal" };
 export const dynamic = "force-dynamic";
@@ -32,6 +34,11 @@ export default async function PortalPage() {
       progressEntries: {
         where: { visibleToClient: true },
         orderBy: { createdAt: "desc" },
+        include: { submittedBy: { select: { name: true } } },
+      },
+      dailyReports: {
+        where: { visibleToClient: true },
+        orderBy: { reportDate: "desc" },
         include: { submittedBy: { select: { name: true } } },
       },
     },
@@ -64,9 +71,33 @@ export default async function PortalPage() {
         )}
 
         {projects.map((p) => {
-          const accomplishmentPct = weightedAccomplishment(computeWorkItemStatuses(p.progressEntries));
+          const workItemStatuses = computeWorkItemStatuses(p.progressEntries);
           const timelineEntries = p.progressEntries.slice(0, 20);
           const pendingCOs = p.changeOrders.filter((c) => c.status === "PENDING_CLIENT");
+          const dailyReports: DailyReportDisplay[] = p.dailyReports.map((r) => ({
+            id: r.id,
+            reportNo: r.reportNo,
+            reportDate: r.reportDate.toISOString().slice(0, 10),
+            weather: r.weather,
+            workingHours: r.workingHours,
+            workProgress: r.workProgress,
+            deliveries:
+              (r.deliveries as { material: string; qty: string; supplier: string; condition: string }[] | null) ?? [],
+            manpower: (r.manpower as { role: string; count: number }[] | null) ?? [],
+            equipment: r.equipment,
+            siteEvents: r.siteEvents,
+            issues: r.issues,
+            safety: r.safety,
+            weatherNotes: r.weatherNotes,
+            plannedNextDay: r.plannedNextDay,
+            overallProgress: r.overallProgress,
+            visibleToClient: r.visibleToClient,
+            submittedById: r.submittedById,
+            submittedByName: r.submittedBy.name,
+            createdAt: r.createdAt.toISOString(),
+            editedAt: r.editedAt ? r.editedAt.toISOString() : null,
+            photos: (r.photos as string[] | null) ?? [],
+          }));
           return (
             <section key={p.id} className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -77,18 +108,18 @@ export default async function PortalPage() {
                 <Badge value={p.status} />
               </div>
 
-              {/* Progress bar */}
+              {/* Progress */}
               <Card>
+                <CardHeader title="Overall progress" subtitle="Reported from site, weighted by work item" />
                 <CardBody>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium text-ink-700">Overall progress</span>
-                    <span className="font-bold text-brand-600">{accomplishmentPct.toFixed(0)}%</span>
-                  </div>
-                  <div className="mt-2 h-3 overflow-hidden rounded-full bg-ink-100">
-                    <div
-                      className="h-full rounded-full bg-brand-500"
-                      style={{ width: `${Math.min(accomplishmentPct, 100)}%` }}
-                    />
+                  <div className="flex flex-col items-center gap-4 rounded-lg bg-ink-50 p-4 sm:flex-row sm:items-start">
+                    <AccomplishmentRadial items={workItemStatuses} />
+                    <div className="w-full flex-1">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
+                        Weighted accomplishment by work item
+                      </p>
+                      <WorkItemWeightBars items={workItemStatuses} />
+                    </div>
                   </div>
                 </CardBody>
               </Card>
@@ -211,6 +242,17 @@ export default async function PortalPage() {
                   )}
                 </div>
               </div>
+
+              {dailyReports.length > 0 && (
+                <Card>
+                  <CardHeader title="Daily construction reports" subtitle="Filed from site, newest first" />
+                  <CardBody className="space-y-2">
+                    {dailyReports.map((r) => (
+                      <DailyReportCard key={r.id} report={r} canEdit={false} canDelete={false} />
+                    ))}
+                  </CardBody>
+                </Card>
+              )}
             </section>
           );
         })}
