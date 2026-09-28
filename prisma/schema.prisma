@@ -684,6 +684,7 @@ model Attendance {
 enum TimeAdjustmentType {
   EARLY_START // credit for time clocked in before the department's scheduled start
   OVERTIME // credit for time clocked out after 5:00 PM
+  WEEKEND_WORK // pre-authorization to clock in Sat past 5pm / at all on Sun (Office/Driver only)
 }
 
 enum TimeAdjustmentStatus {
@@ -698,11 +699,19 @@ enum TimeAdjustmentStatus {
 // only an APPROVED request lifts the clamp for that specific shift, in
 // src/lib/time-rules.ts's computeEffectiveHours(). Nothing here ever mutates
 // the underlying Attendance row — it stays the untouched source of truth.
+//
+// WEEKEND_WORK is the one type filed BEFORE a shift exists (attendanceId is
+// null; date names the Saturday/Sunday instead) — Office/Driver are normally
+// locked out of Sunday clock-in and force-closed at 5pm Saturday, so this is
+// their pre-authorization to work that day at all. An approved one exempts
+// every attendance row that lands on that Manila date from every clamp
+// (start, breaks, 5pm cutoff) — see computeEffectiveHours's weekendApproved.
 model TimeAdjustmentRequest {
   id            String                @id @default(cuid())
-  attendanceId  String
-  attendance    Attendance            @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
-  userId        String // whose shift this is (normally == requestedById, unless a supervisor files it for their crew)
+  attendanceId  String? // null for a WEEKEND_WORK pre-authorization
+  attendance    Attendance?           @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  date          DateTime? // Manila calendar date this applies to — set only for WEEKEND_WORK
+  userId        String // whose shift/day this is (normally == requestedById, unless a supervisor files it for their crew)
   user          User                  @relation("TimeAdjUser", fields: [userId], references: [id])
   type          TimeAdjustmentType
   reason        String
@@ -716,6 +725,7 @@ model TimeAdjustmentRequest {
   createdAt     DateTime              @default(now())
 
   @@unique([attendanceId, type])
+  @@unique([userId, date, type])
 }
 
 // Employee roster per project: who works on it, since when, at what rate.

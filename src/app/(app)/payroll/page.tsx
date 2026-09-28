@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fmtDate, php } from "@/lib/format";
-import type { PayrollEntry } from "@/lib/payroll";
+import { normalizeEntries, type PayrollEntry } from "@/lib/payroll";
 import { runGross } from "@/lib/finance";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
 import { Badge, Card, CardBody, CardHeader, EmptyState, Table, Td, Th } from "@/components/ui";
@@ -28,16 +28,21 @@ export default async function PayrollPage() {
   if (!user) redirect("/login");
   if (user.role === "CLIENT") redirect("/portal");
 
-  const isPayrollAdmin = ["OWNER", "ACCOUNTING"].includes(user.role);
+  // Generating runs / managing the roster stays Owner+Accounting; PM can see
+  // this same admin view (read-only on those two actions) because PM can
+  // edit a run's entries once inside it — canManageRuns gates the two forms
+  // below, canViewAdminPayroll gates the whole admin layout vs. "My Pay".
+  const canManageRuns = ["OWNER", "ACCOUNTING"].includes(user.role);
+  const canViewAdminPayroll = ["OWNER", "ACCOUNTING", "PM"].includes(user.role);
   const runs = await prisma.payrollRun.findMany({
     orderBy: { periodStart: "desc" },
     include: { project: { select: { name: true } } },
   });
 
-  if (!isPayrollAdmin) {
+  if (!canViewAdminPayroll) {
     const myLines = runs
       .map((run) => {
-        const entries = run.entries as unknown as PayrollEntry[];
+        const entries = normalizeEntries(run.entries as unknown as PayrollEntry[]);
         const mine = entries.find((e) => e.userId === user.id);
         return mine ? { run, mine } : null;
       })
@@ -61,6 +66,7 @@ export default async function PayrollPage() {
                   <Th className="text-right">Hours (reg / OT)</Th>
                   <Th className="text-right">Net pay</Th>
                   <Th>Status</Th>
+                  {(user.department === "OFFICE" || user.department === "DRIVER") && <Th />}
                 </tr>
               </thead>
               <tbody>
@@ -79,6 +85,16 @@ export default async function PayrollPage() {
                     <Td>
                       <Badge value={run.status} />
                     </Td>
+                    {(run.department === "OFFICE" || run.department === "DRIVER") && (
+                      <Td className="text-right">
+                        <a
+                          href={`/api/payroll/${run.id}/payslips`}
+                          className="text-xs font-medium text-brand-600 hover:underline"
+                        >
+                          ⬇ Payslip
+                        </a>
+                      </Td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -157,7 +173,7 @@ export default async function PayrollPage() {
                         <Th>Employee</Th>
                         <Th>Started on project</Th>
                         <Th className="text-right">Rate / hour</Th>
-                        <Th />
+                        {canManageRuns && <Th />}
                       </tr>
                     </thead>
                     <tbody>
@@ -166,9 +182,11 @@ export default async function PayrollPage() {
                           <Td className="font-medium">{a.user.name}</Td>
                           <Td>{fmtDate(a.startDate)}</Td>
                           <Td className="text-right tabular-nums">{php(a.hourlyRate.toString())}</Td>
-                          <Td className="text-right">
-                            <RemoveEmployeeButton assignmentId={a.id} name={a.user.name} />
-                          </Td>
+                          {canManageRuns && (
+                            <Td className="text-right">
+                              <RemoveEmployeeButton assignmentId={a.id} name={a.user.name} />
+                            </Td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -178,9 +196,11 @@ export default async function PayrollPage() {
                     No employees yet — add them below so payroll can be generated.
                   </p>
                 )}
-                <div className="mt-3 rounded-lg border border-dashed border-ink-200 p-3">
-                  <AddEmployeeForm projectId={project.id} employees={addable} />
-                </div>
+                {canManageRuns && (
+                  <div className="mt-3 rounded-lg border border-dashed border-ink-200 p-3">
+                    <AddEmployeeForm projectId={project.id} employees={addable} />
+                  </div>
+                )}
               </div>
 
               {/* Generate + runs */}
@@ -188,7 +208,7 @@ export default async function PayrollPage() {
                 <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-500">
                   Payroll runs
                 </h4>
-                <GenerateRunForm projectId={project.id} />
+                {canManageRuns && <GenerateRunForm projectId={project.id} />}
                 {projectRuns.length > 0 && (
                   <Table className="mt-3">
                     <thead>
@@ -201,7 +221,7 @@ export default async function PayrollPage() {
                     </thead>
                     <tbody>
                       {projectRuns.map((run) => {
-                        const entries = run.entries as unknown as PayrollEntry[];
+                        const entries = normalizeEntries(run.entries as unknown as PayrollEntry[]);
                         return (
                           <tr key={run.id} className="hover:bg-ink-50">
                             <Td>
@@ -236,7 +256,7 @@ export default async function PayrollPage() {
           subtitle="Staff without a project assignment, computed from their profile rates"
         />
         <CardBody className="space-y-4">
-          <GenerateRunForm />
+          {canManageRuns && <GenerateRunForm />}
           {departmentRuns.length > 0 && (
             <Table>
               <thead>
@@ -250,7 +270,7 @@ export default async function PayrollPage() {
               </thead>
               <tbody>
                 {departmentRuns.map((run) => {
-                  const entries = run.entries as unknown as PayrollEntry[];
+                  const entries = normalizeEntries(run.entries as unknown as PayrollEntry[]);
                   return (
                     <tr key={run.id} className="hover:bg-ink-50">
                       <Td>

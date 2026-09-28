@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
-import type { PayrollEntry } from "@/lib/payroll";
+import { normalizeEntries, type PayrollEntry } from "@/lib/payroll";
 
 /**
  * GET /api/payroll/[id]/export — payroll register as CSV (opens in Excel)
@@ -17,7 +17,7 @@ export const GET = handleApi(
     });
     if (!run) throw new ApiError(404, "Payroll run not found");
 
-    const entries = run.entries as unknown as PayrollEntry[];
+    const entries = normalizeEntries(run.entries as unknown as PayrollEntry[]);
     const header = [
       "Name",
       "Days Worked",
@@ -28,6 +28,8 @@ export const GET = handleApi(
       "SSS",
       "PhilHealth",
       "Pag-IBIG",
+      "Meals",
+      "Cash Advance",
       "Net Pay",
     ];
     const rows = entries.map((e) => [
@@ -40,6 +42,8 @@ export const GET = handleApi(
       e.sss,
       e.philhealth,
       e.pagibig,
+      e.meals,
+      e.cashAdvance,
       e.net,
     ]);
     const total = entries.reduce((s, e) => s + e.net, 0);
@@ -50,7 +54,7 @@ export const GET = handleApi(
       header.join(","),
       ...rows.map((r) => r.join(",")),
       "",
-      `TOTAL NET,,,,,,,,,${Math.round(total * 100) / 100}`,
+      `TOTAL NET,,,,,,,,,,,${Math.round(total * 100) / 100}`,
     ].join("\r\n");
 
     await audit({

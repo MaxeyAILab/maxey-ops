@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
+import { isManilaSunday, isWeekendRestrictedDepartment, manilaDayKey } from "@/lib/time-rules";
 
 const clockSchema = z.object({
   clientUuid: z.string().uuid(),
@@ -38,6 +39,25 @@ export const POST = handleApi(async (req: NextRequest) => {
     if (openEntry) {
       return NextResponse.json({ error: "Already clocked in" }, { status: 409 });
     }
+
+    if (isWeekendRestrictedDepartment(user.department) && isManilaSunday(body.submittedAt)) {
+      const approved = await prisma.timeAdjustmentRequest.findUnique({
+        where: {
+          userId_date_type: {
+            userId: user.id,
+            date: new Date(`${manilaDayKey(body.submittedAt)}T00:00:00.000Z`),
+            type: "WEEKEND_WORK",
+          },
+        },
+      });
+      if (!approved || approved.status !== "APPROVED") {
+        throw new ApiError(
+          403,
+          "Office/driver accounts can't clock in on Sundays — request weekend-work approval first"
+        );
+      }
+    }
+
     const entry = await prisma.attendance.create({
       data: {
         clientUuid: body.clientUuid,

@@ -13,6 +13,13 @@ const actionSchema = z.discriminatedUnion("action", [
 const TYPE_LABEL: Record<string, string> = {
   EARLY_START: "early-start",
   OVERTIME: "overtime",
+  WEEKEND_WORK: "weekend-work",
+};
+
+const APPROVED_MESSAGE: Record<string, string> = {
+  EARLY_START: "Approved — the extra time now counts toward your payroll hours.",
+  OVERTIME: "Approved — the extra time now counts toward your payroll hours.",
+  WEEKEND_WORK: "Approved — you're clear to clock in that day, and the hours will count.",
 };
 
 /**
@@ -60,10 +67,7 @@ export const PATCH = handleApi(
     await notify({
       to: { name: request.user.name, email: request.user.email },
       subject: `Your ${TYPE_LABEL[request.type]} request was ${status.toLowerCase()}`,
-      message:
-        body.action === "reject"
-          ? body.reason
-          : "Approved — the extra time now counts toward your payroll hours.",
+      message: body.action === "reject" ? body.reason : APPROVED_MESSAGE[request.type],
     });
 
     return NextResponse.json(updated);

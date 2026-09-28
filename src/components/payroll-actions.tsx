@@ -187,7 +187,7 @@ export function PayrollStatusButtons({ runId, status }: { runId: string; status:
     const res = await fetch(`/api/payroll/${runId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: next }),
+      body: JSON.stringify({ action: "set_status", status: next }),
     });
     setBusy(false);
     if (res.ok) router.refresh();

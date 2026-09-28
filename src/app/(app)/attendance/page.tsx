@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { fmtDateTime } from "@/lib/format";
+import { fmtDate, fmtDateTime } from "@/lib/format";
 import { Card, CardBody, CardHeader, Table, Td, Th } from "@/components/ui";
 import { AttendanceClock } from "@/components/attendance-clock";
 import {
@@ -12,6 +12,7 @@ import {
 import {
   DecideTimeAdjustmentButtons,
   RequestTimeAdjustmentButton,
+  RequestWeekendWorkButton,
   type PendingTimeAdjustment,
 } from "@/components/time-adjustment-actions";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
@@ -20,6 +21,7 @@ import {
   computeEffectiveHours,
   isEarlyStart,
   isOvertime,
+  isWeekendRestrictedDepartment,
   rulesetForDepartment,
   type AdjustmentFlags,
   type TimeRuleset,
@@ -219,7 +221,7 @@ export default async function AttendancePage() {
         where: { OR: [{ timeIn: { gte: weekStart } }, { timeOut: null }] },
       }),
     ]);
-    const weekApprovals = await fetchApprovals(weekAttendance.map((a) => a.id));
+    const weekApprovals = await fetchApprovals(weekAttendance);
 
     siteSections = rosters.map((p) => ({
       projectId: p.id,
@@ -324,15 +326,29 @@ export default async function AttendancePage() {
       type: r.type,
       reason: r.reason,
       shiftLabel:
-        r.type === "EARLY_START" ? fmtDateTime(r.attendance.timeIn) : fmtDateTime(r.attendance.timeOut ?? r.attendance.timeIn),
+        r.type === "WEEKEND_WORK"
+          ? fmtDate(r.date!)
+          : r.type === "EARLY_START"
+            ? fmtDateTime(r.attendance!.timeIn)
+            : fmtDateTime(r.attendance!.timeOut ?? r.attendance!.timeIn),
       requestedByName: r.requestedBy.name,
     }));
   }
 
   const myRuleset = rulesetForDepartment(me?.department);
-  const myRequests = await prisma.timeAdjustmentRequest.findMany({
-    where: { attendanceId: { in: recent.map((a) => a.id) } },
-  });
+  const iAmWeekendRestricted = isWeekendRestrictedDepartment(me?.department);
+  const [myRequests, myWeekendRequests] = await Promise.all([
+    prisma.timeAdjustmentRequest.findMany({
+      where: { attendanceId: { in: recent.map((a) => a.id) } },
+    }),
+    iAmWeekendRestricted
+      ? prisma.timeAdjustmentRequest.findMany({
+          where: { userId: user.id, type: "WEEKEND_WORK" },
+          orderBy: { createdAt: "desc" },
+          take: 5,
+        })
+      : Promise.resolve([]),
+  ]);
   const myRequestStatus = (attendanceId: string, type: "EARLY_START" | "OVERTIME") =>
     myRequests.find((r) => r.attendanceId === attendanceId && r.type === type)?.status;
 
@@ -442,15 +458,17 @@ export default async function AttendancePage() {
       {canDecideAdjustments && pendingAdjustments.length > 0 && (
         <Card className="border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/30">
           <CardHeader
-            title={`${pendingAdjustments.length} early-start/overtime request${pendingAdjustments.length === 1 ? "" : "s"} awaiting your decision`}
-            subtitle="Approving lifts the clamp for that one shift; rejecting leaves it as-is — the original clock-in/out record is never changed either way"
+            title={`${pendingAdjustments.length} time-adjustment request${pendingAdjustments.length === 1 ? "" : "s"} awaiting your decision`}
+            subtitle="Approving lifts the clamp for that shift/day; rejecting leaves it as-is — the original clock-in/out record is never changed either way"
           />
           <CardBody className="space-y-3">
             {pendingAdjustments.map((r) => (
               <div key={r.id} className="rounded-lg border border-ink-100 bg-white p-3 text-sm dark:bg-transparent">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-medium text-ink-900">
-                    {r.employeeName} — {r.type === "EARLY_START" ? "Early start" : "Overtime"} · {r.shiftLabel}
+                    {r.employeeName} —{" "}
+                    {r.type === "EARLY_START" ? "Early start" : r.type === "OVERTIME" ? "Overtime" : "Weekend work"} ·{" "}
+                    {r.shiftLabel}
                   </span>
                   <span className="text-xs text-ink-400">requested by {r.requestedByName}</span>
                 </div>
@@ -472,8 +490,39 @@ export default async function AttendancePage() {
             openEntry ? `Clocked in since ${fmtDateTime(openEntry.timeIn)}` : "Not clocked in"
           }
         />
-        <CardBody>
+        <CardBody className="space-y-4">
           <AttendanceClock projects={projects} clockedIn={!!openEntry} needsProject={needsProject} />
+          {iAmWeekendRestricted && (
+            <div className="rounded-lg border border-ink-100 p-3">
+              <p className="text-xs text-ink-500">
+                Office/driver accounts are clocked out automatically at 5pm Saturday and can&apos;t
+                clock in on Sunday. Need to work one of those days? Request approval first.
+              </p>
+              {myWeekendRequests.length > 0 && (
+                <ul className="mt-2 space-y-1 text-xs text-ink-600">
+                  {myWeekendRequests.map((r) => (
+                    <li key={r.id} className="flex items-center justify-between gap-2">
+                      <span>{fmtDate(r.date!)}</span>
+                      <span
+                        className={
+                          r.status === "APPROVED"
+                            ? "font-medium text-emerald-600"
+                            : r.status === "REJECTED"
+                              ? "font-medium text-red-600"
+                              : "font-medium text-amber-600"
+                        }
+                      >
+                        {r.status}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="mt-2">
+                <RequestWeekendWorkButton />
+              </div>
+            </div>
+          )}
         </CardBody>
       </Card>
 

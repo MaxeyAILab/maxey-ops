@@ -3,17 +3,19 @@ import { notFound, redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fmtDate, fmtDateTime, php } from "@/lib/format";
-import type { PayrollEntry } from "@/lib/payroll";
+import { normalizeEntries, type PayrollEntry } from "@/lib/payroll";
 import { Badge, Card, CardBody, CardHeader, Table, Td, Th } from "@/components/ui";
 import { PayrollStatusButtons } from "@/components/payroll-actions";
+import { EditablePayrollTable } from "@/components/payroll-entry-editor";
 import { PrintButton } from "@/components/print-button";
 
 export const dynamic = "force-dynamic";
 
-/** Payroll register — Owner + Accounting only (Spec 6.5). */
+/** Payroll register — Owner/Accounting/PM (Spec 6.5). Owner/PM can edit
+ * hours, rate, and every deduction while the run is still DRAFT/REVIEW. */
 export default async function PayrollRunPage({ params }: { params: { id: string } }) {
   const user = await getSessionUser();
-  if (!user || !["OWNER", "ACCOUNTING"].includes(user.role)) redirect("/payroll");
+  if (!user || !["OWNER", "ACCOUNTING", "PM"].includes(user.role)) redirect("/payroll");
 
   const run = await prisma.payrollRun.findUnique({
     where: { id: params.id },
@@ -21,11 +23,13 @@ export default async function PayrollRunPage({ params }: { params: { id: string 
   });
   if (!run) notFound();
 
-  const entries = run.entries as unknown as PayrollEntry[];
+  const entries = normalizeEntries(run.entries as unknown as PayrollEntry[]);
+  const canEdit = ["OWNER", "PM"].includes(user.role) && ["DRAFT", "REVIEW"].includes(run.status);
+  const isOfficeOrDriverRun = run.department === "OFFICE" || run.department === "DRIVER";
   const totals = entries.reduce(
     (acc, e) => ({
       gross: acc.gross + e.gross,
-      deductions: acc.deductions + e.sss + e.philhealth + e.pagibig,
+      deductions: acc.deductions + e.sss + e.philhealth + e.pagibig + e.meals + e.cashAdvance,
       net: acc.net + e.net,
     }),
     { gross: 0, deductions: 0, net: 0 }
@@ -55,6 +59,14 @@ export default async function PayrollRunPage({ params }: { params: { id: string 
         </div>
         <div className="flex items-center gap-2">
           <Badge value={run.status} />
+          {isOfficeOrDriverRun && (
+            <a
+              href={`/api/payroll/${run.id}/payslips`}
+              className="rounded-lg border border-ink-200 px-3 py-2 text-sm font-medium text-ink-700 hover:bg-ink-50"
+            >
+              ⬇ Download payslips
+            </a>
+          )}
           <a
             href={`/api/payroll/${run.id}/export`}
             className="rounded-lg border border-ink-200 px-3 py-2 text-sm font-medium text-ink-700 hover:bg-ink-50"
@@ -68,50 +80,64 @@ export default async function PayrollRunPage({ params }: { params: { id: string 
       <Card>
         <CardHeader
           title="Payroll register"
-          subtitle="OT at 1.25×; SSS/PhilHealth/Pag-IBIG figures are configurable placeholders"
+          subtitle={
+            canEdit
+              ? "Edit hours, rate, or any deduction below, then Save changes before approving — OT at 1.25×"
+              : "OT at 1.25×; SSS/PhilHealth/Pag-IBIG figures are configurable placeholders"
+          }
         />
-        <Table>
-          <thead>
-            <tr>
-              <Th>Worker</Th>
-              <Th className="text-right">Days</Th>
-              <Th className="text-right">Reg hrs</Th>
-              <Th className="text-right">OT hrs</Th>
-              <Th className="text-right">Rate/hr</Th>
-              <Th className="text-right">Gross</Th>
-              <Th className="text-right">SSS</Th>
-              <Th className="text-right">PhilHealth</Th>
-              <Th className="text-right">Pag-IBIG</Th>
-              <Th className="text-right">Net pay</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((e) => (
-              <tr key={e.userId}>
-                <Td className="font-medium">{e.name}</Td>
-                <Td className="text-right tabular-nums">{e.daysWorked}</Td>
-                <Td className="text-right tabular-nums">{e.regularHours}</Td>
-                <Td className="text-right tabular-nums">{e.otHours}</Td>
-                <Td className="text-right tabular-nums">{php(e.hourlyRate)}</Td>
-                <Td className="text-right tabular-nums">{php(e.gross)}</Td>
-                <Td className="text-right tabular-nums text-ink-500">{php(e.sss)}</Td>
-                <Td className="text-right tabular-nums text-ink-500">{php(e.philhealth)}</Td>
-                <Td className="text-right tabular-nums text-ink-500">{php(e.pagibig)}</Td>
-                <Td className="text-right font-semibold tabular-nums text-emerald-700">
-                  {php(e.net)}
-                </Td>
-              </tr>
-            ))}
-            <tr className="bg-ink-50 font-semibold">
-              <Td colSpan={5}>TOTAL ({entries.length} workers)</Td>
-              <Td className="text-right tabular-nums">{php(totals.gross)}</Td>
-              <Td colSpan={3} className="text-right tabular-nums text-ink-500">
-                {php(totals.deductions)}
-              </Td>
-              <Td className="text-right tabular-nums text-emerald-700">{php(totals.net)}</Td>
-            </tr>
-          </tbody>
-        </Table>
+        <CardBody>
+          {canEdit ? (
+            <EditablePayrollTable runId={run.id} initialEntries={entries} />
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Worker</Th>
+                  <Th className="text-right">Days</Th>
+                  <Th className="text-right">Reg hrs</Th>
+                  <Th className="text-right">OT hrs</Th>
+                  <Th className="text-right">Rate/hr</Th>
+                  <Th className="text-right">Gross</Th>
+                  <Th className="text-right">SSS</Th>
+                  <Th className="text-right">PhilHealth</Th>
+                  <Th className="text-right">Pag-IBIG</Th>
+                  <Th className="text-right">Meals</Th>
+                  <Th className="text-right">Cash adv.</Th>
+                  <Th className="text-right">Net pay</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((e) => (
+                  <tr key={e.userId}>
+                    <Td className="font-medium">{e.name}</Td>
+                    <Td className="text-right tabular-nums">{e.daysWorked}</Td>
+                    <Td className="text-right tabular-nums">{e.regularHours}</Td>
+                    <Td className="text-right tabular-nums">{e.otHours}</Td>
+                    <Td className="text-right tabular-nums">{php(e.hourlyRate)}</Td>
+                    <Td className="text-right tabular-nums">{php(e.gross)}</Td>
+                    <Td className="text-right tabular-nums text-ink-500">{php(e.sss)}</Td>
+                    <Td className="text-right tabular-nums text-ink-500">{php(e.philhealth)}</Td>
+                    <Td className="text-right tabular-nums text-ink-500">{php(e.pagibig)}</Td>
+                    <Td className="text-right tabular-nums text-ink-500">{php(e.meals)}</Td>
+                    <Td className="text-right tabular-nums text-ink-500">{php(e.cashAdvance)}</Td>
+                    <Td className="text-right font-semibold tabular-nums text-emerald-700">
+                      {php(e.net)}
+                    </Td>
+                  </tr>
+                ))}
+                <tr className="bg-ink-50 font-semibold">
+                  <Td colSpan={5}>TOTAL ({entries.length} workers)</Td>
+                  <Td className="text-right tabular-nums">{php(totals.gross)}</Td>
+                  <Td colSpan={5} className="text-right tabular-nums text-ink-500">
+                    {php(totals.deductions)}
+                  </Td>
+                  <Td className="text-right tabular-nums text-emerald-700">{php(totals.net)}</Td>
+                </tr>
+              </tbody>
+            </Table>
+          )}
+        </CardBody>
         <CardBody className="no-print border-t border-ink-100">
           <PayrollStatusButtons runId={run.id} status={run.status} />
         </CardBody>

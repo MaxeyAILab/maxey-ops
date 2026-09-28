@@ -1,6 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import type { Attendance, Department } from "@prisma/client";
-import { computeEffectiveHours, rulesetForDepartment, type AdjustmentFlags, type TimeRuleset } from "@/lib/time-rules";
+import {
+  computeEffectiveHours,
+  manilaDayKey,
+  rulesetForDepartment,
+  type AdjustmentFlags,
+  type TimeRuleset,
+} from "@/lib/time-rules";
 
 /**
  * Payroll computation (Spec 6.5). PH labor-rule parameters are collected here
@@ -27,7 +33,15 @@ export interface PayrollEntry {
   sss: number;
   philhealth: number;
   pagibig: number;
+  meals: number; // ad-hoc deduction, editable by Owner/PM before approval — 0 at generation
+  cashAdvance: number; // ditto
   net: number;
+}
+
+/** meals/cashAdvance postdate some existing PayrollRun.entries JSON blobs —
+ * default them to 0 so an older run doesn't render/sum as NaN. */
+export function normalizeEntries(entries: PayrollEntry[]): PayrollEntry[] {
+  return entries.map((e) => ({ ...e, meals: e.meals ?? 0, cashAdvance: e.cashAdvance ?? 0 }));
 }
 
 const dayKeyFmt = new Intl.DateTimeFormat("en-CA", {
@@ -70,7 +84,9 @@ function buildEntry(
   const sss = gross * cfg.sssRate;
   const philhealth = gross * cfg.philhealthRate;
   const pagibig = gross > 0 ? cfg.pagibigFlat : 0;
-  const net = Math.max(0, gross - sss - philhealth - pagibig);
+  const meals = 0;
+  const cashAdvance = 0;
+  const net = Math.max(0, gross - sss - philhealth - pagibig - meals - cashAdvance);
 
   const r2 = (n: number) => Math.round(n * 100) / 100;
   return {
@@ -84,24 +100,50 @@ function buildEntry(
     sss: r2(sss),
     philhealth: r2(philhealth),
     pagibig: r2(pagibig),
+    meals: r2(meals),
+    cashAdvance: r2(cashAdvance),
     net: r2(net),
   };
 }
 
-/** Approved early-start/overtime requests for a batch of attendance rows,
- * keyed by attendanceId — the only way computeEffectiveHours() ever lifts a
- * clamp. Pending/rejected requests are treated the same as no request. */
-export async function fetchApprovals(attendanceIds: string[]): Promise<Map<string, AdjustmentFlags>> {
-  if (attendanceIds.length === 0) return new Map();
-  const rows = await prisma.timeAdjustmentRequest.findMany({
-    where: { attendanceId: { in: attendanceIds }, status: "APPROVED" },
-  });
+/** Approved early-start/overtime/weekend-work requests relevant to a batch of
+ * attendance rows, keyed by attendanceId — the only way
+ * computeEffectiveHours() ever lifts a clamp. Pending/rejected requests are
+ * treated the same as no request. WEEKEND_WORK requests aren't tied to a
+ * specific attendanceId (they're filed before the shift exists), so they're
+ * matched here by userId + the shift's own Manila calendar day. */
+export async function fetchApprovals(records: Attendance[]): Promise<Map<string, AdjustmentFlags>> {
+  if (records.length === 0) return new Map();
+  const attendanceIds = records.map((r) => r.id);
+  const userIds = Array.from(new Set(records.map((r) => r.userId)));
+
+  const [perShift, weekend] = await Promise.all([
+    prisma.timeAdjustmentRequest.findMany({
+      where: { attendanceId: { in: attendanceIds }, status: "APPROVED" },
+    }),
+    prisma.timeAdjustmentRequest.findMany({
+      where: { userId: { in: userIds }, type: "WEEKEND_WORK", status: "APPROVED" },
+    }),
+  ]);
+
+  const weekendApprovedKeys = new Set(
+    weekend.filter((w) => w.date).map((w) => `${w.userId}|${manilaDayKey(w.date!)}`)
+  );
+
   const map = new Map<string, AdjustmentFlags>();
-  for (const r of rows) {
-    const flags = map.get(r.attendanceId) ?? { earlyStartApproved: false, overtimeApproved: false };
+  for (const r of records) {
+    map.set(r.id, {
+      earlyStartApproved: false,
+      overtimeApproved: false,
+      weekendApproved: weekendApprovedKeys.has(`${r.userId}|${manilaDayKey(r.timeIn)}`),
+    });
+  }
+  for (const r of perShift) {
+    if (!r.attendanceId) continue;
+    const flags = map.get(r.attendanceId);
+    if (!flags) continue;
     if (r.type === "EARLY_START") flags.earlyStartApproved = true;
     if (r.type === "OVERTIME") flags.overtimeApproved = true;
-    map.set(r.attendanceId, flags);
   }
   return map;
 }
@@ -132,7 +174,7 @@ export async function computeProjectPayroll(
       timeOut: { not: null },
     },
   });
-  const approvals = await fetchApprovals(attendance.map((a) => a.id));
+  const approvals = await fetchApprovals(attendance);
 
   const entries: PayrollEntry[] = [];
   for (const a of assignments) {
@@ -168,7 +210,7 @@ export async function computePayroll(
       timeOut: { not: null },
     },
   });
-  const approvals = await fetchApprovals(attendance.map((a) => a.id));
+  const approvals = await fetchApprovals(attendance);
 
   const entries: PayrollEntry[] = [];
   for (const u of users) {
