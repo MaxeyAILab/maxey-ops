@@ -9,7 +9,21 @@ import {
   EditPersonnelButton,
   RemovePersonnelButton,
 } from "@/components/personnel-actions";
+import {
+  DecideTimeAdjustmentButtons,
+  RequestTimeAdjustmentButton,
+  type PendingTimeAdjustment,
+} from "@/components/time-adjustment-actions";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
+import { fetchApprovals } from "@/lib/payroll";
+import {
+  computeEffectiveHours,
+  isEarlyStart,
+  isOvertime,
+  rulesetForDepartment,
+  type AdjustmentFlags,
+  type TimeRuleset,
+} from "@/lib/time-rules";
 import type { Attendance, Role } from "@prisma/client";
 
 export const metadata = { title: "Attendance" };
@@ -21,11 +35,16 @@ const timeFmt = new Intl.DateTimeFormat("en-PH", {
   minute: "2-digit",
 });
 
-function summarize(records: Attendance[], todayStart: Date) {
+function summarize(
+  records: Attendance[],
+  todayStart: Date,
+  ruleset: TimeRuleset,
+  approvals: Map<string, AdjustmentFlags>
+) {
   const open = records.find((r) => r.timeOut === null);
   const completed = records.filter((r) => r.timeOut !== null);
   const hours = (rs: Attendance[]) =>
-    rs.reduce((s, r) => s + (r.timeOut!.getTime() - r.timeIn.getTime()) / 3_600_000, 0);
+    rs.reduce((s, r) => s + computeEffectiveHours(r.timeIn, r.timeOut!, ruleset, approvals.get(r.id)), 0);
   const todayHours = hours(completed.filter((r) => r.timeIn >= todayStart));
   const weekHours = hours(completed);
   const loggedToday = !!open || completed.some((r) => r.timeIn >= todayStart);
@@ -200,6 +219,7 @@ export default async function AttendancePage() {
         where: { OR: [{ timeIn: { gte: weekStart } }, { timeOut: null }] },
       }),
     ]);
+    const weekApprovals = await fetchApprovals(weekAttendance.map((a) => a.id));
 
     siteSections = rosters.map((p) => ({
       projectId: p.id,
@@ -217,7 +237,9 @@ export default async function AttendancePage() {
         customMenus: a.user.customMenus,
         summary: summarize(
           weekAttendance.filter((r) => r.userId === a.userId && r.projectId === p.id),
-          todayStart
+          todayStart,
+          "SITE",
+          weekApprovals
         ),
       })),
     }));
@@ -235,7 +257,9 @@ export default async function AttendancePage() {
       customMenus: u.customMenus,
       summary: summarize(
         weekAttendance.filter((r) => r.userId === u.id),
-        todayStart
+        todayStart,
+        rulesetForDepartment(u.department),
+        weekApprovals
       ),
     }));
 
@@ -252,7 +276,9 @@ export default async function AttendancePage() {
       customMenus: u.customMenus,
       summary: summarize(
         weekAttendance.filter((r) => r.userId === u.id),
-        todayStart
+        todayStart,
+        "SITE",
+        weekApprovals
       ),
     }));
 
@@ -276,6 +302,39 @@ export default async function AttendancePage() {
       }));
     }
   }
+
+  // Early-start/overtime requests: who can decide (Owner/PM — narrower than
+  // the isAdmin summary view above, which also includes Accounting), and
+  // what the current user has already filed on their own recent entries.
+  const canDecideAdjustments = ["OWNER", "PM"].includes(user.role);
+  let pendingAdjustments: PendingTimeAdjustment[] = [];
+  if (canDecideAdjustments) {
+    const pending = await prisma.timeAdjustmentRequest.findMany({
+      where: { status: "PENDING" },
+      orderBy: { createdAt: "asc" },
+      include: {
+        user: { select: { name: true } },
+        requestedBy: { select: { name: true } },
+        attendance: true,
+      },
+    });
+    pendingAdjustments = pending.map((r) => ({
+      id: r.id,
+      employeeName: r.user.name,
+      type: r.type,
+      reason: r.reason,
+      shiftLabel:
+        r.type === "EARLY_START" ? fmtDateTime(r.attendance.timeIn) : fmtDateTime(r.attendance.timeOut ?? r.attendance.timeIn),
+      requestedByName: r.requestedBy.name,
+    }));
+  }
+
+  const myRuleset = rulesetForDepartment(me?.department);
+  const myRequests = await prisma.timeAdjustmentRequest.findMany({
+    where: { attendanceId: { in: recent.map((a) => a.id) } },
+  });
+  const myRequestStatus = (attendanceId: string, type: "EARLY_START" | "OVERTIME") =>
+    myRequests.find((r) => r.attendanceId === attendanceId && r.type === type)?.status;
 
   const summaryTable = (
     rows: {
@@ -380,6 +439,31 @@ export default async function AttendancePage() {
         </Card>
       )}
 
+      {canDecideAdjustments && pendingAdjustments.length > 0 && (
+        <Card className="border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/30">
+          <CardHeader
+            title={`${pendingAdjustments.length} early-start/overtime request${pendingAdjustments.length === 1 ? "" : "s"} awaiting your decision`}
+            subtitle="Approving lifts the clamp for that one shift; rejecting leaves it as-is — the original clock-in/out record is never changed either way"
+          />
+          <CardBody className="space-y-3">
+            {pendingAdjustments.map((r) => (
+              <div key={r.id} className="rounded-lg border border-ink-100 bg-white p-3 text-sm dark:bg-transparent">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium text-ink-900">
+                    {r.employeeName} — {r.type === "EARLY_START" ? "Early start" : "Overtime"} · {r.shiftLabel}
+                  </span>
+                  <span className="text-xs text-ink-400">requested by {r.requestedByName}</span>
+                </div>
+                <p className="mt-1 text-xs text-ink-600">{r.reason}</p>
+                <div className="mt-2">
+                  <DecideTimeAdjustmentButtons request={r} />
+                </div>
+              </div>
+            ))}
+          </CardBody>
+        </Card>
+      )}
+
       {/* Personal time clock */}
       <Card className="mx-auto max-w-xl lg:mx-0">
         <CardHeader
@@ -435,7 +519,10 @@ export default async function AttendancePage() {
 
       {/* Own history */}
       <Card className="mx-auto max-w-xl lg:mx-0">
-        <CardHeader title="My recent entries" subtitle="Your own record — payroll uses these" />
+        <CardHeader
+          title="My recent entries"
+          subtitle="Your own record — payroll counts these against the standard schedule (clamped start, breaks, 5pm cutoff) unless a request below is approved"
+        />
         <Table>
           <thead>
             <tr>
@@ -443,20 +530,48 @@ export default async function AttendancePage() {
               <Th>Time out</Th>
               <Th>Site</Th>
               <Th>Device</Th>
+              <Th>Adjustments</Th>
             </tr>
           </thead>
           <tbody>
-            {recent.map((a) => (
-              <tr key={a.id}>
-                <Td className="text-xs">{fmtDateTime(a.timeIn)}</Td>
-                <Td className="text-xs">{a.timeOut ? fmtDateTime(a.timeOut) : "— open —"}</Td>
-                <Td className="text-xs">{a.project?.name ?? "Office"}</Td>
-                <Td className="text-xs text-ink-500">{a.deviceIn ?? "—"}</Td>
-              </tr>
-            ))}
+            {recent.map((a) => {
+              const earlyStatus = myRequestStatus(a.id, "EARLY_START");
+              const otStatus = myRequestStatus(a.id, "OVERTIME");
+              const showEarly = isEarlyStart(a.timeIn, myRuleset);
+              const showOt = a.timeOut && isOvertime(a.timeOut);
+              return (
+                <tr key={a.id}>
+                  <Td className="text-xs">{fmtDateTime(a.timeIn)}</Td>
+                  <Td className="text-xs">{a.timeOut ? fmtDateTime(a.timeOut) : "— open —"}</Td>
+                  <Td className="text-xs">{a.project?.name ?? "Office"}</Td>
+                  <Td className="text-xs text-ink-500">{a.deviceIn ?? "—"}</Td>
+                  <Td className="text-xs">
+                    <div className="flex flex-col items-start gap-1">
+                      {showEarly && (
+                        <RequestTimeAdjustmentButton
+                          attendanceId={a.id}
+                          type="EARLY_START"
+                          label="Request early-start credit"
+                          existingStatus={earlyStatus}
+                        />
+                      )}
+                      {showOt && (
+                        <RequestTimeAdjustmentButton
+                          attendanceId={a.id}
+                          type="OVERTIME"
+                          label="Request overtime credit"
+                          existingStatus={otStatus}
+                        />
+                      )}
+                      {!showEarly && !showOt && "—"}
+                    </div>
+                  </Td>
+                </tr>
+              );
+            })}
             {recent.length === 0 && (
               <tr>
-                <Td colSpan={4} className="py-6 text-center text-ink-400">
+                <Td colSpan={5} className="py-6 text-center text-ink-400">
                   No entries yet — tap Time In to start.
                 </Td>
               </tr>

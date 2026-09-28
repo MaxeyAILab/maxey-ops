@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { Attendance, Department } from "@prisma/client";
+import { computeEffectiveHours, rulesetForDepartment, type AdjustmentFlags, type TimeRuleset } from "@/lib/time-rules";
 
 /**
  * Payroll computation (Spec 6.5). PH labor-rule parameters are collected here
@@ -36,18 +37,24 @@ const dayKeyFmt = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
 });
 
-/** Hours per Manila calendar day → regular/OT split → gross/deductions/net. */
+/** Hours per Manila calendar day → regular/OT split → gross/deductions/net.
+ * Each record's raw span is first passed through computeEffectiveHours() —
+ * the scheduled-start clamp, lunch/break deductions, and 5pm cutoff — before
+ * being summed into its day's bucket. */
 function buildEntry(
   user: { id: string; name: string },
   records: Attendance[],
-  hourlyRate: number
+  hourlyRate: number,
+  ruleset: TimeRuleset,
+  approvalsByAttendanceId: Map<string, AdjustmentFlags>
 ): PayrollEntry | null {
   if (records.length === 0) return null;
 
   const byDay = new Map<string, number>();
   for (const a of records) {
     const key = dayKeyFmt.format(a.timeIn);
-    const hours = (a.timeOut!.getTime() - a.timeIn.getTime()) / 3_600_000;
+    const flags = approvalsByAttendanceId.get(a.id);
+    const hours = computeEffectiveHours(a.timeIn, a.timeOut!, ruleset, flags);
     byDay.set(key, (byDay.get(key) ?? 0) + hours);
   }
 
@@ -81,11 +88,30 @@ function buildEntry(
   };
 }
 
+/** Approved early-start/overtime requests for a batch of attendance rows,
+ * keyed by attendanceId — the only way computeEffectiveHours() ever lifts a
+ * clamp. Pending/rejected requests are treated the same as no request. */
+export async function fetchApprovals(attendanceIds: string[]): Promise<Map<string, AdjustmentFlags>> {
+  if (attendanceIds.length === 0) return new Map();
+  const rows = await prisma.timeAdjustmentRequest.findMany({
+    where: { attendanceId: { in: attendanceIds }, status: "APPROVED" },
+  });
+  const map = new Map<string, AdjustmentFlags>();
+  for (const r of rows) {
+    const flags = map.get(r.attendanceId) ?? { earlyStartApproved: false, overtimeApproved: false };
+    if (r.type === "EARLY_START") flags.earlyStartApproved = true;
+    if (r.type === "OVERTIME") flags.overtimeApproved = true;
+    map.set(r.attendanceId, flags);
+  }
+  return map;
+}
+
 /**
  * Per-project payroll: employees come from the project's roster
  * (ProjectAssignment), rates come from the assignment, and only attendance
  * clocked against this project — on or after each employee's project start
- * date — is counted.
+ * date — is counted. Project crew always follow the SITE schedule (7:30 AM
+ * start, morning/afternoon breaks) regardless of the worker's department.
  */
 export async function computeProjectPayroll(
   projectId: string,
@@ -106,13 +132,14 @@ export async function computeProjectPayroll(
       timeOut: { not: null },
     },
   });
+  const approvals = await fetchApprovals(attendance.map((a) => a.id));
 
   const entries: PayrollEntry[] = [];
   for (const a of assignments) {
     const records = attendance.filter(
       (rec) => rec.userId === a.userId && rec.timeIn >= a.startDate
     );
-    const entry = buildEntry(a.user, records, Number(a.hourlyRate));
+    const entry = buildEntry(a.user, records, Number(a.hourlyRate), "SITE", approvals);
     if (entry) entries.push(entry);
   }
   return entries;
@@ -120,13 +147,15 @@ export async function computeProjectPayroll(
 
 /**
  * Department payroll (Office staff / Drivers — no project). Rates come from
- * the user's profile (hourlyRate, or dailyRate / 8).
+ * the user's profile (hourlyRate, or dailyRate / 8). Drivers follow the SITE
+ * schedule; Office/Architect/Engineer follow the OFFICE schedule.
  */
 export async function computePayroll(
   department: Department,
   periodStart: Date,
   periodEnd: Date
 ): Promise<PayrollEntry[]> {
+  const ruleset = rulesetForDepartment(department);
   const users = await prisma.user.findMany({
     where: { department, active: true, role: { not: "CLIENT" } },
     orderBy: { name: "asc" },
@@ -139,6 +168,7 @@ export async function computePayroll(
       timeOut: { not: null },
     },
   });
+  const approvals = await fetchApprovals(attendance.map((a) => a.id));
 
   const entries: PayrollEntry[] = [];
   for (const u of users) {
@@ -151,7 +181,9 @@ export async function computePayroll(
     const entry = buildEntry(
       u,
       attendance.filter((a) => a.userId === u.id),
-      hourlyRate
+      hourlyRate,
+      ruleset,
+      approvals
     );
     if (entry) entries.push(entry);
   }

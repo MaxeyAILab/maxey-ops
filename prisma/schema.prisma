@@ -223,6 +223,9 @@ model User {
   assignments           ProjectAssignment[]
   resetTokens           PasswordResetToken[]
   cashSnapshots         CashSnapshot[]
+  timeAdjustmentsOwned     TimeAdjustmentRequest[] @relation("TimeAdjUser")
+  timeAdjustmentsRequested TimeAdjustmentRequest[] @relation("TimeAdjRequester")
+  timeAdjustmentsDecided   TimeAdjustmentRequest[] @relation("TimeAdjDecider")
 }
 
 // Self-service "forgot password" (Spec §8-adjacent hardening). Only the
@@ -674,6 +677,45 @@ model Attendance {
   deviceIdOut String?
   source    String    @default("online") // online | offline_synced
   createdAt DateTime  @default(now())
+
+  adjustmentRequests TimeAdjustmentRequest[]
+}
+
+enum TimeAdjustmentType {
+  EARLY_START // credit for time clocked in before the department's scheduled start
+  OVERTIME // credit for time clocked out after 5:00 PM
+}
+
+enum TimeAdjustmentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// A worker's request to count time that the standard payroll clamp would
+// otherwise exclude (clocked in before the scheduled start, or clocked out
+// past 5pm) — e.g. an early delivery or a late concrete pour. Owner/PM decide;
+// only an APPROVED request lifts the clamp for that specific shift, in
+// src/lib/time-rules.ts's computeEffectiveHours(). Nothing here ever mutates
+// the underlying Attendance row — it stays the untouched source of truth.
+model TimeAdjustmentRequest {
+  id            String                @id @default(cuid())
+  attendanceId  String
+  attendance    Attendance            @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  userId        String // whose shift this is (normally == requestedById, unless a supervisor files it for their crew)
+  user          User                  @relation("TimeAdjUser", fields: [userId], references: [id])
+  type          TimeAdjustmentType
+  reason        String
+  requestedById String
+  requestedBy   User                  @relation("TimeAdjRequester", fields: [requestedById], references: [id])
+  status        TimeAdjustmentStatus  @default(PENDING)
+  decidedById   String?
+  decidedBy     User?                 @relation("TimeAdjDecider", fields: [decidedById], references: [id])
+  decidedAt     DateTime?
+  decisionNote  String?
+  createdAt     DateTime              @default(now())
+
+  @@unique([attendanceId, type])
 }
 
 // Employee roster per project: who works on it, since when, at what rate.
