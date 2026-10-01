@@ -192,6 +192,13 @@ model User {
   position     String? // trade/position: Foreman, Mason, Carpenter, Welder, Driver, Office Admin…
   dailyRate    Decimal?    @db.Decimal(12, 2)
   hourlyRate   Decimal?    @db.Decimal(12, 2)
+  // Office/Architect/Engineer paid a fixed monthly salary instead of an
+  // hourly/daily rate — when set, this takes priority over both for
+  // semi-monthly payroll (see computePayroll in src/lib/payroll.ts): the
+  // effective daily rate for a given month is monthlySalary divided by that
+  // month's count of Monday–Saturday calendar days, then /8 for an hourly
+  // rate so the existing hours-based engine can price partial days.
+  monthlySalary Decimal?   @db.Decimal(12, 2)
   active       Boolean     @default(true)
   mustChangePassword Boolean @default(false) // temp password issued — force change on first login
   useCustomMenus Boolean   @default(false) // true = customMenus is authoritative, ignore role's default tabs
@@ -226,6 +233,8 @@ model User {
   timeAdjustmentsOwned     TimeAdjustmentRequest[] @relation("TimeAdjUser")
   timeAdjustmentsRequested TimeAdjustmentRequest[] @relation("TimeAdjRequester")
   timeAdjustmentsDecided   TimeAdjustmentRequest[] @relation("TimeAdjDecider")
+  hoursOverridesOwned      DailyHoursOverride[]    @relation("HoursOverrideOwner")
+  hoursOverridesSet        DailyHoursOverride[]    @relation("HoursOverrideSetBy")
 }
 
 // Self-service "forgot password" (Spec §8-adjacent hardening). Only the
@@ -726,6 +735,27 @@ model TimeAdjustmentRequest {
 
   @@unique([attendanceId, type])
   @@unique([userId, date, type])
+}
+
+// Owner's manual correction for one employee's one day of computed hours —
+// e.g. a buddy-punch glitch or a forgotten clock-out produced an obviously
+// wrong number. Setting it IS the approval (no separate review step, since
+// only the Owner can set one); hours over 8 require approvedOver8 so a typo
+// can't silently blow past the standard cap. Once set, this value replaces
+// computeEffectiveHours()'s result for that user+day everywhere — the
+// attendance summary and payroll both read it, so the two can never diverge.
+model DailyHoursOverride {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation("HoursOverrideOwner", fields: [userId], references: [id])
+  date          DateTime // Manila calendar day this override applies to
+  hours         Decimal  @db.Decimal(5, 2)
+  approvedOver8 Boolean  @default(false)
+  setById       String
+  setBy         User     @relation("HoursOverrideSetBy", fields: [setById], references: [id])
+  setAt         DateTime @default(now())
+
+  @@unique([userId, date])
 }
 
 // Employee roster per project: who works on it, since when, at what rate.

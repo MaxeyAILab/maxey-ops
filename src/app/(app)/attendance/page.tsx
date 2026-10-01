@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -15,13 +16,14 @@ import {
   RequestWeekendWorkButton,
   type PendingTimeAdjustment,
 } from "@/components/time-adjustment-actions";
+import { EditTodayHoursButton } from "@/components/hours-override-button";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
-import { fetchApprovals } from "@/lib/payroll";
+import { computeDailyHoursByDay, fetchApprovals, fetchDailyOverrides } from "@/lib/payroll";
 import {
-  computeEffectiveHours,
   isEarlyStart,
   isOvertime,
   isWeekendRestrictedDepartment,
+  manilaDayKey,
   rulesetForDepartment,
   type AdjustmentFlags,
   type TimeRuleset,
@@ -38,17 +40,19 @@ const timeFmt = new Intl.DateTimeFormat("en-PH", {
 });
 
 function summarize(
+  userId: string,
   records: Attendance[],
   todayStart: Date,
   ruleset: TimeRuleset,
-  approvals: Map<string, AdjustmentFlags>
+  approvals: Map<string, AdjustmentFlags>,
+  overrides: Map<string, number>
 ) {
   const open = records.find((r) => r.timeOut === null);
   const completed = records.filter((r) => r.timeOut !== null);
-  const hours = (rs: Attendance[]) =>
-    rs.reduce((s, r) => s + computeEffectiveHours(r.timeIn, r.timeOut!, ruleset, approvals.get(r.id)), 0);
-  const todayHours = hours(completed.filter((r) => r.timeIn >= todayStart));
-  const weekHours = hours(completed);
+  const todayKey = manilaDayKey(todayStart);
+  const byDay = computeDailyHoursByDay(userId, records, ruleset, approvals, overrides);
+  const todayHours = byDay.get(todayKey) ?? 0;
+  const weekHours = Array.from(byDay.values()).reduce((s, h) => s + h, 0);
   const loggedToday = !!open || completed.some((r) => r.timeIn >= todayStart);
   return { open, todayHours, weekHours, loggedToday };
 }
@@ -137,6 +141,7 @@ export default async function AttendancePage() {
     position: string;
     department: string;
     dailyRate: number | null;
+    monthlySalary: number | null;
     phone: string | null;
     email: string | null;
     role: Role;
@@ -191,6 +196,7 @@ export default async function AttendancePage() {
           position: true,
           department: true,
           dailyRate: true,
+          monthlySalary: true,
           phone: true,
           email: true,
           role: true,
@@ -221,7 +227,18 @@ export default async function AttendancePage() {
         where: { OR: [{ timeIn: { gte: weekStart } }, { timeOut: null }] },
       }),
     ]);
-    const weekApprovals = await fetchApprovals(weekAttendance);
+    const allUserIds = Array.from(
+      new Set([
+        ...weekAttendance.map((a) => a.userId),
+        ...rosters.flatMap((p) => p.assignments.map((a) => a.user.id)),
+        ...officeStaff.map((u) => u.id),
+        ...tbaWorkers.map((u) => u.id),
+      ])
+    );
+    const [weekApprovals, weekOverrides] = await Promise.all([
+      fetchApprovals(weekAttendance),
+      fetchDailyOverrides(allUserIds, weekStart, new Date()),
+    ]);
 
     siteSections = rosters.map((p) => ({
       projectId: p.id,
@@ -238,10 +255,12 @@ export default async function AttendancePage() {
         useCustomMenus: a.user.useCustomMenus,
         customMenus: a.user.customMenus,
         summary: summarize(
+          a.user.id,
           weekAttendance.filter((r) => r.userId === a.userId && r.projectId === p.id),
           todayStart,
           "SITE",
-          weekApprovals
+          weekApprovals,
+          weekOverrides
         ),
       })),
     }));
@@ -252,16 +271,19 @@ export default async function AttendancePage() {
       position: u.position ?? "—",
       department: u.department ?? "",
       dailyRate: u.dailyRate ? Number(u.dailyRate) : null,
+      monthlySalary: u.monthlySalary ? Number(u.monthlySalary) : null,
       phone: u.phone,
       email: u.email,
       role: u.role,
       useCustomMenus: u.useCustomMenus,
       customMenus: u.customMenus,
       summary: summarize(
+        u.id,
         weekAttendance.filter((r) => r.userId === u.id),
         todayStart,
         rulesetForDepartment(u.department),
-        weekApprovals
+        weekApprovals,
+        weekOverrides
       ),
     }));
 
@@ -271,16 +293,19 @@ export default async function AttendancePage() {
       position: u.position ?? "—",
       department: "SITE", // real value for the edit form; displayed as "TBA" since they have no roster yet
       dailyRate: u.dailyRate ? Number(u.dailyRate) : null,
+      monthlySalary: null,
       phone: u.phone,
       email: u.email,
       role: u.role,
       useCustomMenus: u.useCustomMenus,
       customMenus: u.customMenus,
       summary: summarize(
+        u.id,
         weekAttendance.filter((r) => r.userId === u.id),
         todayStart,
         "SITE",
-        weekApprovals
+        weekApprovals,
+        weekOverrides
       ),
     }));
 
@@ -358,6 +383,7 @@ export default async function AttendancePage() {
       name: string;
       position: string;
       dailyRate: number | null;
+      monthlySalary?: number | null;
       phone: string | null;
       email: string | null;
       role: Role;
@@ -391,7 +417,12 @@ export default async function AttendancePage() {
             <Td>
               <StatusCell open={r.summary.open} loggedToday={r.summary.loggedToday} />
             </Td>
-            <Td className="text-right tabular-nums">{r.summary.todayHours.toFixed(1)}</Td>
+            <Td className="relative text-right tabular-nums">
+              {r.summary.todayHours.toFixed(1)}
+              {canManagePersonnel && (
+                <EditTodayHoursButton userId={r.userId} currentHours={r.summary.todayHours} />
+              )}
+            </Td>
             <Td className="text-right tabular-nums">{r.summary.weekHours.toFixed(1)}</Td>
             {canManagePersonnel && (
               <Td className="text-right whitespace-nowrap">
@@ -401,6 +432,7 @@ export default async function AttendancePage() {
                   position={r.position}
                   department={r.department}
                   dailyRate={r.dailyRate}
+                  monthlySalary={r.monthlySalary}
                   phone={r.phone}
                   email={r.email}
                   role={r.role}
@@ -435,7 +467,14 @@ export default async function AttendancePage() {
             </p>
           )}
         </div>
-        {canManagePersonnel && <AddPersonnelSection projects={projects} />}
+        <div className="flex items-center gap-3">
+          {isAdmin && (
+            <Link href="/attendance/yearly" className="text-xs font-medium text-brand-600 hover:underline">
+              Yearly hours log →
+            </Link>
+          )}
+          {canManagePersonnel && <AddPersonnelSection projects={projects} />}
+        </div>
       </div>
 
       {isAdmin && sharedDeviceWarnings.length > 0 && (

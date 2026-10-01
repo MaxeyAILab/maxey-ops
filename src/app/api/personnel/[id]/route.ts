@@ -16,6 +16,7 @@ const updateSchema = z.object({
   department: z.enum(ASSIGNABLE_DEPARTMENTS).optional(),
   dailyRate: z.coerce.number().positive().optional(),
   hourlyRate: z.coerce.number().positive().optional(),
+  monthlySalary: z.coerce.number().positive().optional().or(z.literal("")),
   phone: z.string().max(30).optional().or(z.literal("")),
   email: z.string().email().optional().or(z.literal("")),
   // Sign-in access — role picker + tab checklist
@@ -57,6 +58,10 @@ export const PATCH = handleApi(
     }
 
     const customMenus = body.customMenus?.filter((m) => ASSIGNABLE_MENU_HREFS.has(m));
+    const monthlySalary =
+      body.monthlySalary !== undefined
+        ? (body.monthlySalary === "" ? null : body.monthlySalary) as unknown as typeof target.monthlySalary
+        : target.monthlySalary;
 
     const updated = await prisma.user.update({
       where: { id: target.id },
@@ -68,6 +73,7 @@ export const PATCH = handleApi(
         email,
         dailyRate,
         hourlyRate,
+        monthlySalary,
         role: body.role ?? target.role,
         useCustomMenus: body.useCustomMenus ?? target.useCustomMenus,
         customMenus: customMenus ?? target.customMenus,
@@ -86,6 +92,7 @@ export const PATCH = handleApi(
         department: updated.department,
         dailyRate: updated.dailyRate ? Number(updated.dailyRate) : null,
         hourlyRate: updated.hourlyRate ? Number(updated.hourlyRate) : null,
+        monthlySalary: updated.monthlySalary ? Number(updated.monthlySalary) : null,
         phone: updated.phone,
         email: updated.email,
         role: updated.role,

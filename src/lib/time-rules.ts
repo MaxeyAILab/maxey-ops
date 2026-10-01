@@ -152,3 +152,100 @@ export function isOvertime(timeOut: Date): boolean {
   const dayKey = manilaDayKey(timeOut);
   return timeOut.getTime() > manilaTime(dayKey, DAY_END.h, DAY_END.m).getTime();
 }
+
+// ---------------------------------------------------------------------------
+// Pay-period boundaries. Office/Architect/Engineer are paid semi-monthly
+// (1st–15th, 16th–end); Site (project) crews and Drivers are paid weekly,
+// Friday 5:01 PM to the following Friday 5:00 PM. Both are computed here —
+// never picked from a free date range — so a run can't drift out of
+// alignment with the last one.
+// ---------------------------------------------------------------------------
+
+export function manilaMonthKey(d: Date): string {
+  return manilaDayKey(d).slice(0, 7); // "YYYY-MM"
+}
+
+/** Count of Monday–Saturday calendar days in the given "YYYY-MM" month —
+ * the divisor for turning a monthly salary into a daily rate (Spec: office
+ * works Mon–Sat, so only Sundays are excluded; no holiday calendar exists in
+ * this app to exclude further). */
+export function workingDaysInManilaMonth(monthKey: string): number {
+  const [year, month] = monthKey.split("-").map(Number);
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  let count = 0;
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dayKey = `${monthKey}-${String(day).padStart(2, "0")}`;
+    const dow = new Date(`${dayKey}T12:00:00.000Z`).getUTCDay();
+    if (dow !== 0) count++; // every day but Sunday
+  }
+  return count;
+}
+
+export interface SemiMonthlyPeriod {
+  start: Date;
+  end: Date;
+  monthKey: string; // the calendar month the whole period falls in — the divisor for the daily rate
+  label: string;
+}
+
+/** The semi-monthly period (1st–15th or 16th–end) containing `now`, or an
+ * earlier one when `periodsBack > 0` (1 = the previous half-month, etc.). */
+export function manilaSemiMonthlyPeriod(now: Date, periodsBack = 0): SemiMonthlyPeriod {
+  const dayKey = manilaDayKey(now);
+  const [year, month, dom] = dayKey.split("-").map(Number);
+  // Walk back one half-month period at a time so month/year rollovers (and
+  // variable month lengths) are handled by Date arithmetic, not by hand.
+  let y = year;
+  let m = month; // 1-12
+  let firstHalf = dom <= 15;
+  for (let i = 0; i < periodsBack; i++) {
+    if (firstHalf) {
+      m -= 1;
+      if (m === 0) {
+        m = 12;
+        y -= 1;
+      }
+      firstHalf = false; // land on the second half of the previous month
+    } else {
+      firstHalf = true; // land on the first half of the same month
+    }
+  }
+  const monthKey = `${y}-${String(m).padStart(2, "0")}`;
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const start = firstHalf ? manilaTime(`${monthKey}-01`, 0, 0) : manilaTime(`${monthKey}-16`, 0, 0);
+  const endDay = firstHalf ? 15 : daysInMonth;
+  const end = manilaTime(`${monthKey}-${String(endDay).padStart(2, "0")}`, 23, 59);
+  const monthLabel = new Date(`${monthKey}-01T00:00:00Z`).toLocaleString("en-US", { month: "long", timeZone: "UTC" });
+  return {
+    start,
+    end,
+    monthKey,
+    label: firstHalf ? `${monthLabel} 1–15, ${y}` : `${monthLabel} 16–${endDay}, ${y}`,
+  };
+}
+
+export interface WeeklySitePeriod {
+  start: Date;
+  end: Date;
+  label: string;
+}
+
+/** The Friday-5:01PM-to-Friday-5:00PM week containing `now`, or an earlier
+ * one when `periodsBack > 0`. */
+export function manilaWeeklySitePeriod(now: Date, periodsBack = 0): WeeklySitePeriod {
+  const dow = manilaDayOfWeek(now); // 0=Sun..6=Sat, Friday=5
+  const daysSinceFriday = (dow - 5 + 7) % 7;
+  const thisWeekFridayKey = manilaDayKey(new Date(now.getTime() - daysSinceFriday * 86_400_000));
+  const thisFriday5pm = manilaTime(thisWeekFridayKey, 17, 0);
+
+  let end = now.getTime() <= thisFriday5pm.getTime() ? thisFriday5pm : new Date(thisFriday5pm.getTime() + 7 * 86_400_000);
+  let start = new Date(end.getTime() - 7 * 86_400_000 + 60_000); // +1 minute past the prior Friday 5pm
+
+  for (let i = 0; i < periodsBack; i++) {
+    end = new Date(end.getTime() - 7 * 86_400_000);
+    start = new Date(start.getTime() - 7 * 86_400_000);
+  }
+
+  const fmt = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Manila", month: "short", day: "numeric", year: "numeric" });
+  return { start, end, label: `${fmt.format(start)} – ${fmt.format(end)}` };
+}

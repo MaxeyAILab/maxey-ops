@@ -299,6 +299,7 @@ export function EditPersonnelButton({
   position,
   department: initialDepartment,
   dailyRate,
+  monthlySalary,
   phone,
   email,
   role: initialRole,
@@ -310,6 +311,7 @@ export function EditPersonnelButton({
   position: string;
   department?: string | null;
   dailyRate?: number | null;
+  monthlySalary?: number | null;
   phone?: string | null;
   email?: string | null;
   role?: Role;
@@ -322,6 +324,7 @@ export function EditPersonnelButton({
   const [error, setError] = useState("");
   const [role, setRole] = useState<Role>(initialRole ?? "OFFICE");
   const [department, setDepartment] = useState(initialDepartment ?? "OFFICE");
+  const isSalaried = department === "OFFICE" || department === "ARCHITECT" || department === "ENGINEER";
   const [checkedMenus, setCheckedMenus] = useState<Set<string>>(
     new Set(
       initialUseCustomMenus && initialCustomMenus
@@ -348,6 +351,7 @@ export function EditPersonnelButton({
         position: fd.get("position"),
         department,
         dailyRate: fd.get("dailyRate") || undefined,
+        monthlySalary: isSalaried ? fd.get("monthlySalary") || "" : undefined,
         phone: fd.get("phone"),
         email: fd.get("email"),
         role,
@@ -443,6 +447,24 @@ export function EditPersonnelButton({
                       <Input id={`ePhone-${userId}`} name="phone" type="tel" defaultValue={phone ?? ""} />
                     </div>
                   </div>
+                  {isSalaried && (
+                    <div>
+                      <Label htmlFor={`eSalary-${userId}`}>Monthly salary (PHP)</Label>
+                      <Input
+                        id={`eSalary-${userId}`}
+                        name="monthlySalary"
+                        type="number"
+                        min="1"
+                        step="0.01"
+                        defaultValue={monthlySalary ?? ""}
+                        placeholder="Leave blank to use daily rate instead"
+                      />
+                      <p className="mt-1 text-xs text-ink-400">
+                        When set, this (not the daily rate) drives semi-monthly payroll — the
+                        effective daily rate is this ÷ the month&apos;s Mon–Sat working days.
+                      </p>
+                    </div>
+                  )}
                   <div>
                     <Label htmlFor={`eEmail-${userId}`}>Email</Label>
                     <Input id={`eEmail-${userId}`} name="email" type="email" defaultValue={email ?? ""} />

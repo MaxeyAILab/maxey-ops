@@ -4,6 +4,7 @@ import {
   computeEffectiveHours,
   manilaDayKey,
   rulesetForDepartment,
+  workingDaysInManilaMonth,
   type AdjustmentFlags,
   type TimeRuleset,
 } from "@/lib/time-rules";
@@ -44,33 +45,63 @@ export function normalizeEntries(entries: PayrollEntry[]): PayrollEntry[] {
   return entries.map((e) => ({ ...e, meals: e.meals ?? 0, cashAdvance: e.cashAdvance ?? 0 }));
 }
 
-const dayKeyFmt = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "Asia/Manila",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
+/**
+ * One user's hours, bucketed by Manila calendar day — the single shared
+ * "what counts as a day's hours" computation behind the attendance summary,
+ * the yearly log, and payroll's regular/OT split. An Owner override wins
+ * outright for that day; otherwise each record's computeEffectiveHours() is
+ * summed and the day is capped at exactly 8 hours unless it has an approved
+ * overtime/weekend-work request — so the same employee's same day can never
+ * show two different numbers in two different parts of the app.
+ */
+export function computeDailyHoursByDay(
+  userId: string,
+  records: Attendance[],
+  ruleset: TimeRuleset,
+  approvals: Map<string, AdjustmentFlags>,
+  overrides: Map<string, number>
+): Map<string, number> {
+  const byDay = new Map<string, number>();
+  const approvedDays = new Set<string>();
+  for (const r of records) {
+    if (!r.timeOut) continue;
+    const key = manilaDayKey(r.timeIn);
+    const flags = approvals.get(r.id);
+    if (flags?.overtimeApproved || flags?.weekendApproved) approvedDays.add(key);
+    const hours = computeEffectiveHours(r.timeIn, r.timeOut, ruleset, flags);
+    byDay.set(key, (byDay.get(key) ?? 0) + hours);
+  }
+  for (const [key, hours] of byDay) {
+    const override = overrides.get(`${userId}|${key}`);
+    if (override != null) {
+      byDay.set(key, override);
+      approvedDays.add(key); // an override is itself the approval — never re-capped
+    } else if (!approvedDays.has(key)) {
+      byDay.set(key, Math.min(8, hours));
+    }
+  }
+  return byDay;
+}
 
-/** Hours per Manila calendar day → regular/OT split → gross/deductions/net.
- * Each record's raw span is first passed through computeEffectiveHours() —
- * the scheduled-start clamp, lunch/break deductions, and 5pm cutoff — before
- * being summed into its day's bucket. */
+/** Regular/OT split → gross/deductions/net, from computeDailyHoursByDay()'s
+ * per-day totals — the same day-bucketed, capped-unless-approved, override-
+ * aware numbers the attendance summary and yearly log show, so payroll can
+ * never price a day differently than it's displayed elsewhere. A day's value
+ * is ≤8 unless it carries an approved overtime/weekend-work request (or an
+ * Owner override), which is exactly when it's correct for the excess to
+ * price as OT below — an unapproved double clock-in stacking past 8 hours
+ * gets capped, not paid at the 1.25× premium. */
 function buildEntry(
   user: { id: string; name: string },
   records: Attendance[],
   hourlyRate: number,
   ruleset: TimeRuleset,
-  approvalsByAttendanceId: Map<string, AdjustmentFlags>
+  approvalsByAttendanceId: Map<string, AdjustmentFlags>,
+  overridesByUserDay: Map<string, number>
 ): PayrollEntry | null {
   if (records.length === 0) return null;
 
-  const byDay = new Map<string, number>();
-  for (const a of records) {
-    const key = dayKeyFmt.format(a.timeIn);
-    const flags = approvalsByAttendanceId.get(a.id);
-    const hours = computeEffectiveHours(a.timeIn, a.timeOut!, ruleset, flags);
-    byDay.set(key, (byDay.get(key) ?? 0) + hours);
-  }
+  const byDay = computeDailyHoursByDay(user.id, records, ruleset, approvalsByAttendanceId, overridesByUserDay);
 
   const cfg = PAYROLL_CONFIG;
   let regularHours = 0;
@@ -148,6 +179,20 @@ export async function fetchApprovals(records: Attendance[]): Promise<Map<string,
   return map;
 }
 
+/** Owner-set manual hour corrections (DailyHoursOverride) for a batch of
+ * users across a period, keyed by `${userId}|${manilaDayKey}`. */
+export async function fetchDailyOverrides(
+  userIds: string[],
+  periodStart: Date,
+  periodEnd: Date
+): Promise<Map<string, number>> {
+  if (userIds.length === 0) return new Map();
+  const rows = await prisma.dailyHoursOverride.findMany({
+    where: { userId: { in: userIds }, date: { gte: periodStart, lte: periodEnd } },
+  });
+  return new Map(rows.map((r) => [`${r.userId}|${manilaDayKey(r.date)}`, Number(r.hours)]));
+}
+
 /**
  * Per-project payroll: employees come from the project's roster
  * (ProjectAssignment), rates come from the assignment, and only attendance
@@ -174,23 +219,29 @@ export async function computeProjectPayroll(
       timeOut: { not: null },
     },
   });
-  const approvals = await fetchApprovals(attendance);
+  const [approvals, overrides] = await Promise.all([
+    fetchApprovals(attendance),
+    fetchDailyOverrides(assignments.map((a) => a.userId), periodStart, periodEnd),
+  ]);
 
   const entries: PayrollEntry[] = [];
   for (const a of assignments) {
     const records = attendance.filter(
       (rec) => rec.userId === a.userId && rec.timeIn >= a.startDate
     );
-    const entry = buildEntry(a.user, records, Number(a.hourlyRate), "SITE", approvals);
+    const entry = buildEntry(a.user, records, Number(a.hourlyRate), "SITE", approvals, overrides);
     if (entry) entries.push(entry);
   }
   return entries;
 }
 
 /**
- * Department payroll (Office staff / Drivers — no project). Rates come from
- * the user's profile (hourlyRate, or dailyRate / 8). Drivers follow the SITE
- * schedule; Office/Architect/Engineer follow the OFFICE schedule.
+ * Department payroll (Office/Architect/Engineer, paid semi-monthly; Drivers,
+ * paid weekly — no project). Drivers follow the SITE schedule and their
+ * profile hourlyRate/dailyRate. Office/Architect/Engineer follow the OFFICE
+ * schedule, and when `monthlySalary` is set on the profile, their effective
+ * hourly rate is (monthlySalary / that period's working days in the month)
+ * / 8 — otherwise the existing hourlyRate/dailyRate fallback applies.
  */
 export async function computePayroll(
   department: Department,
@@ -210,22 +261,33 @@ export async function computePayroll(
       timeOut: { not: null },
     },
   });
-  const approvals = await fetchApprovals(attendance);
+  const [approvals, overrides] = await Promise.all([
+    fetchApprovals(attendance),
+    fetchDailyOverrides(users.map((u) => u.id), periodStart, periodEnd),
+  ]);
+
+  // A semi-monthly period never spans two calendar months, so periodStart's
+  // Manila month is the one whose Mon–Sat day count divides the salary.
+  const monthKey = manilaDayKey(periodStart).slice(0, 7);
+  const workingDays = workingDaysInManilaMonth(monthKey);
 
   const entries: PayrollEntry[] = [];
   for (const u of users) {
     const hourlyRate =
-      u.hourlyRate != null
-        ? Number(u.hourlyRate)
-        : u.dailyRate != null
-          ? Number(u.dailyRate) / PAYROLL_CONFIG.regularHoursPerDay
-          : 0;
+      u.monthlySalary != null
+        ? Number(u.monthlySalary) / workingDays / PAYROLL_CONFIG.regularHoursPerDay
+        : u.hourlyRate != null
+          ? Number(u.hourlyRate)
+          : u.dailyRate != null
+            ? Number(u.dailyRate) / PAYROLL_CONFIG.regularHoursPerDay
+            : 0;
     const entry = buildEntry(
       u,
       attendance.filter((a) => a.userId === u.id),
       hourlyRate,
       ruleset,
-      approvals
+      approvals,
+      overrides
     );
     if (entry) entries.push(entry);
   }

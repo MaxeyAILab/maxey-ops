@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Input, Label, Select } from "@/components/ui";
+import { manilaSemiMonthlyPeriod, manilaWeeklySitePeriod } from "@/lib/time-rules";
 
 interface EmployeeOption {
   id: string;
@@ -104,7 +105,14 @@ export function RemoveEmployeeButton({ assignmentId, name }: { assignmentId: str
   );
 }
 
-/** Generate a payroll run for one project (or a department when projectId is absent). */
+/**
+ * Generate a payroll run for one project (or a department when projectId is
+ * absent). Periods are always server-computed, never free-picked — Office/
+ * Architect/Engineer run semi-monthly (1st–15th, 16th–end); project crews and
+ * Drivers run weekly, Friday 5:01 PM to the next Friday 5:00 PM. Choosing
+ * "periods back" only selects WHICH aligned period to generate; it can never
+ * produce a misaligned or overlapping one.
+ */
 type PayrollDepartment = "OFFICE" | "DRIVER" | "ARCHITECT" | "ENGINEER";
 
 export function GenerateRunForm({
@@ -118,23 +126,23 @@ export function GenerateRunForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [dept, setDept] = useState(department ?? "OFFICE");
+  const [periodsBack, setPeriodsBack] = useState(0);
 
-  const end = new Date().toISOString().slice(0, 10);
-  const start = new Date(Date.now() - 6 * 86_400_000).toISOString().slice(0, 10);
+  const isWeekly = !!projectId || dept === "DRIVER";
+  const now = new Date();
+  const period = isWeekly ? manilaWeeklySitePeriod(now, periodsBack) : manilaSemiMonthlyPeriod(now, periodsBack);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     setError("");
-    const fd = new FormData(e.currentTarget);
     const res = await fetch("/api/payroll", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         projectId,
         department: projectId ? undefined : dept,
-        periodStart: fd.get("periodStart"),
-        periodEnd: fd.get("periodEnd"),
+        periodsBack,
       }),
     });
     setBusy(false);
@@ -151,7 +159,13 @@ export function GenerateRunForm({
       {!projectId && (
         <div>
           <Label>Department</Label>
-          <Select value={dept} onChange={(e) => setDept(e.target.value as PayrollDepartment)}>
+          <Select
+            value={dept}
+            onChange={(e) => {
+              setDept(e.target.value as PayrollDepartment);
+              setPeriodsBack(0);
+            }}
+          >
             <option value="OFFICE">Office</option>
             <option value="DRIVER">Drivers</option>
             <option value="ARCHITECT">Architects</option>
@@ -160,12 +174,18 @@ export function GenerateRunForm({
         </div>
       )}
       <div>
-        <Label>From</Label>
-        <Input name="periodStart" type="date" defaultValue={start} required />
-      </div>
-      <div>
-        <Label>To</Label>
-        <Input name="periodEnd" type="date" defaultValue={end} required />
+        <Label>Pay period</Label>
+        <Select value={periodsBack} onChange={(e) => setPeriodsBack(Number(e.target.value))}>
+          <option value={0}>Current — {period.label}</option>
+          {[1, 2, 3].map((n) => {
+            const p = isWeekly ? manilaWeeklySitePeriod(now, n) : manilaSemiMonthlyPeriod(now, n);
+            return (
+              <option key={n} value={n}>
+                {n} period{n > 1 ? "s" : ""} ago — {p.label}
+              </option>
+            );
+          })}
+        </Select>
       </div>
       <Button type="submit" disabled={busy}>
         {busy ? "Computing…" : "Generate payroll"}

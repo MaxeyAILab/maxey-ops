@@ -3,26 +3,24 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { computePayroll, computeProjectPayroll } from "@/lib/payroll";
+import { manilaSemiMonthlyPeriod, manilaWeeklySitePeriod } from "@/lib/time-rules";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
-
-const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 // A run is either per-project (site crews) or per-department (office/drivers)
 const createSchema = z
   .object({
     projectId: z.string().min(1).optional(),
     department: z.enum(["OFFICE", "DRIVER", "ARCHITECT", "ENGINEER"]).optional(),
-    periodStart: dateStr,
-    periodEnd: dateStr,
+    // Which aligned period to generate — 0 = current, 1 = the one before that,
+    // etc. Never a free date range: periods are always computed here, so a
+    // run can't drift out of alignment with the last one (Spec: Office runs
+    // semi-monthly 1st–15th/16th–end; Site crews and Drivers run weekly,
+    // Friday 5:01 PM to the next Friday 5:00 PM).
+    periodsBack: z.coerce.number().int().min(0).max(12).default(0),
   })
   .refine((b) => !!b.projectId !== !!b.department, {
     message: "Provide either a project or a department, not both",
   });
-
-/** Anchor a yyyy-mm-dd to Manila local time (Spec §8 localization). */
-function manilaDate(d: string, endOfDay = false): Date {
-  return new Date(`${d}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}+08:00`);
-}
 
 /**
  * POST /api/payroll — generate a payroll run (Spec 6.5). Project runs pull
@@ -32,10 +30,24 @@ function manilaDate(d: string, endOfDay = false): Date {
 export const POST = handleApi(async (req: NextRequest) => {
   const user = await requireUser(["OWNER", "ACCOUNTING"]);
   const body = createSchema.parse(await req.json());
-  const periodStart = manilaDate(body.periodStart);
-  const periodEnd = manilaDate(body.periodEnd, true);
-  if (periodEnd <= periodStart) {
-    throw new ApiError(400, "Period end must be after period start");
+
+  const isWeekly = !!body.projectId || body.department === "DRIVER";
+  const period = isWeekly
+    ? manilaWeeklySitePeriod(new Date(), body.periodsBack)
+    : manilaSemiMonthlyPeriod(new Date(), body.periodsBack);
+  const periodStart = period.start;
+  const periodEnd = period.end;
+
+  const existing = await prisma.payrollRun.findFirst({
+    where: {
+      projectId: body.projectId ?? null,
+      department: body.department ?? null,
+      periodStart,
+      periodEnd,
+    },
+  });
+  if (existing) {
+    throw new ApiError(400, `A run for ${period.label} already exists — open it instead of generating a duplicate`);
   }
 
   let entries;
@@ -78,6 +90,7 @@ export const POST = handleApi(async (req: NextRequest) => {
     diff: {
       project: projectName,
       department: body.department ?? null,
+      period: period.label,
       workers: entries.length,
       totalNet: entries.reduce((s, e) => s + e.net, 0),
     },
