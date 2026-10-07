@@ -8,7 +8,7 @@ import {
   ONGOING_STATUSES,
   PROSPECTIVE_STATUSES,
 } from "@/lib/project-status";
-import { Badge, Card, CardHeader, Table, Td, Th } from "@/components/ui";
+import { Badge, Table, Td, Th } from "@/components/ui";
 import {
   AddProjectSection,
   DeleteProjectButton,
@@ -22,6 +22,36 @@ export const metadata = { title: "Projects" };
 export const dynamic = "force-dynamic";
 
 type ProjectRow = Awaited<ReturnType<typeof getProjects>>[number];
+
+// Each section is three-toned: strong title bar, medium column-heading row, very light body.
+const TONES = {
+  green: {
+    frame: "border-emerald-300 dark:border-emerald-800",
+    title: "bg-emerald-700 text-white dark:bg-emerald-800",
+    subtitle: "text-emerald-100",
+    head: "[&_th]:!bg-emerald-200 [&_th]:!text-emerald-900 [&_th]:!border-emerald-300 dark:[&_th]:!bg-emerald-900/70 dark:[&_th]:!text-emerald-100 dark:[&_th]:!border-emerald-800",
+    body: "bg-emerald-50 dark:bg-emerald-950/40",
+    row: "hover:bg-emerald-100/70 dark:hover:bg-emerald-900/30",
+  },
+  yellow: {
+    frame: "border-amber-300 dark:border-amber-800",
+    title: "bg-amber-500 text-amber-950 dark:bg-amber-700 dark:text-amber-50",
+    subtitle: "text-amber-900/80 dark:text-amber-100/80",
+    head: "[&_th]:!bg-amber-200 [&_th]:!text-amber-950 [&_th]:!border-amber-300 dark:[&_th]:!bg-amber-900/60 dark:[&_th]:!text-amber-100 dark:[&_th]:!border-amber-800",
+    body: "bg-amber-50 dark:bg-amber-950/40",
+    row: "hover:bg-amber-100/70 dark:hover:bg-amber-900/30",
+  },
+  grey: {
+    frame: "border-slate-300 dark:border-slate-700",
+    title: "bg-slate-600 text-white dark:bg-slate-700",
+    subtitle: "text-slate-200",
+    head: "[&_th]:!bg-slate-200 [&_th]:!text-slate-800 [&_th]:!border-slate-300 dark:[&_th]:!bg-slate-800 dark:[&_th]:!text-slate-200 dark:[&_th]:!border-slate-700",
+    body: "bg-slate-50 dark:bg-slate-900/50",
+    row: "hover:bg-slate-100 dark:hover:bg-slate-800/40",
+  },
+} as const;
+
+type Tone = keyof typeof TONES;
 
 function getProjects() {
   return prisma.project.findMany({
@@ -54,10 +84,10 @@ export default async function ProjectsPage() {
   );
   const completed = projects.filter((p) => (COMPLETED_STATUSES as string[]).includes(p.status));
 
-  const renderTable = (rows: ProjectRow[], emptyText: string) => (
+  const renderTable = (rows: ProjectRow[], emptyText: string, tone: Tone) => (
     <Table>
       <thead>
-        <tr>
+        <tr className={TONES[tone].head}>
           <Th>Project</Th>
           <Th>Owner</Th>
           <Th>Status</Th>
@@ -67,9 +97,9 @@ export default async function ProjectsPage() {
           {isOwner && <Th />}
         </tr>
       </thead>
-      <tbody>
+      <tbody className={TONES[tone].body}>
         {rows.map((p) => (
-          <tr key={p.id} className="hover:bg-ink-50">
+          <tr key={p.id} className={TONES[tone].row}>
             <Td>
               <Link
                 href={`/projects/${p.id}`}
@@ -112,6 +142,18 @@ export default async function ProjectsPage() {
     </Table>
   );
 
+  const section = (tone: Tone, title: string, rows: ProjectRow[], subtitle: string, emptyText: string) => (
+    <div className={`overflow-hidden rounded-sm border ${TONES[tone].frame}`}>
+      <div className={`px-4 py-3 sm:px-5 ${TONES[tone].title}`}>
+        <h3 className="text-sm font-semibold">
+          {title} ({rows.length})
+        </h3>
+        <p className={`mt-0.5 text-xs ${TONES[tone].subtitle}`}>{subtitle}</p>
+      </div>
+      {renderTable(rows, emptyText, tone)}
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -119,29 +161,9 @@ export default async function ProjectsPage() {
         {canManage && <AddProjectSection />}
       </div>
 
-      <Card>
-        <CardHeader
-          title={`a. On-going Projects (${ongoing.length})`}
-          subtitle="Mobilization · On-going Construction · Project On-hold · For Punchlist"
-        />
-        {renderTable(ongoing, "No on-going projects.")}
-      </Card>
-
-      <Card>
-        <CardHeader
-          title={`b. Prospective Projects (${prospective.length})`}
-          subtitle="For Site Survey · Not Active — plus new leads converted from the CRM"
-        />
-        {renderTable(prospective, "No prospective projects — convert a won lead or add one manually.")}
-      </Card>
-
-      <Card>
-        <CardHeader
-          title={`c. Completed / Turn-over Projects (${completed.length})`}
-          subtitle="Projects marked Turned-over move here automatically"
-        />
-        {renderTable(completed, "No turned-over projects yet.")}
-      </Card>
+      {section("green", "On-going Projects", ongoing, "Mobilization · On-going Construction · Project On-hold · For Punchlist", "No on-going projects.")}
+      {section("yellow", "Prospective Projects", prospective, "For Site Survey · Not Active — plus new leads converted from the CRM", "No prospective projects — convert a won lead or add one manually.")}
+      {section("grey", "Completed / Turn-over Projects", completed, "Projects marked Turned-over move here automatically", "No turned-over projects yet.")}
     </div>
   );
 }
