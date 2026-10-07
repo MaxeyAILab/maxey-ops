@@ -7,6 +7,7 @@ import { php, phpCompact } from "@/lib/format";
 import { COMPLETED_STATUSES } from "@/lib/project-status";
 import { Badge, Card, CardBody, CardHeader, Stat, Table, Td, Th } from "@/components/ui";
 import { CashflowChart } from "@/components/charts";
+import { Fig, FigChart, FigPlain, FigureToggle, FigureVisibilityProvider } from "@/components/figure-visibility";
 
 export const metadata = { title: "Dashboard" };
 export const dynamic = "force-dynamic";
@@ -43,10 +44,12 @@ export default async function DashboardPage() {
   const done = sumFinances(doneFinances);
 
   return (
+    <FigureVisibilityProvider>
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-bold text-ink-900">Owner Dashboard</h1>
-        <div className="flex gap-2 text-sm">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <FigureToggle />
           {pendingReqs > 0 && (
             <Link
               href="/requisitions"
@@ -76,21 +79,21 @@ export default async function DashboardPage() {
           Active projects ({activeFinances.length})
         </h2>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          <Stat label="Contract value" value={phpCompact(active.contract)} sub="active projects" />
-          <Stat label="Received" value={phpCompact(active.received)} tone="good" sub="client payments" />
+          <Stat label="Contract value" value={<Fig>{phpCompact(active.contract)}</Fig>} sub="active projects" />
+          <Stat label="Received" value={<Fig>{phpCompact(active.received)}</Fig>} tone="good" sub="client payments" />
           <Stat
             label="Committed cost"
-            value={phpCompact(active.committed)}
+            value={<Fig>{phpCompact(active.committed)}</Fig>}
             tone="bad"
             sub="approved reqs + POs + payroll"
           />
           <Stat
             label="Est. gross margin"
-            value={phpCompact(active.margin)}
+            value={<Fig>{phpCompact(active.margin)}</Fig>}
             tone={active.margin >= 0 ? "good" : "bad"}
-            sub={active.contract > 0 ? `${((active.margin / active.contract) * 100).toFixed(1)}% of contract` : undefined}
+            sub={active.contract > 0 ? <FigPlain>{`${((active.margin / active.contract) * 100).toFixed(1)}% of contract`}</FigPlain> : undefined}
           />
-          <Stat label="Retention held" value={phpCompact(active.retention)} tone="warning" sub="by clients" />
+          <Stat label="Retention held" value={<Fig>{phpCompact(active.retention)}</Fig>} tone="warning" sub="by clients" />
         </div>
       </div>
 
@@ -99,21 +102,21 @@ export default async function DashboardPage() {
           Completed / turned-over projects ({doneFinances.length})
         </h2>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          <Stat label="Contract value" value={phpCompact(done.contract)} sub="done projects" />
-          <Stat label="Received" value={phpCompact(done.received)} tone="good" sub="client payments" />
+          <Stat label="Contract value" value={<Fig>{phpCompact(done.contract)}</Fig>} sub="done projects" />
+          <Stat label="Received" value={<Fig>{phpCompact(done.received)}</Fig>} tone="good" sub="client payments" />
           <Stat
             label="Committed cost"
-            value={phpCompact(done.committed)}
+            value={<Fig>{phpCompact(done.committed)}</Fig>}
             tone="bad"
             sub="approved reqs + POs + payroll"
           />
           <Stat
             label="Est. gross margin"
-            value={phpCompact(done.margin)}
+            value={<Fig>{phpCompact(done.margin)}</Fig>}
             tone={done.margin >= 0 ? "good" : "bad"}
-            sub={done.contract > 0 ? `${((done.margin / done.contract) * 100).toFixed(1)}% of contract` : undefined}
+            sub={done.contract > 0 ? <FigPlain>{`${((done.margin / done.contract) * 100).toFixed(1)}% of contract`}</FigPlain> : undefined}
           />
-          <Stat label="Retention held" value={phpCompact(done.retention)} tone="warning" sub="by clients" />
+          <Stat label="Retention held" value={<Fig>{phpCompact(done.retention)}</Fig>} tone="warning" sub="by clients" />
         </div>
       </div>
 
@@ -136,13 +139,13 @@ export default async function DashboardPage() {
               <Stat
                 key={c.category}
                 label={c.label}
-                value={phpCompact(c.total)}
+                value={<Fig>{phpCompact(c.total)}</Fig>}
                 sub={`${c.count} requisition${c.count === 1 ? "" : "s"}`}
               />
             ))}
             <Stat
               label="Total non-project"
-              value={phpCompact(nonProjectExpenses.total)}
+              value={<Fig>{phpCompact(nonProjectExpenses.total)}</Fig>}
               tone="brand"
               sub="emergency + office + warehouse"
             />
@@ -156,7 +159,9 @@ export default async function DashboardPage() {
           subtitle="Client payments received vs. committed cost (POs + payroll), last 6 months"
         />
         <CardBody>
-          <CashflowChart data={cashflow} />
+          <FigChart>
+            <CashflowChart data={cashflow} />
+          </FigChart>
         </CardBody>
       </Card>
 
@@ -186,14 +191,14 @@ export default async function DashboardPage() {
                 <Td>
                   <Badge value={f.status} />
                 </Td>
-                <Td className="text-right tabular-nums">{php(f.contractValue)}</Td>
-                <Td className="text-right tabular-nums text-emerald-700">{php(f.received)}</Td>
-                <Td className="text-right tabular-nums">{php(f.committedCost)}</Td>
+                <Td className="text-right tabular-nums"><Fig>{php(f.contractValue)}</Fig></Td>
+                <Td className="text-right tabular-nums text-emerald-700"><Fig>{php(f.received)}</Fig></Td>
+                <Td className="text-right tabular-nums"><Fig>{php(f.committedCost)}</Fig></Td>
                 <Td
                   className={`text-right tabular-nums font-medium ${f.grossMargin >= 0 ? "text-emerald-700" : "text-red-600"}`}
                 >
-                  {php(f.grossMargin)}
-                  <div className="text-xs font-normal text-ink-400">{f.marginPct.toFixed(1)}%</div>
+                  <Fig>{php(f.grossMargin)}</Fig>
+                  <div className="text-xs font-normal text-ink-400"><FigPlain>{f.marginPct.toFixed(1)}%</FigPlain></div>
                 </Td>
                 <Td className="text-right tabular-nums">{f.accomplishmentPct.toFixed(0)}%</Td>
               </tr>
@@ -209,5 +214,6 @@ export default async function DashboardPage() {
         </Table>
       </Card>
     </div>
+    </FigureVisibilityProvider>
   );
 }

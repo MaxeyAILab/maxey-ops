@@ -9,7 +9,7 @@ const createSchema = z.object({
   code: z
     .string()
     .max(20)
-    .regex(/^[A-Za-z0-9-]*$/, "Letters, numbers, and hyphens only")
+    .regex(/^[A-Za-z0-9 -]*$/, "Letters, numbers, spaces, and hyphens only")
     .optional()
     .or(z.literal("")), // short code, e.g. "CTC" — prefixes this project's site instruction Task IDs
   address: z.string().max(500).optional().or(z.literal("")),
