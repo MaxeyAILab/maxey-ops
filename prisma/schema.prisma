@@ -758,6 +758,24 @@ model DailyHoursOverride {
   @@unique([userId, date])
 }
 
+// Owner-set correction to one employee's TOTAL hours for one pay period (the
+// "Hours (pay period)" figure on the attendance page): a signed delta on top
+// of the computed total, so later clock-ins keep accumulating normally.
+// Payroll adds it to regular hours when generating that period's run.
+// projectId is "" for office/driver periods, the project id for a site crew's
+// per-project weekly total.
+model PeriodHoursAdjustment {
+  id          String   @id @default(cuid())
+  userId      String
+  projectId   String   @default("")
+  periodStart DateTime
+  deltaHours  Decimal  @db.Decimal(7, 2)
+  setById     String
+  setAt       DateTime @default(now())
+
+  @@unique([userId, projectId, periodStart])
+}
+
 // Employee roster per project: who works on it, since when, at what rate.
 // Drives per-project payroll runs (rate here overrides the user's profile).
 model ProjectAssignment {

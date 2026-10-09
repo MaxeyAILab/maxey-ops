@@ -16,14 +16,16 @@ import {
   RequestWeekendWorkButton,
   type PendingTimeAdjustment,
 } from "@/components/time-adjustment-actions";
-import { EditTodayHoursButton } from "@/components/hours-override-button";
+import { EditPeriodTotalButton, EditTodayHoursButton } from "@/components/hours-override-button";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
-import { computeDailyHoursByDay, fetchApprovals, fetchDailyOverrides } from "@/lib/payroll";
+import { computeDailyHoursByDay, fetchApprovals, fetchDailyOverrides, withLiveOpenShifts } from "@/lib/payroll";
 import {
   isEarlyStart,
   isOvertime,
   isWeekendRestrictedDepartment,
   manilaDayKey,
+  manilaSemiMonthlyPeriod,
+  manilaWeeklySitePeriod,
   rulesetForDepartment,
   type AdjustmentFlags,
   type TimeRuleset,
@@ -39,22 +41,38 @@ const timeFmt = new Intl.DateTimeFormat("en-PH", {
   minute: "2-digit",
 });
 
+interface PayPeriod {
+  start: Date;
+  end: Date;
+  label: string;
+}
+
+/** Today's hours plus the running total for the employee's current pay period
+ * (semi-monthly for office staff, Friday-to-Friday weekly for drivers/site),
+ * including the Owner's period-total correction, if any. A shift still in
+ * progress counts live up to now. */
 function summarize(
   userId: string,
   records: Attendance[],
   todayStart: Date,
   ruleset: TimeRuleset,
   approvals: Map<string, AdjustmentFlags>,
-  overrides: Map<string, number>
+  overrides: Map<string, number>,
+  period: PayPeriod,
+  adjustment: number,
+  projectId: string | null
 ) {
   const open = records.find((r) => r.timeOut === null);
   const completed = records.filter((r) => r.timeOut !== null);
   const todayKey = manilaDayKey(todayStart);
-  const byDay = computeDailyHoursByDay(userId, records, ruleset, approvals, overrides);
-  const todayHours = byDay.get(todayKey) ?? 0;
-  const weekHours = Array.from(byDay.values()).reduce((s, h) => s + h, 0);
+  const live = withLiveOpenShifts(records);
+  const todayHours = computeDailyHoursByDay(userId, live, ruleset, approvals, overrides).get(todayKey) ?? 0;
+  const periodRecords = live.filter((r) => r.timeIn >= period.start && r.timeIn <= period.end);
+  const periodByDay = computeDailyHoursByDay(userId, periodRecords, ruleset, approvals, overrides);
+  const periodBase = Array.from(periodByDay.values()).reduce((s, h) => s + h, 0);
+  const periodHours = Math.max(0, periodBase + adjustment);
   const loggedToday = !!open || completed.some((r) => r.timeIn >= todayStart);
-  return { open, todayHours, weekHours, loggedToday };
+  return { open, todayHours, periodHours, periodLabel: period.label, projectId, loggedToday };
 }
 
 function StatusCell({
@@ -90,6 +108,12 @@ export default async function AttendancePage() {
   const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(new Date());
   const todayStart = new Date(`${todayStr}T00:00:00.000+08:00`);
   const weekStart = new Date(todayStart.getTime() - 6 * 86_400_000);
+  const now = new Date();
+  const semiPeriod = manilaSemiMonthlyPeriod(now);
+  const weeklyPeriod = manilaWeeklySitePeriod(now);
+  const fetchStart = new Date(Math.min(weekStart.getTime(), semiPeriod.start.getTime(), weeklyPeriod.start.getTime()));
+  const periodFor = (department: string | null | undefined): PayPeriod =>
+    department === "SITE" || department === "DRIVER" ? weeklyPeriod : semiPeriod;
 
   const [me, openEntry, recent, projects] = await Promise.all([
     prisma.user.findUnique({ where: { id: user.id } }),
@@ -224,7 +248,7 @@ export default async function AttendancePage() {
         },
       }),
       prisma.attendance.findMany({
-        where: { OR: [{ timeIn: { gte: weekStart } }, { timeOut: null }] },
+        where: { OR: [{ timeIn: { gte: fetchStart } }, { timeOut: null }] },
       }),
     ]);
     const allUserIds = Array.from(
@@ -235,10 +259,22 @@ export default async function AttendancePage() {
         ...tbaWorkers.map((u) => u.id),
       ])
     );
-    const [weekApprovals, weekOverrides] = await Promise.all([
+    const [weekApprovals, weekOverrides, adjustmentRows] = await Promise.all([
       fetchApprovals(weekAttendance),
-      fetchDailyOverrides(allUserIds, weekStart, new Date()),
+      fetchDailyOverrides(allUserIds, fetchStart, new Date()),
+      prisma.periodHoursAdjustment.findMany({
+        where: { periodStart: { in: [semiPeriod.start, weeklyPeriod.start] } },
+      }),
     ]);
+    const adjustmentFor = (userId: string, projectId: string, period: PayPeriod) =>
+      Number(
+        adjustmentRows.find(
+          (r) =>
+            r.userId === userId &&
+            r.projectId === projectId &&
+            r.periodStart.getTime() === period.start.getTime()
+        )?.deltaHours ?? 0
+      );
 
     siteSections = rosters.map((p) => ({
       projectId: p.id,
@@ -260,7 +296,10 @@ export default async function AttendancePage() {
           todayStart,
           "SITE",
           weekApprovals,
-          weekOverrides
+          weekOverrides,
+          weeklyPeriod,
+          adjustmentFor(a.user.id, p.id, weeklyPeriod),
+          p.id
         ),
       })),
     }));
@@ -283,7 +322,10 @@ export default async function AttendancePage() {
         todayStart,
         rulesetForDepartment(u.department),
         weekApprovals,
-        weekOverrides
+        weekOverrides,
+        periodFor(u.department),
+        adjustmentFor(u.id, "", periodFor(u.department)),
+        null
       ),
     }));
 
@@ -305,7 +347,10 @@ export default async function AttendancePage() {
         todayStart,
         "SITE",
         weekApprovals,
-        weekOverrides
+        weekOverrides,
+        weeklyPeriod,
+        adjustmentFor(u.id, "", weeklyPeriod),
+        null
       ),
     }));
 
@@ -402,7 +447,7 @@ export default async function AttendancePage() {
           {showDept && <Th>Dept</Th>}
           <Th>Status today</Th>
           <Th className="text-right">Hours today</Th>
-          <Th className="text-right">Hours (7 days)</Th>
+          <Th className="text-right">Hours (pay period)</Th>
           {canManagePersonnel && <Th />}
         </tr>
       </thead>
@@ -423,7 +468,18 @@ export default async function AttendancePage() {
                 <EditTodayHoursButton userId={r.userId} currentHours={r.summary.todayHours} />
               )}
             </Td>
-            <Td className="text-right tabular-nums">{r.summary.weekHours.toFixed(1)}</Td>
+            <Td className="relative text-right tabular-nums">
+              {r.summary.periodHours.toFixed(1)}
+              {canManagePersonnel && (
+                <EditPeriodTotalButton
+                  userId={r.userId}
+                  projectId={r.summary.projectId}
+                  currentTotal={r.summary.periodHours}
+                  periodLabel={r.summary.periodLabel}
+                />
+              )}
+              <div className="text-[10px] font-normal text-ink-400">{r.summary.periodLabel}</div>
+            </Td>
             {canManagePersonnel && (
               <Td className="text-right whitespace-nowrap">
                 <EditPersonnelButton

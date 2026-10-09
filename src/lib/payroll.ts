@@ -3,6 +3,8 @@ import type { Attendance, Department } from "@prisma/client";
 import {
   computeEffectiveHours,
   manilaDayKey,
+  manilaSemiMonthlyPeriod,
+  manilaWeeklySitePeriod,
   rulesetForDepartment,
   workingDaysInManilaMonth,
   type AdjustmentFlags,
@@ -97,9 +99,10 @@ function buildEntry(
   hourlyRate: number,
   ruleset: TimeRuleset,
   approvalsByAttendanceId: Map<string, AdjustmentFlags>,
-  overridesByUserDay: Map<string, number>
+  overridesByUserDay: Map<string, number>,
+  adjustment = 0
 ): PayrollEntry | null {
-  if (records.length === 0) return null;
+  if (records.length === 0 && adjustment === 0) return null;
 
   const byDay = computeDailyHoursByDay(user.id, records, ruleset, approvalsByAttendanceId, overridesByUserDay);
 
@@ -110,6 +113,8 @@ function buildEntry(
     regularHours += Math.min(cfg.regularHoursPerDay, hours);
     otHours += Math.max(0, hours - cfg.regularHoursPerDay);
   }
+  // Owner's period-total correction (attendance page) — counted as regular hours.
+  regularHours = Math.max(0, regularHours + adjustment);
 
   const gross = regularHours * hourlyRate + otHours * hourlyRate * cfg.otMultiplier;
   const sss = gross * cfg.sssRate;
@@ -193,6 +198,59 @@ export async function fetchDailyOverrides(
   return new Map(rows.map((r) => [`${r.userId}|${manilaDayKey(r.date)}`, Number(r.hours)]));
 }
 
+/** For on-screen totals only: treat a still-open shift as ending right now,
+ * so "Hours today" and the period total grow live while someone is on duty.
+ * Payroll itself only ever counts closed shifts. */
+export function withLiveOpenShifts(records: Attendance[], now = new Date()): Attendance[] {
+  return records.map((r) => (r.timeOut ? r : { ...r, timeOut: now }));
+}
+
+/** Owner-set period-total corrections for one pay period, keyed by userId.
+ * `projectId` is "" for office/driver periods. */
+export async function fetchPeriodAdjustments(
+  userIds: string[],
+  periodStart: Date,
+  projectId = ""
+): Promise<Map<string, number>> {
+  if (userIds.length === 0) return new Map();
+  const rows = await prisma.periodHoursAdjustment.findMany({
+    where: { userId: { in: userIds }, projectId, periodStart },
+  });
+  return new Map(rows.map((r) => [r.userId, Number(r.deltaHours)]));
+}
+
+/** The pay period an employee is currently accumulating hours in: office /
+ * architect / engineer staff are semi-monthly, drivers and site crews weekly
+ * (Friday 5:01 PM – Friday 5:00 PM). */
+export function currentPayPeriod(department: string | null | undefined, now = new Date()) {
+  const weekly = department === "SITE" || department === "DRIVER";
+  return weekly ? manilaWeeklySitePeriod(now) : manilaSemiMonthlyPeriod(now);
+}
+
+/** Computed (pre-adjustment) total for one employee's current pay period —
+ * what the Owner's "edit total" is measured against. Same basis as the
+ * attendance page's on-screen total (open shift counted up to now). */
+export async function computePeriodBaseHours(userId: string, projectId: string | null) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return null;
+  const period = currentPayPeriod(user.department);
+  const records = await prisma.attendance.findMany({
+    where: {
+      userId,
+      ...(projectId ? { projectId } : {}),
+      timeIn: { gte: period.start, lte: period.end },
+    },
+  });
+  const [approvals, overrides] = await Promise.all([
+    fetchApprovals(records),
+    fetchDailyOverrides([userId], period.start, period.end),
+  ]);
+  const ruleset = projectId ? "SITE" : rulesetForDepartment(user.department);
+  const byDay = computeDailyHoursByDay(userId, withLiveOpenShifts(records), ruleset, approvals, overrides);
+  const base = Array.from(byDay.values()).reduce((sum, h) => sum + h, 0);
+  return { user, period, base };
+}
+
 /**
  * Per-project payroll: employees come from the project's roster
  * (ProjectAssignment), rates come from the assignment, and only attendance
@@ -219,9 +277,10 @@ export async function computeProjectPayroll(
       timeOut: { not: null },
     },
   });
-  const [approvals, overrides] = await Promise.all([
+  const [approvals, overrides, adjustments] = await Promise.all([
     fetchApprovals(attendance),
     fetchDailyOverrides(assignments.map((a) => a.userId), periodStart, periodEnd),
+    fetchPeriodAdjustments(assignments.map((a) => a.userId), periodStart, projectId),
   ]);
 
   const entries: PayrollEntry[] = [];
@@ -229,7 +288,15 @@ export async function computeProjectPayroll(
     const records = attendance.filter(
       (rec) => rec.userId === a.userId && rec.timeIn >= a.startDate
     );
-    const entry = buildEntry(a.user, records, Number(a.hourlyRate), "SITE", approvals, overrides);
+    const entry = buildEntry(
+      a.user,
+      records,
+      Number(a.hourlyRate),
+      "SITE",
+      approvals,
+      overrides,
+      adjustments.get(a.userId) ?? 0
+    );
     if (entry) entries.push(entry);
   }
   return entries;
@@ -261,9 +328,10 @@ export async function computePayroll(
       timeOut: { not: null },
     },
   });
-  const [approvals, overrides] = await Promise.all([
+  const [approvals, overrides, adjustments] = await Promise.all([
     fetchApprovals(attendance),
     fetchDailyOverrides(users.map((u) => u.id), periodStart, periodEnd),
+    fetchPeriodAdjustments(users.map((u) => u.id), periodStart),
   ]);
 
   // A semi-monthly period never spans two calendar months, so periodStart's
@@ -287,7 +355,8 @@ export async function computePayroll(
       hourlyRate,
       ruleset,
       approvals,
-      overrides
+      overrides,
+      adjustments.get(u.id) ?? 0
     );
     if (entry) entries.push(entry);
   }
