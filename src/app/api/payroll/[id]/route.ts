@@ -19,6 +19,7 @@ const entryEditSchema = z.object({
 
 const patchSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("set_status"), status: z.enum(["REVIEW", "APPROVED", "PAID"]) }),
+  z.object({ action: z.literal("cancel_approval") }),
   z.object({ action: z.literal("update_entries"), entries: z.array(entryEditSchema).min(1) }),
 ]);
 
@@ -28,8 +29,8 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
  * PATCH /api/payroll/[id] — either advance the run's status (DRAFT → REVIEW
  * → APPROVED → PAID), or edit the entries themselves. Editing is Owner/PM,
  * and only while the run is still DRAFT or REVIEW — once APPROVED it's the
- * committed labor-cost figure other reports read, so it becomes immutable
- * like every other approved run (regenerate as a new DRAFT instead).
+ * committed labor-cost figure other reports read. The Owner can cancel an
+ * approval (back to DRAFT, never once PAID) to correct a mistaken approval.
  * Only the inputs (hours, rate, each deduction) are ever submitted — gross
  * and net are always recomputed server-side from them, so the two can never
  * drift out of sync with what's actually stored.
@@ -90,6 +91,25 @@ export const PATCH = handleApi(
         diff: { workers: updatedEntries.length, totalNet: updatedEntries.reduce((s, e) => s + e.net, 0) },
       });
 
+      return NextResponse.json(updated);
+    }
+
+    if (body.action === "cancel_approval") {
+      const user = await requireUser(["OWNER"]);
+      const run = await prisma.payrollRun.findUnique({ where: { id: params.id } });
+      if (!run) throw new ApiError(404, "Payroll run not found");
+      if (run.status !== "APPROVED") {
+        throw new ApiError(400, run.status === "PAID" ? "A run that's already paid can't be reopened" : `Run is ${run.status}, not approved`);
+      }
+      const updated = await prisma.payrollRun.update({ where: { id: params.id }, data: { status: "DRAFT" } });
+      await audit({
+        entityType: "PayrollRun",
+        entityId: run.id,
+        actorId: user.id,
+        actorName: user.name,
+        action: "PAYROLL_APPROVAL_CANCELLED",
+        diff: { from: "APPROVED", to: "DRAFT" },
+      });
       return NextResponse.json(updated);
     }
 

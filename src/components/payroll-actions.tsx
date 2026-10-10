@@ -201,6 +201,20 @@ export function PayrollStatusButtons({ runId, status }: { runId: string; status:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  async function cancelApproval() {
+    if (!confirm("Cancel the approval and reopen this run for editing?")) return;
+    setBusy(true);
+    setError("");
+    const res = await fetch(`/api/payroll/${runId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "cancel_approval" }),
+    });
+    setBusy(false);
+    if (res.ok) router.refresh();
+    else setError((await res.json()).error ?? "Failed");
+  }
+
   async function set(next: string) {
     setBusy(true);
     setError("");
@@ -229,6 +243,11 @@ export function PayrollStatusButtons({ runId, status }: { runId: string; status:
       {status === "APPROVED" && (
         <Button disabled={busy} onClick={() => set("PAID")}>
           Mark as paid
+        </Button>
+      )}
+      {status === "APPROVED" && (
+        <Button variant="secondary" disabled={busy} onClick={cancelApproval}>
+          Cancel approval &amp; edit
         </Button>
       )}
       {error && <p className="text-sm text-red-600">{error}</p>}
