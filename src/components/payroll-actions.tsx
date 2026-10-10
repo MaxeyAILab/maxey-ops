@@ -105,6 +105,38 @@ export function RemoveEmployeeButton({ assignmentId, name }: { assignmentId: str
   );
 }
 
+/** Owner-only: delete a generated payroll run from the runs list. */
+export function DeleteRunButton({ runId, label, status }: { runId: string; label: string; status: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+
+  if (status === "PAID") return null;
+
+  async function remove() {
+    const warn =
+      status === "APPROVED"
+        ? " It is already APPROVED, so its labor cost will also drop out of the reports."
+        : "";
+    if (!confirm(`Delete the payroll run ${label}?${warn} This can't be undone.`)) return;
+    setBusy(true);
+    const res = await fetch(`/api/payroll/${runId}`, { method: "DELETE" });
+    setBusy(false);
+    if (res.ok) router.refresh();
+    else alert((await res.json()).error ?? "Failed to delete");
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={remove}
+      disabled={busy}
+      className="rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50 disabled:opacity-50"
+    >
+      {busy ? "…" : "Delete"}
+    </button>
+  );
+}
+
 /**
  * Generate a payroll run for one project (or a department when projectId is
  * absent). Periods are always server-computed, never free-picked — Office/

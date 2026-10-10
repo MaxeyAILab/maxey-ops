@@ -9,6 +9,7 @@ import { CHARGEABLE_STATUSES } from "@/lib/project-status";
 import { Badge, Card, CardBody, CardHeader, EmptyState, Table, Td, Th } from "@/components/ui";
 import {
   AddEmployeeForm,
+  DeleteRunButton,
   GenerateRunForm,
   RemoveEmployeeButton,
 } from "@/components/payroll-actions";
@@ -34,6 +35,7 @@ export default async function PayrollPage() {
   // below, canViewAdminPayroll gates the whole admin layout vs. "My Pay".
   const canManageRuns = ["OWNER", "ACCOUNTING"].includes(user.role);
   const canViewAdminPayroll = ["OWNER", "ACCOUNTING", "PM"].includes(user.role);
+  const canDeleteRuns = user.role === "OWNER";
   const runs = await prisma.payrollRun.findMany({
     orderBy: { periodStart: "desc" },
     include: { project: { select: { name: true } } },
@@ -217,6 +219,7 @@ export default async function PayrollPage() {
                         <Th className="text-right">Workers</Th>
                         <Th className="text-right">Gross (labor cost)</Th>
                         <Th>Status</Th>
+                        {canDeleteRuns && <Th />}
                       </tr>
                     </thead>
                     <tbody>
@@ -237,6 +240,15 @@ export default async function PayrollPage() {
                             <Td>
                               <Badge value={run.status} />
                             </Td>
+                            {canDeleteRuns && (
+                              <Td className="text-right">
+                                <DeleteRunButton
+                                  runId={run.id}
+                                  status={run.status}
+                                  label={`${fmtDate(run.periodStart)} – ${fmtDate(run.periodEnd)}`}
+                                />
+                              </Td>
+                            )}
                           </tr>
                         );
                       })}
@@ -266,6 +278,7 @@ export default async function PayrollPage() {
                   <Th className="text-right">Workers</Th>
                   <Th className="text-right">Total net</Th>
                   <Th>Status</Th>
+                  {canDeleteRuns && <Th />}
                 </tr>
               </thead>
               <tbody>
@@ -291,6 +304,15 @@ export default async function PayrollPage() {
                       <Td>
                         <Badge value={run.status} />
                       </Td>
+                      {canDeleteRuns && (
+                        <Td className="text-right">
+                          <DeleteRunButton
+                            runId={run.id}
+                            status={run.status}
+                            label={`${run.department} ${fmtDate(run.periodStart)} – ${fmtDate(run.periodEnd)}`}
+                          />
+                        </Td>
+                      )}
                     </tr>
                   );
                 })}

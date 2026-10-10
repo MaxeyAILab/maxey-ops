@@ -146,3 +146,40 @@ export const PATCH = handleApi(
     return NextResponse.json(updated);
   }
 );
+
+/**
+ * DELETE /api/payroll/[id] — Owner removes a generated run (a wrong period, a
+ * test run, a run to regenerate from scratch). Paid runs are the record of
+ * money actually handed out, so they can't be deleted; the audit entry keeps
+ * a record of what was removed.
+ */
+export const DELETE = handleApi(async (_req: NextRequest, { params }: { params: { id: string } }) => {
+  const user = await requireUser(["OWNER"]);
+  const run = await prisma.payrollRun.findUnique({
+    where: { id: params.id },
+    include: { project: { select: { name: true } } },
+  });
+  if (!run) throw new ApiError(404, "Payroll run not found");
+  if (run.status === "PAID") throw new ApiError(400, "A run that's already paid can't be deleted");
+
+  const entries = normalizeEntries(run.entries as unknown as PayrollEntry[]);
+  await prisma.payrollRun.delete({ where: { id: run.id } });
+
+  await audit({
+    entityType: "PayrollRun",
+    entityId: run.id,
+    actorId: user.id,
+    actorName: user.name,
+    action: "PAYROLL_DELETED",
+    diff: {
+      scope: run.project?.name ?? run.department,
+      periodStart: run.periodStart,
+      periodEnd: run.periodEnd,
+      status: run.status,
+      workers: entries.length,
+      totalNet: entries.reduce((sum, e) => sum + e.net, 0),
+    },
+  });
+
+  return NextResponse.json({ ok: true });
+});
