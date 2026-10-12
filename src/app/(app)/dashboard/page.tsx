@@ -204,6 +204,9 @@ function Kpis({ d, now }: { d: OwnerDashboardData; now: Date }) {
         chip={k.due.total > 0 ? <Pill tone="watch">● To collect</Pill> : <Pill tone="ok">✓ Nothing due</Pill>}
         lines={[
           `${k.due.terms} milestone${k.due.terms === 1 ? "" : "s"} · ${k.due.projects} project${k.due.projects === 1 ? "" : "s"}`,
+          <span key="r">
+            <Fig>{phpCompact(d.retention.total)}</Fig> retention held by clients
+          </span>,
           "No due dates recorded — lateness isn’t measured",
         ]}
       />
@@ -341,6 +344,13 @@ export default async function DashboardPage({
   const collectedDelta = f.priorCollected > 0 ? ((f.collected - f.priorCollected) / f.priorCollected) * 100 : null;
   const net = f.collected - f.committedOut;
   const pr = d.procurement;
+  const completedCosted = d.completedRows.filter((r) => r.committed > 0);
+  const completedTotals = {
+    contract: d.completedRows.reduce((sum, r) => sum + r.contract, 0),
+    received: d.completedRows.reduce((sum, r) => sum + r.received, 0),
+    cost: d.completedRows.reduce((sum, r) => sum + r.committed, 0),
+    costedContract: completedCosted.reduce((sum, r) => sum + r.contract, 0),
+  };
 
   return (
     <FigureVisibilityProvider>
@@ -637,6 +647,28 @@ export default async function DashboardPage({
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-ink-300 bg-ink-100/70 font-semibold text-ink-900">
+                    <td className="px-4 py-2">Total · {d.completedRows.length}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      <Fig>{phpCompact(completedTotals.contract)}</Fig>
+                    </td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      <Fig>{phpCompact(completedTotals.cost)}</Fig>
+                    </td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      {completedTotals.costedContract > 0 ? (
+                        <FigPlain>{(((completedTotals.costedContract - completedTotals.cost) / completedTotals.costedContract) * 100).toFixed(1)}%</FigPlain>
+                      ) : (
+                        <span className="text-xs font-normal text-ink-500">Pending cost data</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-2" />
+                    <td className="px-4 py-2 text-right tabular-nums">
+                      <FigPlain>{completedTotals.contract > 0 ? `${((completedTotals.received / completedTotals.contract) * 100).toFixed(0)}%` : "—"}</FigPlain>
+                    </td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           )}

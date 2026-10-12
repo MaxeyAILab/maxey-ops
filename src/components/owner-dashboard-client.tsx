@@ -267,6 +267,18 @@ export function PortfolioTable({ rows }: { rows: PortfolioRow[] }) {
   if (rows.length === 0)
     return <p className="px-5 py-10 text-center text-sm text-ink-500">No projects match the current filters.</p>;
 
+  // Forecast totals only include projects whose forecast is reliable (enough cost + progress), same rule as the KPI card.
+  const reliable = rows.filter((r) => r.forecastCost != null && (r.costState === "ok" || r.costState === "final"));
+  const totals = {
+    contract: rows.reduce((sum, r) => sum + r.contract, 0),
+    committed: rows.reduce((sum, r) => sum + r.committed, 0),
+    forecastCost: reliable.reduce((sum, r) => sum + r.forecastCost!, 0),
+    forecastProfit: reliable.reduce((sum, r) => sum + r.forecastProfit!, 0),
+    coveredContract: reliable.reduce((sum, r) => sum + r.contract, 0),
+    covered: reliable.length,
+    eligible: rows.filter((r) => !r.isProspective).length,
+  };
+
   return (
     <div className="overflow-x-auto">
     <table className="w-full min-w-[1000px] table-fixed text-left text-[13px]">
@@ -375,6 +387,39 @@ export function PortfolioTable({ rows }: { rows: PortfolioRow[] }) {
           </tr>
         ))}
       </tbody>
+      <tfoot>
+        <tr className="border-t-2 border-ink-300 bg-ink-100/70 font-semibold text-ink-900">
+          <td className="px-3 py-2.5 align-top">
+            Total · {rows.length} project{rows.length === 1 ? "" : "s"}
+          </td>
+          <td className="px-3 py-2.5" />
+          <td className="px-3 py-2.5" />
+          <td className="px-3 py-2.5 text-right tabular-nums" title={exact(totals.contract)}>
+            <Fig>{phpCompact(totals.contract)}</Fig>
+          </td>
+          <td className="px-3 py-2.5 text-right tabular-nums" title={exact(totals.committed)}>
+            <Fig>{phpCompact(totals.committed)}</Fig>
+          </td>
+          <td className="px-3 py-2.5 text-right tabular-nums" title={exact(totals.forecastCost)}>
+            {totals.covered > 0 ? <Fig>{phpCompact(totals.forecastCost)}</Fig> : <span className="text-xs font-normal text-ink-500">—</span>}
+          </td>
+          <td className="px-3 py-2.5 text-right tabular-nums" title={exact(totals.forecastProfit)}>
+            {totals.covered > 0 && totals.coveredContract > 0 ? (
+              <>
+                <FigPlain>{((totals.forecastProfit / totals.coveredContract) * 100).toFixed(1)}%</FigPlain>
+                <span className="block text-[11px] font-normal text-ink-500">
+                  <Fig>{phpCompact(totals.forecastProfit)}</Fig>
+                </span>
+              </>
+            ) : (
+              <span className="text-xs font-normal text-ink-500">Pending cost data</span>
+            )}
+          </td>
+          <td className="px-3 py-2.5 align-top text-xs font-normal text-ink-500">
+            Forecast covers {totals.covered} of {totals.eligible} project{totals.eligible === 1 ? "" : "s"}
+          </td>
+        </tr>
+      </tfoot>
     </table>
     </div>
   );
