@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
+import { logProjectActivity } from "@/lib/project-activity";
 import { savePhotos } from "@/lib/storage";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 
@@ -49,8 +50,16 @@ export const POST = handleApi(async (req: NextRequest) => {
   const project = await prisma.project.findUnique({ where: { id: body.projectId } });
   if (!project) throw new ApiError(404, "Project not found");
 
-  const seqCount = await prisma.dailyConstructionReport.count({ where: { projectId: body.projectId } });
-  const reportNo = `DCR-${String(seqCount + 1).padStart(3, "0")}`;
+  // Reports are auto-deleted after 7 days, so counting live rows would reissue a
+  // number that's still in use (the unique constraint then rejects the save).
+  // Take the highest live number or the count of permanently logged reports,
+  // whichever is larger.
+  const [liveNos, loggedCount] = await Promise.all([
+    prisma.dailyConstructionReport.findMany({ where: { projectId: body.projectId }, select: { reportNo: true } }),
+    prisma.projectActivityLog.count({ where: { projectId: body.projectId, type: "DAILY_REPORT" } }),
+  ]);
+  const maxLive = liveNos.reduce((m, r) => Math.max(m, parseInt(r.reportNo.replace(/\D/g, ""), 10) || 0), 0);
+  const reportNo = `DCR-${String(Math.max(maxLive, loggedCount) + 1).padStart(3, "0")}`;
 
   const photoUrls = await savePhotos(body.photos);
   const report = await prisma.dailyConstructionReport.create({
@@ -83,6 +92,14 @@ export const POST = handleApi(async (req: NextRequest) => {
     actorName: user.name,
     action: "DAILY_REPORT_POSTED",
     diff: { project: project.name, reportNo, reportDate: body.reportDate },
+  });
+
+  await logProjectActivity({
+    projectId: body.projectId,
+    type: "DAILY_REPORT",
+    refId: report.id,
+    summary: `${reportNo} · ${body.reportDate.toISOString().slice(0, 10)} — ${body.workProgress.slice(0, 90)}`,
+    actorName: user.name,
   });
 
   return NextResponse.json(report, { status: 201 });

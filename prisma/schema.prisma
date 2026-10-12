@@ -173,6 +173,16 @@ enum PayrollStatus {
   PAID
 }
 
+// Review lifecycle for field-reported progress: SUBMITTED (awaiting PM/Owner)
+// → APPROVED, or QUERIED (sent back with a note; the submitter's edit
+// resubmits it). Only APPROVED entries count toward the verified progress
+// shown to owners and clients.
+enum ProgressReviewStatus {
+  SUBMITTED
+  QUERIED
+  APPROVED
+}
+
 enum PermitStatus {
   ACTIVE
   EXPIRING_SOON
@@ -351,6 +361,7 @@ model Project {
   attendance      Attendance[]
   assignments     ProjectAssignment[]
   payrollRuns     PayrollRun[]
+  activityLogs    ProjectActivityLog[]
   materialStocks  ProjectMaterialStock[]
   toolAssets      ToolAsset[]           @relation("ToolCurrentProject")
   materialMovesFrom InventoryMovement[] @relation("MaterialMoveFrom")
@@ -518,6 +529,12 @@ model ProgressEntry {
   createdAt     DateTime @default(now())
   editedById    String?
   editedAt      DateTime?
+  // Existing rows default to APPROVED so nothing already visible to clients
+  // changes; the progress API sets this explicitly on every new entry.
+  reviewStatus  ProgressReviewStatus @default(APPROVED)
+  reviewedById  String?
+  reviewedAt    DateTime?
+  reviewNote    String?
 }
 
 // Daily Construction Report (DCR) — a fuller end-of-day site record than a
@@ -790,6 +807,24 @@ model ProjectAssignment {
   createdAt  DateTime @default(now())
 
   @@unique([projectId, userId])
+}
+
+// Permanent one-line record of notable project events (a daily report posted,
+// a progress entry approved or queried...). Daily reports are auto-deleted
+// after 7 days; this line — date, author, summary — outlives them so the
+// project's activity history isn't lost. refId lets the feed hide a log line
+// while its live record still exists.
+model ProjectActivityLog {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type      String // DAILY_REPORT | PROGRESS_APPROVED | PROGRESS_QUERIED ...
+  refId     String?
+  summary   String
+  actorName String
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
 }
 
 model PayrollRun {

@@ -136,10 +136,10 @@ export default async function ProjectReportPage({ params }: { params: { id: stri
 
         {/* Progress timeline */}
         <h2 className="mt-8 border-b border-ink-200 pb-1 text-sm font-bold uppercase tracking-wide text-ink-700">
-          Progress timeline ({p.progressEntries.length} entries)
+          Progress timeline ({p.progressEntries.filter((e) => e.reviewStatus === "APPROVED").length} approved entries)
         </h2>
         <ol className="mt-3 space-y-3">
-          {p.progressEntries.map((e) => (
+          {p.progressEntries.filter((e) => e.reviewStatus === "APPROVED").map((e) => (
             <li key={e.id} className="flex gap-3 text-sm">
               <div className="w-14 shrink-0 text-right font-bold tabular-nums text-brand-600">
                 {Number(e.pctComplete).toFixed(0)}%

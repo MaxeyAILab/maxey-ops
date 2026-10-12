@@ -34,14 +34,19 @@ export const POST = handleApi(
     }
 
     const updated = await prisma.$transaction(async (db) => {
-      const updated = await db.changeOrder.update({
-        where: { id: params.id },
+      // Conditional on the status still being PENDING_CLIENT, so two
+      // simultaneous responses (double click, two tabs) can only win once —
+      // the loser sees count 0 and never touches contract value.
+      const claimed = await db.changeOrder.updateMany({
+        where: { id: params.id, status: "PENDING_CLIENT" },
         data: {
           status: body.decision,
           clientResponseAt: new Date(),
           clientResponseById: user.id,
         },
       });
+      if (claimed.count === 0) throw new ApiError(409, "This change order was already answered");
+      const updated = await db.changeOrder.findUniqueOrThrow({ where: { id: params.id } });
       // Approved change orders auto-post into project value/cashflow (Spec 6.8)
       if (body.decision === "APPROVED" && Number(co.costImpact) !== 0) {
         await db.project.update({

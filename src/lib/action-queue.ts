@@ -1,0 +1,213 @@
+import type { ReviewStatus } from "@/lib/progress";
+import type { ScheduleState } from "@/lib/schedule";
+import type { CostState } from "@/lib/forecast";
+
+const DAY = 86_400_000;
+const ageDays = (d: Date, now: Date) => Math.max(0, Math.floor((now.getTime() - d.getTime()) / DAY));
+
+export interface ActionItem {
+  key: string;
+  severity: 1 | 2; // 1 = due soon / watch, 2 = overdue / critical
+  title: string;
+  detail: string;
+  responsible: string;
+  when: string;
+  href: string;
+  amount: number | null; // only ever set for viewers allowed to see money
+}
+
+export interface ActionInput {
+  now: Date;
+  viewer: { userId: string; role: string; showMoney: boolean; showMargin: boolean };
+  progress: {
+    id: string;
+    workItem: string | null;
+    pct: number;
+    status: ReviewStatus;
+    submittedById: string;
+    submittedByName: string;
+    createdAt: Date;
+    reviewNote: string | null;
+  }[];
+  changeOrders: { id: string; title: string; status: string; costImpact: number; createdAt: Date }[];
+  requisitions: {
+    id: string;
+    status: string;
+    urgency: string;
+    submittedByName: string;
+    submittedAt: Date;
+    estimatedCost: number | null;
+  }[];
+  dueTerms: { id: string; label: string; outstanding: number }[];
+  instructions: { id: string; label: string; dueDate: Date | null; status: string; priority: string }[];
+  schedule: { state: ScheduleState; varianceDays: number | null };
+  weightsTotal: number | null; // null = no weighted work items yet
+  costState: CostState;
+  isOngoing: boolean;
+}
+
+/**
+ * The "Needs your action" list for one project, filtered to what this viewer
+ * can act on and allowed to see. Money amounts are only attached for viewers
+ * with money access; items a role can't act on are left out rather than shown
+ * greyed. Sorted by severity, then by how long it has been waiting.
+ */
+export function buildActionQueue(input: ActionInput): ActionItem[] {
+  const { now, viewer } = input;
+  const isApprover = viewer.role === "OWNER" || viewer.role === "PM";
+  const items: (ActionItem & { age: number })[] = [];
+  const amount = (n: number | null) => (viewer.showMoney ? n : null);
+
+  for (const e of input.progress) {
+    const age = ageDays(e.createdAt, now);
+    const label = e.workItem ?? "Progress entry";
+    if (e.status === "SUBMITTED" && isApprover) {
+      items.push({
+        key: `prog-${e.id}`,
+        severity: age > 2 ? 2 : 1,
+        title: `Review progress: ${label} (${e.pct.toFixed(0)}%)`,
+        detail: `Submitted by ${e.submittedByName}`,
+        responsible: "PM / Owner",
+        when: age === 0 ? "Submitted today" : `Waiting ${age}d`,
+        href: "#progress",
+        amount: null,
+        age,
+      });
+    }
+    if (e.status === "QUERIED" && (isApprover || e.submittedById === viewer.userId)) {
+      items.push({
+        key: `query-${e.id}`,
+        severity: age > 2 ? 2 : 1,
+        title: `Progress queried: ${label}`,
+        detail: e.reviewNote ? `“${e.reviewNote}”` : "Edit the entry and resubmit",
+        responsible: e.submittedByName,
+        when: `Queried · entry ${age}d old`,
+        href: "#progress",
+        amount: null,
+        age,
+      });
+    }
+  }
+
+  if (isApprover) {
+    for (const co of input.changeOrders) {
+      if (co.status !== "PENDING_CLIENT") continue;
+      const age = ageDays(co.createdAt, now);
+      items.push({
+        key: `co-${co.id}`,
+        severity: age > 14 ? 2 : 1,
+        title: `Change order awaiting client: ${co.title}`,
+        detail: "Follow up with the client if it has stalled",
+        responsible: "Client",
+        when: `Waiting ${age}d`,
+        href: "#changes",
+        amount: amount(co.costImpact),
+        age,
+      });
+    }
+  }
+
+  if (isApprover || viewer.role === "PURCHASING" || viewer.role === "ACCOUNTING") {
+    for (const r of input.requisitions) {
+      if (r.status !== "SUBMITTED" && r.status !== "UNDER_REVIEW") continue;
+      const age = ageDays(r.submittedAt, now);
+      if (r.urgency !== "CRITICAL" && r.urgency !== "HIGH" && age <= 3) continue;
+      items.push({
+        key: `req-${r.id}`,
+        severity: r.urgency === "CRITICAL" ? 2 : 1,
+        title: `Requisition awaiting approval (${r.urgency.toLowerCase()})`,
+        detail: `Submitted by ${r.submittedByName}`,
+        responsible: "Owner",
+        when: `Waiting ${age}d`,
+        href: `/requisitions/${r.id}`,
+        amount: amount(r.estimatedCost),
+        age,
+      });
+    }
+  }
+
+  if (viewer.showMoney) {
+    for (const t of input.dueTerms) {
+      if (t.outstanding <= 0) continue;
+      items.push({
+        key: `due-${t.id}`,
+        severity: 1,
+        title: `Billing milestone due: ${t.label}`,
+        detail: "Marked Due and not yet fully paid",
+        responsible: "Accounting",
+        when: "Due",
+        href: "#commercial",
+        amount: t.outstanding,
+        age: 0,
+      });
+    }
+  }
+
+  for (const i of input.instructions) {
+    if (!i.dueDate || i.dueDate >= now || i.status === "COMPLETED" || i.status === "CANCELLED") continue;
+    const age = ageDays(i.dueDate, now);
+    items.push({
+      key: `instr-${i.id}`,
+      severity: i.priority === "CRITICAL" || i.priority === "HIGH" ? 2 : 1,
+      title: `Site instruction past due: ${i.label}`,
+      detail: "Open instruction not yet completed",
+      responsible: "Assignees",
+      when: `${age}d overdue`,
+      href: "/instructions",
+      amount: null,
+      age,
+    });
+  }
+
+  if (input.schedule.state === "overdue" || input.schedule.state === "late") {
+    items.push({
+      key: "schedule",
+      severity: 2,
+      title: input.schedule.state === "overdue" ? "Past the target finish date" : "Behind plan on time vs work done",
+      detail:
+        input.schedule.state === "overdue" && input.schedule.varianceDays != null
+          ? `${input.schedule.varianceDays} days past target`
+          : "Review the schedule recovery plan",
+      responsible: "PM",
+      when: "Schedule",
+      href: "#overview",
+      amount: null,
+      age: 0,
+    });
+  }
+
+  if (isApprover && input.weightsTotal != null && Math.abs(input.weightsTotal - 100) > 0.01) {
+    items.push({
+      key: "weights",
+      severity: input.weightsTotal > 100 ? 2 : 1,
+      title: `Work-item weights total ${input.weightsTotal.toFixed(0)}%`,
+      detail:
+        input.weightsTotal > 100
+          ? "Weights above 100% overstate progress — correct the weights"
+          : "Part of the scope has no work item yet, so progress can't reach 100%",
+      responsible: "PM",
+      when: "Setup",
+      href: "#progress",
+      amount: null,
+      age: 0,
+    });
+  }
+
+  if (viewer.showMargin && input.isOngoing && input.costState === "no-cost") {
+    items.push({
+      key: "cost",
+      severity: 1,
+      title: "Progress reported but no cost recorded",
+      detail: "Forecast margin stays unavailable until costs are posted",
+      responsible: "Accounting",
+      when: "Data gap",
+      href: "#overview",
+      amount: null,
+      age: 0,
+    });
+  }
+
+  return items
+    .sort((a, b) => b.severity - a.severity || b.age - a.age)
+    .map(({ age: _age, ...rest }) => rest);
+}

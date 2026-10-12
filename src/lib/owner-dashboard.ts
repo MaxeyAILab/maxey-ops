@@ -3,6 +3,8 @@ import { getNonProjectExpenses, runGross } from "@/lib/finance";
 import { getBidPipeline, getCashRunway, type CashRunway } from "@/lib/finance-dashboard";
 import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
 import { fmtDate } from "@/lib/format";
+import { computeForecast, type CostState } from "@/lib/forecast";
+import { computeSchedule, type ScheduleState } from "@/lib/schedule";
 import { requisitionAmount } from "@/lib/requisitions";
 import { COMPLETED_STATUSES, ONGOING_STATUSES, STATUS_LABELS } from "@/lib/project-status";
 import type { ProjectStatus } from "@prisma/client";
@@ -62,8 +64,8 @@ function periodRange(period: Period, now: Date) {
 
 // ---------- Project rows ----------
 
-export type CostState = "ok" | "early" | "final" | "no-cost" | "no-progress";
-export type ScheduleState = "on-plan" | "watch" | "late" | "overdue" | "done" | "no-target" | "unknown";
+export type { CostState } from "@/lib/forecast";
+export type { ScheduleState } from "@/lib/schedule";
 
 export interface Issue {
   severity: 1 | 2;
@@ -244,7 +246,15 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
         payrollRuns: { where: { status: { in: ["APPROVED", "PAID"] } }, select: { entries: true } },
         progressEntries: {
           orderBy: { createdAt: "desc" },
-          select: { workItem: true, weight: true, pctComplete: true, color: true, createdAt: true },
+          select: {
+            workItem: true,
+            weight: true,
+            pctComplete: true,
+            color: true,
+            createdAt: true,
+            reviewStatus: true,
+            reviewedAt: true,
+          },
         },
         changeOrders: {
           where: { status: "PENDING_CLIENT" },
@@ -336,47 +346,20 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
     const isCompleted = (COMPLETED_STATUSES as string[]).includes(p.status);
     const targetMarginPct = t?.targetMarginPct != null ? Number(t.targetMarginPct) : null;
 
-    let costState: CostState;
-    let forecastCost: number | null = null;
-    if (isCompleted) {
-      costState = committed > 0 ? "final" : "no-cost";
-      forecastCost = committed > 0 ? committed : null;
-    } else if (pct <= 0) {
-      costState = "no-progress";
-    } else if (committed <= 0) {
-      costState = "no-cost";
-    } else {
-      forecastCost = pct >= 100 ? committed : committed / (pct / 100);
-      costState = pct < 10 ? "early" : "ok";
-    }
-    const forecastProfit = forecastCost != null ? contract - forecastCost : null;
-    const forecastMarginPct =
-      forecastProfit != null && contract > 0 ? (forecastProfit / contract) * 100 : null;
+    const { costState, forecastCost, forecastProfit, forecastMarginPct } = computeForecast({
+      contract,
+      committed,
+      pct,
+      isCompleted,
+    });
 
-    // schedule
     const targetEnd = t?.targetEndDate ?? null;
-    const start = t?.startDate ?? null;
-    let scheduleState: ScheduleState = "unknown";
-    let scheduleVarianceDays: number | null = null;
-    let forecastFinish: Date | null = null;
-    let plannedPct: number | null = null;
-    if (isCompleted) scheduleState = "done";
-    else if (!targetEnd) scheduleState = "no-target";
-    else if (now > targetEnd && pct < 100) {
-      scheduleState = "overdue";
-      scheduleVarianceDays = daysBetween(targetEnd, now);
-    } else if (start && targetEnd > start && now > start) {
-      // Schedule performance: how much of the time window is used vs how much
-      // of the work is done. Straight-line date extrapolation is unreliable
-      // early on (jobs start slow), so state is driven by this gap instead.
-      plannedPct = Math.min(100, ((now.getTime() - start.getTime()) / (targetEnd.getTime() - start.getTime())) * 100);
-      const gap = plannedPct - pct;
-      scheduleState = pct < 5 && plannedPct < 15 ? "unknown" : gap > 30 ? "late" : gap > 15 ? "watch" : "on-plan";
-      if (pct >= 25) {
-        forecastFinish = new Date(start.getTime() + (now.getTime() - start.getTime()) / (pct / 100));
-        scheduleVarianceDays = daysBetween(targetEnd, forecastFinish);
-      }
-    }
+    const {
+      state: scheduleState,
+      varianceDays: scheduleVarianceDays,
+      plannedPct,
+      forecastFinish,
+    } = computeSchedule({ now, start: t?.startDate ?? null, targetEnd, pct, isCompleted });
 
     const earned = (contract * pct) / 100;
     const billingGap = received - earned;

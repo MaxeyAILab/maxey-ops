@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
+import { logProjectActivity } from "@/lib/project-activity";
 import { DAILY_REPORT_LIFETIME_DAYS } from "@/lib/daily-reports";
 
 /**
@@ -21,10 +22,40 @@ export async function GET(req: NextRequest) {
   const cutoff = new Date(Date.now() - DAILY_REPORT_LIFETIME_DAYS * 24 * 60 * 60 * 1000);
   const expired = await prisma.dailyConstructionReport.findMany({
     where: { createdAt: { lt: cutoff } },
-    select: { id: true, reportNo: true, project: { select: { name: true } } },
+    select: {
+      id: true,
+      reportNo: true,
+      reportDate: true,
+      workProgress: true,
+      projectId: true,
+      createdAt: true,
+      project: { select: { name: true } },
+      submittedBy: { select: { name: true } },
+    },
   });
 
   if (expired.length > 0) {
+    // Keep a permanent one-line record of each report before it goes (reports
+    // posted before the log existed don't have one yet).
+    const alreadyLogged = new Set(
+      (
+        await prisma.projectActivityLog.findMany({
+          where: { type: "DAILY_REPORT", refId: { in: expired.map((r) => r.id) } },
+          select: { refId: true },
+        })
+      ).map((l) => l.refId)
+    );
+    for (const r of expired) {
+      if (alreadyLogged.has(r.id)) continue;
+      await logProjectActivity({
+        projectId: r.projectId,
+        type: "DAILY_REPORT",
+        refId: r.id,
+        summary: `${r.reportNo} · ${r.reportDate.toISOString().slice(0, 10)} — ${r.workProgress.slice(0, 90)}`,
+        actorName: r.submittedBy.name,
+        createdAt: r.createdAt,
+      });
+    }
     await prisma.dailyConstructionReport.deleteMany({
       where: { id: { in: expired.map((r) => r.id) } },
     });

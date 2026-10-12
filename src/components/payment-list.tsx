@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Fig } from "@/components/figure-visibility";
 import { useRouter } from "next/navigation";
 import { Button, Input, Label, Select } from "@/components/ui";
 import { PhotoInput } from "@/components/photo-input";
@@ -93,7 +94,9 @@ function PaymentRow({ payment, canEdit }: { payment: PaymentRowData; canEdit: bo
     <li className="rounded-lg border border-ink-100 p-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <span className="font-semibold tabular-nums text-ink-900">{php(payment.amount)}</span>
+          <span className="font-semibold tabular-nums text-ink-900">
+            <Fig>{php(payment.amount)}</Fig>
+          </span>
           <span className="ml-2 text-xs text-ink-500">
             {payment.dateReceived} · {payment.method ?? "n/a"}
             {payment.reference && ` · ref ${payment.reference}`} · by {payment.recordedByName}

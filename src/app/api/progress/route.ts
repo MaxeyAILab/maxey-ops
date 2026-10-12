@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { savePhotos } from "@/lib/storage";
+import { checkWeightRules } from "@/lib/progress";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 
 const createSchema = z.object({
@@ -39,6 +40,20 @@ export const POST = handleApi(async (req: NextRequest) => {
   const project = await prisma.project.findUnique({ where: { id: body.projectId } });
   if (!project) throw new ApiError(400, "Unknown project");
 
+  // PM/Owner entries are their own approval; a foreman's entry waits for review.
+  const isApprover = user.role === "OWNER" || user.role === "PM";
+
+  const projectEntries = await prisma.progressEntry.findMany({
+    where: { projectId: body.projectId },
+    select: { id: true, workItem: true, weight: true, createdAt: true, reviewStatus: true },
+  });
+  const weightError = checkWeightRules(
+    projectEntries,
+    { workItem: body.workItem || null, weight: body.weight ?? null },
+    isApprover
+  );
+  if (weightError) throw new ApiError(400, weightError);
+
   const photoUrls = await savePhotos(body.photos);
   const entry = await prisma.progressEntry.create({
     data: {
@@ -52,6 +67,9 @@ export const POST = handleApi(async (req: NextRequest) => {
       notes: body.notes || null,
       photos: photoUrls.length ? photoUrls : undefined,
       createdAt: body.submittedAt,
+      reviewStatus: isApprover ? "APPROVED" : "SUBMITTED",
+      reviewedById: isApprover ? user.id : null,
+      reviewedAt: isApprover ? new Date() : null,
     },
   });
 
@@ -66,6 +84,8 @@ export const POST = handleApi(async (req: NextRequest) => {
       pctComplete: body.pctComplete,
       workItem: body.workItem ?? null,
       weight: body.weight ?? null,
+      status: entry.reviewStatus,
+      autoApproved: isApprover,
     },
   });
 

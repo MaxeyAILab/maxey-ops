@@ -34,7 +34,8 @@ export default async function PortalPage() {
       // item's latest visible entry, which the timeline list below caps to
       // the most recent 20 separately, for display only.
       progressEntries: {
-        where: { visibleToClient: true },
+        // Clients only ever see reviewed (approved) progress.
+        where: { visibleToClient: true, reviewStatus: "APPROVED" },
         orderBy: { createdAt: "desc" },
         include: { submittedBy: { select: { name: true } } },
       },
