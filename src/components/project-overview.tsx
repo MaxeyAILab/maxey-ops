@@ -77,7 +77,7 @@ export function ProgressReviewControls({ entryId }: { entryId: string }) {
 
 export interface ActivityRow {
   key: string;
-  type: "progress" | "report" | "change" | "payment" | "requisition";
+  type: "progress" | "report" | "change" | "payment" | "requisition" | "rfi" | "milestone";
   at: string; // ISO
   title: string;
   detail: string;
@@ -92,6 +92,8 @@ const TYPE_LABELS: Record<ActivityRow["type"], string> = {
   change: "Changes",
   payment: "Payments",
   requisition: "Requisitions",
+  rfi: "RFIs",
+  milestone: "Milestones",
 };
 
 const dateFmt = new Intl.DateTimeFormat("en-PH", {

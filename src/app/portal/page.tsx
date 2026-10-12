@@ -10,6 +10,23 @@ import { AccomplishmentRadial, WorkItemWeightBars } from "@/components/charts";
 import { DailyReportCard, type DailyReportDisplay } from "@/components/daily-report-actions";
 import { DAILY_REPORT_LIFETIME_DAYS } from "@/lib/daily-reports";
 import { PhotoThumbnails } from "@/components/photo-viewer";
+import { computeMilestoneHealth } from "@/lib/milestones";
+import { formatRfiNumber } from "@/lib/rfi";
+import { HEALTH_CHIP, HEALTH_ICON } from "@/components/milestone-timeline";
+import { ClientRfiRespond } from "@/components/rfi-actions";
+
+// A client sees a plain status, never internal planning detail like "no baseline".
+const CLIENT_HEALTH: Record<string, string> = {
+  complete: "Complete",
+  "complete-late": "Complete",
+  "on-track": "On track",
+  watch: "Slightly behind",
+  late: "Behind schedule",
+  overdue: "Behind schedule",
+  blocked: "On hold",
+  "no-baseline": "Planned",
+  "no-dates": "Planned",
+};
 
 export const metadata = { title: "Client Portal" };
 export const dynamic = "force-dynamic";
@@ -43,6 +60,30 @@ export default async function PortalPage() {
         where: { visibleToClient: true },
         orderBy: { reportDate: "desc" },
         include: { submittedBy: { select: { name: true } } },
+      },
+      // Milestones the team chose to share; internal notes are never selected.
+      milestones: {
+        where: { visibleToClient: true },
+        orderBy: { sortOrder: "asc" },
+        select: { id: true, title: true, description: true, status: true, baselineFinish: true, forecastFinish: true, actualFinish: true },
+      },
+      // Only RFIs addressed to the client — internal ones never leave the staff side.
+      rfis: {
+        where: { addressedTo: "CLIENT", status: { not: "CANCELLED" } },
+        orderBy: { number: "desc" },
+        select: {
+          id: true,
+          number: true,
+          subject: true,
+          question: true,
+          status: true,
+          dueDate: true,
+          photos: true,
+          responseText: true,
+          respondedByName: true,
+          respondedAt: true,
+          createdAt: true,
+        },
       },
     },
     orderBy: { createdAt: "desc" },
@@ -126,6 +167,68 @@ export default async function PortalPage() {
                   </div>
                 </CardBody>
               </Card>
+
+              {p.rfis.some((r) => r.status === "OPEN") && (
+                <Card className="border-amber-300">
+                  <CardHeader
+                    title={`⚠ ${p.rfis.filter((r) => r.status === "OPEN").length} question(s) for you`}
+                    subtitle="The project team needs your answer to continue"
+                  />
+                  <CardBody className="space-y-4">
+                    {p.rfis
+                      .filter((r) => r.status === "OPEN")
+                      .map((r) => (
+                        <div key={r.id} className="rounded-lg border border-ink-100 p-4">
+                          <div className="font-semibold text-ink-900">
+                            {formatRfiNumber(r.number)} · {r.subject}
+                          </div>
+                          <p className="mt-1 whitespace-pre-line text-sm text-ink-600">{r.question}</p>
+                          {Array.isArray(r.photos) && (r.photos as string[]).length > 0 && (
+                            <div className="mt-2">
+                              <PhotoThumbnails photos={(r.photos as string[]).map((src) => ({ src, label: formatRfiNumber(r.number) }))} />
+                            </div>
+                          )}
+                          <p className="mt-2 text-xs text-ink-500">
+                            Asked {fmtDateTime(r.createdAt)}
+                            {r.dueDate && ` · please answer by ${fmtDate(r.dueDate)}`}
+                          </p>
+                          <div className="mt-3">
+                            <ClientRfiRespond rfiId={r.id} />
+                          </div>
+                        </div>
+                      ))}
+                  </CardBody>
+                </Card>
+              )}
+
+              {p.milestones.length > 0 && (
+                <Card>
+                  <CardHeader title="Milestones" subtitle="Where the project is against its plan" />
+                  <CardBody className="space-y-2">
+                    {p.milestones.map((m) => {
+                      const h = computeMilestoneHealth(
+                        { status: m.status, baselineFinish: m.baselineFinish, forecastFinish: m.forecastFinish, actualFinish: m.actualFinish },
+                        new Date()
+                      );
+                      const finish = m.status === "COMPLETED" ? m.actualFinish : (m.forecastFinish ?? m.baselineFinish);
+                      return (
+                        <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-ink-100 px-3 py-2 text-sm">
+                          <div>
+                            <div className="font-medium text-ink-800">{m.title}</div>
+                            {m.description && <div className="text-xs text-ink-500">{m.description}</div>}
+                            <div className="text-xs text-ink-400">
+                              {m.status === "COMPLETED" ? "Completed" : "Expected"} {finish ? fmtDate(finish) : "— date to be confirmed"}
+                            </div>
+                          </div>
+                          <span className={`rounded-sm px-2 py-0.5 text-xs font-semibold ${HEALTH_CHIP[h.health]}`}>
+                            {HEALTH_ICON[h.health]} {CLIENT_HEALTH[h.health]}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </CardBody>
+                </Card>
+              )}
 
               {pendingCOs.length > 0 && (
                 <Card className="border-amber-300">
@@ -211,6 +314,27 @@ export default async function PortalPage() {
                       })}
                     </CardBody>
                   </Card>
+
+                  {p.rfis.filter((r) => r.status !== "OPEN").length > 0 && (
+                    <Card>
+                      <CardHeader title="Questions you've answered" />
+                      <CardBody className="space-y-2">
+                        {p.rfis
+                          .filter((r) => r.status !== "OPEN")
+                          .map((r) => (
+                            <div key={r.id} className="rounded-lg border border-ink-100 px-3 py-2 text-sm">
+                              <div className="font-medium text-ink-800">
+                                {formatRfiNumber(r.number)} · {r.subject}
+                              </div>
+                              <div className="text-xs text-ink-500">
+                                {r.responseText} — {r.respondedByName}
+                                {r.respondedAt && `, ${fmtDate(r.respondedAt)}`}
+                              </div>
+                            </div>
+                          ))}
+                      </CardBody>
+                    </Card>
+                  )}
 
                   {p.changeOrders.filter((c) => c.status !== "PENDING_CLIENT").length > 0 && (
                     <Card>

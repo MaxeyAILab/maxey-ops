@@ -26,6 +26,19 @@ import { computeSchedule } from "@/lib/schedule";
 import { buildActionQueue } from "@/lib/action-queue";
 import { mergeActivity, type ActivityItem } from "@/lib/project-activity";
 import { COMPLETED_STATUSES, ONGOING_STATUSES } from "@/lib/project-status";
+import { computeMilestoneHealth, manilaToday, upcomingMilestones } from "@/lib/milestones";
+import {
+  canCancelRfi,
+  canCloseRfi,
+  canManageRfi,
+  canRaiseRfi,
+  canRespondToRfi,
+  formatRfiNumber,
+  rfiDueState,
+} from "@/lib/rfi";
+import { HEALTH_CHIP, HEALTH_ICON, HEALTH_LABEL, MilestoneTimeline } from "@/components/milestone-timeline";
+import { AddMilestoneForm, MilestoneControls } from "@/components/milestone-actions";
+import { NewRfiForm, RfiControls } from "@/components/rfi-actions";
 import { Fig, FigureToggle, FigureVisibilityProvider } from "@/components/figure-visibility";
 import { ActivityFeed, ProgressReviewControls, ProjectSectionNav, type ActivityRow } from "@/components/project-overview";
 
@@ -37,6 +50,12 @@ const REVIEW_TONE = {
   QUERIED: "bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300",
   APPROVED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300",
 } as const;
+const IMPACT_LABEL: Record<string, string> = {
+  UNKNOWN: "unknown (not assessed)",
+  NONE_IDENTIFIED: "none identified",
+  POSSIBLE: "possible",
+  ASSESSED: "assessed",
+};
 const CO_LABEL: Record<string, string> = { PENDING_CLIENT: "awaiting client", APPROVED: "approved", REJECTED: "rejected" };
 
 export default async function ProjectDetailPage({ params }: { params: { id: string } }) {
@@ -73,6 +92,20 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
       },
       assignments: { where: { active: true }, include: { user: { select: { name: true, role: true } } } },
       activityLogs: { orderBy: { createdAt: "desc" }, take: 30 },
+      milestones: {
+        orderBy: { sortOrder: "asc" },
+        include: { revisions: { orderBy: { revision: "asc" } }, responsible: { select: { name: true } } },
+      },
+      rfis: {
+        orderBy: { number: "desc" },
+        include: {
+          assignee: { select: { name: true } },
+          raisedBy: { select: { name: true } },
+          milestone: { select: { title: true } },
+          siteInstruction: { select: { taskId: true, title: true, text: true } },
+          changeOrder: { select: { title: true } },
+        },
+      },
     },
   });
   if (!p) notFound();
@@ -138,6 +171,44 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
   const reviewerName = new Map(reviewers.map((r) => [r.id, r.name]));
   const manager = p.assignments.find((a) => a.user.role === "PM")?.user.name ?? null;
 
+  const isOwnerUser = user.role === "OWNER";
+  const staff = await prisma.user.findMany({
+    where: { active: true, role: { not: "CLIENT" } },
+    select: { id: true, name: true, role: true },
+    orderBy: { name: "asc" },
+  });
+  const staffOptions = staff.map((u) => ({ id: u.id, name: u.name, label: `${u.name} (${u.role.toLowerCase()})` }));
+
+  const ymd = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
+  const todayKey = new Date(manilaToday(now) * 86_400_000).toISOString().slice(0, 10);
+  const milestoneRows = p.milestones.map((m) => {
+    const h = computeMilestoneHealth(
+      { status: m.status, baselineFinish: m.baselineFinish, forecastFinish: m.forecastFinish, actualFinish: m.actualFinish },
+      now
+    );
+    return { m, ...h };
+  });
+  const timeline = milestoneRows.map(({ m, health }) => ({
+    id: m.id,
+    title: m.title,
+    status: m.status,
+    health,
+    baselineStart: ymd(m.baselineStart),
+    baselineFinish: ymd(m.baselineFinish),
+    forecastStart: ymd(m.forecastStart),
+    forecastFinish: ymd(m.forecastFinish),
+    actualFinish: ymd(m.actualFinish),
+  }));
+  const lookahead = upcomingMilestones(
+    milestoneRows.map((r) => ({ ...r.m, health: r.health, overdueDays: r.overdueDays })),
+    now,
+    30
+  ).slice(0, 5);
+  const actor = { id: user.id, role: user.role, clientId: user.clientId };
+  const canRaise = canRaiseRfi(user.role, "INTERNAL");
+  const openRfis = p.rfis.filter((r) => r.status === "OPEN" || r.status === "ANSWERED");
+  const closedRfis = p.rfis.filter((r) => r.status === "CLOSED" || r.status === "CANCELLED");
+
   const actions = buildActionQueue({
     now,
     viewer: { userId: user.id, role: user.role, showMoney, showMargin },
@@ -178,6 +249,30 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
     weightsTotal,
     costState: forecast.costState,
     isOngoing,
+    rfis: p.rfis.map((r) => ({
+      id: r.id,
+      number: formatRfiNumber(r.number),
+      subject: r.subject,
+      status: r.status,
+      addressedTo: r.addressedTo,
+      assigneeId: r.assigneeId,
+      assigneeName: r.assignee?.name ?? null,
+      raisedById: r.raisedById,
+      dueState: rfiDueState(r, now),
+      createdAt: r.createdAt,
+    })),
+    milestones: milestoneRows.map(({ m, health, varianceDays, overdueDays }) => {
+      const current = m.forecastFinish ?? m.baselineFinish;
+      return {
+        id: m.id,
+        title: m.title,
+        health,
+        varianceDays,
+        overdueDays,
+        responsibleId: m.responsibleId,
+        dueInDays: current && m.status !== "COMPLETED" ? Math.floor(current.getTime() / 86_400_000) - manilaToday(now) : null,
+      };
+    }),
   });
 
   // Recent site activity: live records plus the permanent log lines.
@@ -211,6 +306,26 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
       actor: c.clientResponseAt ? "Client" : "Maxey",
       href: "#changes",
     })),
+    ...p.rfis.slice(0, 8).map((r) => ({
+      key: `rfi-${r.id}`,
+      type: "rfi" as const,
+      at: r.respondedAt ?? r.createdAt,
+      title: `${formatRfiNumber(r.number)} ${r.respondedAt ? "answered" : "raised"} — ${r.subject}`,
+      detail: r.addressedTo === "CLIENT" ? "to the client" : "internal",
+      actor: r.respondedAt ? (r.respondedByName ?? "—") : r.raisedBy.name,
+      href: "#rfis",
+    })),
+    ...p.milestones
+      .filter((m) => m.status === "COMPLETED" && m.actualFinish)
+      .map((m) => ({
+        key: `ms-${m.id}`,
+        type: "milestone" as const,
+        at: m.updatedAt,
+        title: `Milestone completed — ${m.title}`,
+        detail: "",
+        actor: m.responsible?.name ?? "Maxey",
+        href: "#schedule",
+      })),
     ...p.requisitions.slice(0, 8).map((r) => ({
       key: `rq-${r.id}`,
       type: "requisition" as const,
@@ -268,11 +383,13 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
 
   const sections = [
     { id: "overview", label: "Overview" },
-    { id: "progress", label: "Progress" },
-    { id: "reports", label: "Daily reports" },
-    { id: "changes", label: "Changes" },
+    { id: "schedule", label: "Schedule" },
+    { id: "rfis", label: "RFIs" },
     ...(showMoney ? [{ id: "commercial", label: "Commercial" }] : []),
+    { id: "changes", label: "Changes" },
+    { id: "progress", label: "Progress" },
     { id: "requisitions", label: "Requisitions" },
+    { id: "reports", label: "Daily reports" },
   ];
 
   const marginTone = forecast.forecastMarginPct == null ? "default" : forecast.forecastMarginPct >= 0 ? "good" : "bad";
@@ -512,9 +629,261 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
           </div>
 
           <Card>
+            <CardHeader
+              title="Milestones"
+              subtitle={milestoneRows.length ? `${milestoneRows.length} milestone${milestoneRows.length === 1 ? "" : "s"} · approved baseline vs current forecast` : "No milestones yet"}
+              action={
+                <a href="#schedule" className="text-xs font-medium text-brand-600 hover:underline">
+                  Manage →
+                </a>
+              }
+            />
+            <CardBody className="space-y-4">
+              {milestoneRows.length === 0 ? (
+                <p className="text-sm text-ink-500">
+                  Add milestones in the Schedule section to track baseline and forecast dates. Until then the status above only compares time used
+                  with work done.
+                </p>
+              ) : (
+                <>
+                  <MilestoneTimeline milestones={timeline} today={todayKey} />
+                  <div>
+                    <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-ink-500">Lookahead — next 30 days and overdue</p>
+                    {lookahead.length === 0 ? (
+                      <p className="text-sm text-ink-500">✓ Nothing due in the next 30 days.</p>
+                    ) : (
+                      <ul className="space-y-1.5 text-sm">
+                        {lookahead.map((m) => (
+                          <li key={m.id} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <span className={`rounded-sm px-1.5 py-0.5 text-[11px] font-semibold ${HEALTH_CHIP[m.health]}`}>
+                              {HEALTH_ICON[m.health]} {HEALTH_LABEL[m.health]}
+                            </span>
+                            <span className="font-medium text-ink-900">{m.title}</span>
+                            <span className="text-xs text-ink-500">
+                              {m.forecastFinish ?? m.baselineFinish ? fmtDate(m.forecastFinish ?? m.baselineFinish) : "no date"}
+                              {m.overdueDays ? ` · ${m.overdueDays}d overdue` : ""}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </>
+              )}
+            </CardBody>
+          </Card>
+
+          <Card>
             <CardHeader title="Recent site activity" subtitle="Progress, daily reports, changes, requisitions and payments — newest first" />
             <CardBody>
               <ActivityFeed rows={feedRows} />
+            </CardBody>
+          </Card>
+        </section>
+
+        {/* ---------- Schedule: milestones ---------- */}
+        <section id="schedule" className="scroll-mt-14">
+          <Card>
+            <CardHeader
+              title={`Milestones (${milestoneRows.length})`}
+              subtitle="The baseline is the approved plan (Owner only, every revision kept with a reason). The PM keeps forecast and actual dates current. Slipping = forecast later than baseline; Late = more than 7 days later."
+            />
+            <CardBody className="space-y-3">
+              {milestoneRows.map(({ m, health, varianceDays, overdueDays }) => (
+                <div key={m.id} className="rounded-lg border border-ink-100 p-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium text-ink-900">{m.title}</span>
+                    <span className={`rounded-sm px-2 py-0.5 text-xs font-semibold ${HEALTH_CHIP[health]}`}>
+                      {HEALTH_ICON[health]} {HEALTH_LABEL[health]}
+                    </span>
+                  </div>
+                  {m.description && <p className="mt-1 text-xs text-ink-500">{m.description}</p>}
+                  <div className="mt-1.5 grid gap-x-6 gap-y-0.5 text-xs text-ink-600 sm:grid-cols-2">
+                    <div>
+                      Baseline: {m.baselineStart ? fmtDate(m.baselineStart) : "—"} → {m.baselineFinish ? fmtDate(m.baselineFinish) : "no baseline set"}
+                    </div>
+                    <div>
+                      Forecast: {m.forecastStart ? fmtDate(m.forecastStart) : "—"} → {m.forecastFinish ? fmtDate(m.forecastFinish) : "—"}
+                      {varianceDays != null && (
+                        <span className={varianceDays > 0 ? " font-medium text-amber-800 dark:text-amber-300" : ""}>
+                          {" "}
+                          ({varianceDays > 0 ? `+${varianceDays}` : varianceDays === 0 ? "on" : varianceDays} {varianceDays === 0 ? "baseline" : "days vs baseline"})
+                        </span>
+                      )}
+                    </div>
+                    {m.actualFinish && <div>Actual finish: {fmtDate(m.actualFinish)}</div>}
+                    {overdueDays ? <div className="font-medium text-red-700 dark:text-red-300">{overdueDays} days past its finish date</div> : null}
+                    <div>Responsible: {m.responsible?.name ?? "unassigned"}</div>
+                    <div>{m.visibleToClient ? "Visible to the client" : "Staff only"}</div>
+                  </div>
+                  {m.notes && <p className="mt-1.5 rounded-sm bg-ink-100 px-2 py-1 text-xs text-ink-600">Internal note: {m.notes}</p>}
+                  {canCreateCO && (
+                    <MilestoneControls
+                      isOwner={isOwnerUser}
+                      staff={staffOptions}
+                      m={{
+                        id: m.id,
+                        title: m.title,
+                        description: m.description,
+                        status: m.status,
+                        baselineStart: ymd(m.baselineStart),
+                        baselineFinish: ymd(m.baselineFinish),
+                        forecastStart: ymd(m.forecastStart),
+                        forecastFinish: ymd(m.forecastFinish),
+                        actualFinish: ymd(m.actualFinish),
+                        responsibleId: m.responsibleId,
+                        notes: m.notes,
+                        visibleToClient: m.visibleToClient,
+                        revisions: m.revisions.map((r) => ({
+                          revision: r.revision,
+                          baselineStart: ymd(r.baselineStart),
+                          baselineFinish: ymd(r.baselineFinish),
+                          reason: r.reason,
+                          by: r.revisedByName,
+                          at: fmtDate(r.createdAt),
+                        })),
+                      }}
+                    />
+                  )}
+                </div>
+              ))}
+              {milestoneRows.length === 0 && <p className="text-sm text-ink-400">No milestones yet.</p>}
+              {canCreateCO && (
+                <details className="rounded-lg border border-dashed border-ink-200 p-3">
+                  <summary className="cursor-pointer text-sm font-medium text-ink-700">+ Add milestone</summary>
+                  <div className="mt-3">
+                    <AddMilestoneForm projectId={p.id} isOwner={isOwnerUser} staff={staffOptions} />
+                  </div>
+                </details>
+              )}
+            </CardBody>
+          </Card>
+        </section>
+
+        {/* ---------- RFIs ---------- */}
+        <section id="rfis" className="scroll-mt-14">
+          <Card>
+            <CardHeader
+              title={`RFIs (${openRfis.length} open or awaiting close)`}
+              subtitle="Questions that need an answer. Cost and schedule impact stays “Unknown” until someone assesses it — it never defaults to “none”."
+            />
+            <CardBody className="space-y-3">
+              {openRfis.map((r) => {
+                const verdict = canRespondToRfi(r, actor, p.clientId);
+                const due = rfiDueState(r, now);
+                const label = formatRfiNumber(r.number);
+                return (
+                  <div key={r.id} className="rounded-lg border border-ink-100 p-3 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-medium text-ink-900">
+                        {label} · {r.subject}
+                      </span>
+                      <span className="flex items-center gap-1.5 text-xs">
+                        {due === "overdue" && <span className="rounded-sm bg-red-100 px-1.5 py-0.5 font-semibold text-red-800 dark:bg-red-950/60 dark:text-red-300">▲ Overdue</span>}
+                        {due === "due-soon" && <span className="rounded-sm bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-900 dark:bg-amber-950/60 dark:text-amber-300">● Due soon</span>}
+                        <span className="rounded-sm bg-ink-200 px-1.5 py-0.5 font-semibold text-ink-700">{r.status === "OPEN" ? "Open" : "Answered"}</span>
+                        <span className="rounded-sm bg-ink-200 px-1.5 py-0.5 font-semibold text-ink-700">{r.addressedTo === "CLIENT" ? "To client" : "Internal"}</span>
+                      </span>
+                    </div>
+                    <p className="mt-1 whitespace-pre-line text-xs text-ink-700">{r.question}</p>
+                    {Array.isArray(r.photos) && (r.photos as string[]).length > 0 && (
+                      <div className="mt-2">
+                        <PhotoThumbnails photos={(r.photos as string[]).map((src) => ({ src, label: label }))} />
+                      </div>
+                    )}
+                    <div className="mt-1.5 grid gap-x-6 gap-y-0.5 text-xs text-ink-500 sm:grid-cols-2">
+                      <div>
+                        Raised by {r.raisedBy.name} · {fmtDateTime(r.createdAt)}
+                      </div>
+                      <div>
+                        {r.addressedTo === "CLIENT" ? "Waiting on: the client" : `Assigned to: ${r.assignee?.name ?? "PM / Owner"}`}
+                        {r.dueDate && <> · needed by {fmtDate(r.dueDate)}</>}
+                      </div>
+                      {r.workItem && <div>Work item: {r.workItem}</div>}
+                      {r.dailyReportNo && <div>Daily report: {r.dailyReportNo}</div>}
+                      {r.milestone && <div>Milestone: {r.milestone.title}</div>}
+                      {r.siteInstruction && (
+                        <div>
+                          Site instruction:{" "}
+                          <Link href="/instructions" className="text-brand-600 hover:underline">
+                            {r.siteInstruction.taskId ?? r.siteInstruction.title ?? r.siteInstruction.text.slice(0, 30)}
+                          </Link>
+                        </div>
+                      )}
+                      {r.changeOrder && <div>Change order: {r.changeOrder.title}</div>}
+                    </div>
+                    <div className="mt-1.5 text-xs text-ink-600">
+                      Cost impact: <strong>{IMPACT_LABEL[r.costImpact]}</strong> · Schedule impact: <strong>{IMPACT_LABEL[r.scheduleImpact]}</strong>
+                      {r.scheduleImpactDays != null && <> ({r.scheduleImpactDays > 0 ? "+" : ""}{r.scheduleImpactDays} days)</>}
+                      {r.impactNote && <> — {r.impactNote}</>}
+                    </div>
+                    {r.responseText && (
+                      <div className="mt-2 rounded-sm border border-emerald-200 bg-emerald-50 p-2 text-xs text-ink-800 dark:border-emerald-900 dark:bg-emerald-950/30">
+                        <div className="font-semibold">Answer — {r.respondedByName}{r.respondedAt && `, ${fmtDateTime(r.respondedAt)}`}</div>
+                        <p className="mt-0.5 whitespace-pre-line">{r.responseText}</p>
+                        {Array.isArray(r.responsePhotos) && (r.responsePhotos as string[]).length > 0 && (
+                          <div className="mt-1.5">
+                            <PhotoThumbnails photos={(r.responsePhotos as string[]).map((src) => ({ src, label: `${label} answer` }))} />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <RfiControls
+                      staff={staffOptions}
+                      milestones={p.milestones.map((m) => ({ id: m.id, label: m.title }))}
+                      instructions={p.instructions.map((i) => ({ id: i.id, label: i.taskId ?? i.title ?? i.text.slice(0, 40) }))}
+                      changeOrders={p.changeOrders.map((c) => ({ id: c.id, label: c.title }))}
+                      rfi={{
+                        id: r.id,
+                        status: r.status,
+                        addressedTo: r.addressedTo,
+                        assigneeId: r.assigneeId,
+                        dueDate: ymd(r.dueDate),
+                        workItem: r.workItem,
+                        dailyReportNo: r.dailyReportNo,
+                        milestoneId: r.milestoneId,
+                        siteInstructionId: r.siteInstructionId,
+                        changeOrderId: r.changeOrderId,
+                        costImpact: r.costImpact,
+                        scheduleImpact: r.scheduleImpact,
+                        scheduleImpactDays: r.scheduleImpactDays,
+                        impactNote: r.impactNote,
+                        canRespond: verdict.ok,
+                        canClose: canCloseRfi(r, actor),
+                        canCancel: canCancelRfi(r, actor),
+                        canManage: canManageRfi(actor),
+                      }}
+                    />
+                  </div>
+                );
+              })}
+              {openRfis.length === 0 && <p className="text-sm text-ink-400">No open RFIs.</p>}
+              {closedRfis.length > 0 && (
+                <details className="rounded-lg border border-ink-100 p-3">
+                  <summary className="cursor-pointer text-sm font-medium text-ink-700">Closed or cancelled ({closedRfis.length})</summary>
+                  <ul className="mt-2 space-y-1.5 text-xs text-ink-600">
+                    {closedRfis.map((r) => (
+                      <li key={r.id}>
+                        <strong>{formatRfiNumber(r.number)}</strong> · {r.subject} — {r.status === "CLOSED" ? "closed" : "cancelled"}
+                        {r.responseText && <> · answer: {r.responseText.slice(0, 120)}</>}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+              {canRaise && (
+                <details className="rounded-lg border border-dashed border-ink-200 p-3">
+                  <summary className="cursor-pointer text-sm font-medium text-ink-700">+ New RFI</summary>
+                  <div className="mt-3">
+                    <NewRfiForm
+                      projectId={p.id}
+                      canSendToClient={canRaiseRfi(user.role, "CLIENT")}
+                      staff={staffOptions}
+                      milestones={p.milestones.map((m) => ({ id: m.id, label: m.title }))}
+                    />
+                  </div>
+                </details>
+              )}
             </CardBody>
           </Card>
         </section>

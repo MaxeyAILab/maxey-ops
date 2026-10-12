@@ -183,6 +183,35 @@ enum ProgressReviewStatus {
   APPROVED
 }
 
+enum MilestoneStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  BLOCKED
+}
+
+// RFI lifecycle: OPEN -> ANSWERED -> CLOSED (or CANCELLED while still open).
+enum RfiStatus {
+  OPEN
+  ANSWERED
+  CLOSED
+  CANCELLED
+}
+
+enum RfiAddressee {
+  INTERNAL // answered by Maxey staff
+  CLIENT // answered by the client in their portal
+}
+
+// Potential cost/schedule effect of an RFI. UNKNOWN is the honest default —
+// "no data" is never treated as "no impact".
+enum ImpactStatus {
+  UNKNOWN
+  NONE_IDENTIFIED
+  POSSIBLE
+  ASSESSED
+}
+
 enum PermitStatus {
   ACTIVE
   EXPIRING_SOON
@@ -245,6 +274,9 @@ model User {
   timeAdjustmentsDecided   TimeAdjustmentRequest[] @relation("TimeAdjDecider")
   hoursOverridesOwned      DailyHoursOverride[]    @relation("HoursOverrideOwner")
   hoursOverridesSet        DailyHoursOverride[]    @relation("HoursOverrideSetBy")
+  milestonesResponsible    Milestone[]             @relation("MilestoneResponsible")
+  rfisAssigned             Rfi[]                   @relation("RfiAssignee")
+  rfisRaised               Rfi[]                   @relation("RfiRaiser")
 }
 
 // Self-service "forgot password" (Spec §8-adjacent hardening). Only the
@@ -362,6 +394,8 @@ model Project {
   assignments     ProjectAssignment[]
   payrollRuns     PayrollRun[]
   activityLogs    ProjectActivityLog[]
+  milestones      Milestone[]
+  rfis            Rfi[]
   materialStocks  ProjectMaterialStock[]
   toolAssets      ToolAsset[]           @relation("ToolCurrentProject")
   materialMovesFrom InventoryMovement[] @relation("MaterialMoveFrom")
@@ -510,6 +544,8 @@ model ChangeOrder {
   createdById        String
   createdBy          User              @relation("COCreator", fields: [createdById], references: [id])
   createdAt          DateTime          @default(now())
+
+  rfis Rfi[]
 }
 
 model ProgressEntry {
@@ -827,6 +863,94 @@ model ProjectActivityLog {
   @@index([projectId, createdAt])
 }
 
+// A project milestone. Dates are calendar days (no time of day) so variance is
+// whole days and can't drift with timezones. The baseline is the approved
+// plan: set or revised only by the Owner, every revision stored with a reason
+// in MilestoneBaselineRevision. The PM keeps forecast/actual dates current.
+model Milestone {
+  id              String          @id @default(cuid())
+  projectId       String
+  project         Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title           String
+  description     String?
+  sortOrder       Int             @default(0)
+  baselineStart   DateTime?       @db.Date
+  baselineFinish  DateTime?       @db.Date
+  forecastStart   DateTime?       @db.Date
+  forecastFinish  DateTime?       @db.Date
+  actualFinish    DateTime?       @db.Date
+  status          MilestoneStatus @default(NOT_STARTED)
+  responsibleId   String?
+  responsible     User?           @relation("MilestoneResponsible", fields: [responsibleId], references: [id])
+  notes           String? // internal — never shown to clients
+  visibleToClient Boolean         @default(true)
+  createdById     String
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  revisions MilestoneBaselineRevision[]
+  rfis      Rfi[]
+
+  @@index([projectId, sortOrder])
+}
+
+// Immutable history of a milestone's approved baseline (revision 1 = original).
+model MilestoneBaselineRevision {
+  id             String    @id @default(cuid())
+  milestoneId    String
+  milestone      Milestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  revision       Int
+  baselineStart  DateTime? @db.Date
+  baselineFinish DateTime? @db.Date
+  reason         String
+  revisedById    String
+  revisedByName  String
+  createdAt      DateTime  @default(now())
+
+  @@unique([milestoneId, revision])
+}
+
+// Request for information. Project-scoped number (RFI-001...). INTERNAL RFIs
+// are answered by staff; CLIENT RFIs are answered in the client portal.
+model Rfi {
+  id                String       @id @default(cuid())
+  projectId         String
+  project           Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  number            Int
+  subject           String
+  question          String
+  addressedTo       RfiAddressee @default(INTERNAL)
+  assigneeId        String? // staff member expected to answer an INTERNAL RFI
+  assignee          User?        @relation("RfiAssignee", fields: [assigneeId], references: [id])
+  status            RfiStatus    @default(OPEN)
+  dueDate           DateTime?    @db.Date
+  workItem          String? // free-text reference to a progress work item
+  dailyReportNo     String? // e.g. DCR-004 — text, so it survives the 7-day report cleanup
+  milestoneId       String?
+  milestone         Milestone?   @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  siteInstructionId String?
+  siteInstruction   SiteInstruction? @relation(fields: [siteInstructionId], references: [id], onDelete: SetNull)
+  changeOrderId     String?
+  changeOrder       ChangeOrder? @relation(fields: [changeOrderId], references: [id], onDelete: SetNull)
+  photos            Json?
+  costImpact        ImpactStatus @default(UNKNOWN)
+  scheduleImpact    ImpactStatus @default(UNKNOWN)
+  scheduleImpactDays Int?
+  impactNote        String?
+  raisedById        String
+  raisedBy          User         @relation("RfiRaiser", fields: [raisedById], references: [id])
+  createdAt         DateTime     @default(now())
+  responseText      String?
+  responsePhotos    Json?
+  respondedById     String?
+  respondedByName   String?
+  respondedAt       DateTime?
+  closedAt          DateTime?
+
+  @@unique([projectId, number])
+  @@index([projectId, status])
+}
+
 model PayrollRun {
   id          String        @id @default(cuid())
   // Exactly one of the two: project payroll (site crew per project) or a
@@ -865,6 +989,7 @@ model SiteInstruction {
   createdAt         DateTime            @default(now())
 
   seenBy InstructionSeen[]
+  rfis   Rfi[]
 }
 
 // One row per (instruction, assignee) the moment that assignee first opens/

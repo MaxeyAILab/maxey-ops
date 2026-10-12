@@ -116,6 +116,73 @@ describe("buildActionQueue", () => {
   });
 });
 
+describe("buildActionQueue: RFIs and milestones", () => {
+  const noMoney = (userId: string, role: string) => ({ userId, role, showMoney: false, showMargin: false });
+  const rfi = (over: Record<string, unknown> = {}) => ({
+    id: "r1",
+    number: "RFI-001",
+    subject: "Rebar spacing",
+    status: "OPEN" as const,
+    addressedTo: "INTERNAL" as const,
+    assigneeId: "eng",
+    assigneeName: "Engr. Lim",
+    raisedById: "u-foreman",
+    dueState: "overdue" as const,
+    createdAt: ago(2),
+    ...over,
+  });
+
+  it("asks the assignee and approvers to answer an overdue internal RFI, but not an unrelated foreman", () => {
+    const eng = buildActionQueue(input({ viewer: noMoney("eng", "OFFICE"), rfis: [rfi()] }));
+    const pm = buildActionQueue(input({ rfis: [rfi()] }));
+    const other = buildActionQueue(input({ viewer: noMoney("x", "FOREMAN"), rfis: [rfi()] }));
+    expect(eng).toHaveLength(1);
+    expect(pm[0].severity).toBe(2);
+    expect(other).toHaveLength(0);
+  });
+
+  it("stays quiet about a fresh RFI that is not due soon", () => {
+    expect(buildActionQueue(input({ rfis: [rfi({ dueState: "ok", createdAt: ago(0) })] }))).toHaveLength(0);
+  });
+
+  it("shows a stalled client RFI to approvers only", () => {
+    const stalled = rfi({ addressedTo: "CLIENT", assigneeId: null, assigneeName: null, dueState: "none", createdAt: ago(8) });
+    expect(buildActionQueue(input({ rfis: [stalled] }))[0].responsible).toBe("Client");
+    expect(buildActionQueue(input({ viewer: noMoney("u-foreman", "FOREMAN"), rfis: [stalled] }))).toHaveLength(0);
+  });
+
+  it("asks whoever raised an answered RFI to close it", () => {
+    const answered = rfi({ status: "ANSWERED" as const });
+    const raiser = buildActionQueue(input({ viewer: noMoney("u-foreman", "FOREMAN"), rfis: [answered] }));
+    expect(raiser[0].title).toContain("review and close");
+  });
+
+  it("raises overdue, blocked, slipping and due-soon milestones for approvers", () => {
+    const m = (health: string, extra: Record<string, unknown> = {}) => ({ id: health, title: health, health: health as never, varianceDays: null, overdueDays: null, responsibleId: null, dueInDays: null, ...extra });
+    const q = buildActionQueue(
+      input({
+        milestones: [
+          m("overdue", { overdueDays: 4 }),
+          m("blocked"),
+          m("late", { varianceDays: 10 }),
+          m("watch", { varianceDays: 3 }),
+          m("on-track", { dueInDays: 5 }),
+          m("on-track", { id: "far", dueInDays: 40 }),
+          m("complete"),
+        ],
+      })
+    );
+    expect(q.map((i) => i.key).sort()).toEqual(["ms-blocked", "ms-late", "ms-on-track", "ms-overdue", "ms-watch"]);
+    expect(q.find((i) => i.key === "ms-watch")!.severity).toBe(1);
+  });
+
+  it("shows a milestone to its responsible person but not to other foremen", () => {
+    const m = { id: "a", title: "Slab", health: "overdue" as const, varianceDays: null, overdueDays: 2, responsibleId: "u-foreman", dueInDays: null };
+    expect(buildActionQueue(input({ viewer: noMoney("u-foreman", "FOREMAN"), milestones: [m] }))).toHaveLength(1);
+    expect(buildActionQueue(input({ viewer: noMoney("other", "FOREMAN"), milestones: [m] }))).toHaveLength(0);
+  });
+});
+
 describe("mergeActivity", () => {
   const live = [{ key: "a", type: "report" as const, at: ago(1), title: "DCR-002", detail: "", actor: "Joe", href: "#", refId: "r2" }];
   const logs = [

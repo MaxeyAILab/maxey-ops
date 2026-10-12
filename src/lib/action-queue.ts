@@ -1,6 +1,8 @@
 import type { ReviewStatus } from "@/lib/progress";
 import type { ScheduleState } from "@/lib/schedule";
 import type { CostState } from "@/lib/forecast";
+import type { MilestoneHealth } from "@/lib/milestones";
+import type { RfiAddresseeLike, RfiDueState, RfiStatusLike } from "@/lib/rfi";
 
 const DAY = 86_400_000;
 const ageDays = (d: Date, now: Date) => Math.max(0, Math.floor((now.getTime() - d.getTime()) / DAY));
@@ -44,6 +46,27 @@ export interface ActionInput {
   weightsTotal: number | null; // null = no weighted work items yet
   costState: CostState;
   isOngoing: boolean;
+  rfis?: {
+    id: string;
+    number: string; // RFI-003
+    subject: string;
+    status: RfiStatusLike;
+    addressedTo: RfiAddresseeLike;
+    assigneeId: string | null;
+    assigneeName: string | null;
+    raisedById: string;
+    dueState: RfiDueState;
+    createdAt: Date;
+  }[];
+  milestones?: {
+    id: string;
+    title: string;
+    health: MilestoneHealth;
+    varianceDays: number | null;
+    overdueDays: number | null;
+    responsibleId: string | null;
+    dueInDays: number | null; // days until the current finish date; null if none
+  }[];
 }
 
 /**
@@ -191,6 +214,67 @@ export function buildActionQueue(input: ActionInput): ActionItem[] {
       amount: null,
       age: 0,
     });
+  }
+
+  for (const r of input.rfis ?? []) {
+    const age = ageDays(r.createdAt, now);
+    if (r.status === "OPEN") {
+      const mine = isApprover || r.assigneeId === viewer.userId;
+      if (r.addressedTo === "INTERNAL" && mine && (r.dueState === "overdue" || r.dueState === "due-soon" || age > 3)) {
+        items.push({
+          key: `rfi-${r.id}`,
+          severity: r.dueState === "overdue" ? 2 : 1,
+          title: `${r.number} needs an answer: ${r.subject}`,
+          detail: r.dueState === "overdue" ? "Past its due date" : "Due soon or waiting several days",
+          responsible: r.assigneeName ?? "PM / Owner",
+          when: age === 0 ? "Raised today" : `Open ${age}d`,
+          href: "#rfis",
+          amount: null,
+          age,
+        });
+      }
+      if (r.addressedTo === "CLIENT" && isApprover && (r.dueState === "overdue" || age > 5)) {
+        items.push({
+          key: `rfi-${r.id}`,
+          severity: r.dueState === "overdue" ? 2 : 1,
+          title: `${r.number} awaiting the client: ${r.subject}`,
+          detail: "Follow up with the client if it has stalled",
+          responsible: "Client",
+          when: `Open ${age}d`,
+          href: "#rfis",
+          amount: null,
+          age,
+        });
+      }
+    }
+    if (r.status === "ANSWERED" && (isApprover || r.raisedById === viewer.userId)) {
+      items.push({
+        key: `rfi-${r.id}`,
+        severity: 1,
+        title: `${r.number} answered — review and close: ${r.subject}`,
+        detail: "Confirm the answer resolves it, or reopen it",
+        responsible: "Whoever raised it",
+        when: "Answered",
+        href: "#rfis",
+        amount: null,
+        age,
+      });
+    }
+  }
+
+  for (const m of input.milestones ?? []) {
+    const mine = isApprover || m.responsibleId === viewer.userId;
+    if (!mine) continue;
+    const slip = m.varianceDays != null && m.varianceDays > 0 ? ` · forecast ${m.varianceDays}d past baseline` : "";
+    if (m.health === "overdue") {
+      items.push({ key: `ms-${m.id}`, severity: 2, title: `Milestone overdue: ${m.title}`, detail: `${m.overdueDays}d past its finish date${slip}`, responsible: "PM", when: "Schedule", href: "#schedule", amount: null, age: m.overdueDays ?? 0 });
+    } else if (m.health === "blocked") {
+      items.push({ key: `ms-${m.id}`, severity: 2, title: `Milestone blocked: ${m.title}`, detail: "Marked blocked — clear the blocker or update the plan", responsible: "PM", when: "Schedule", href: "#schedule", amount: null, age: 0 });
+    } else if (m.health === "late" || m.health === "watch") {
+      items.push({ key: `ms-${m.id}`, severity: m.health === "late" ? 2 : 1, title: `Milestone slipping: ${m.title}`, detail: `Forecast ${m.varianceDays}d past baseline`, responsible: "PM", when: "Schedule", href: "#schedule", amount: null, age: m.varianceDays ?? 0 });
+    } else if (m.dueInDays != null && m.dueInDays >= 0 && m.dueInDays <= 7) {
+      items.push({ key: `ms-${m.id}`, severity: 1, title: `Milestone due in ${m.dueInDays}d: ${m.title}`, detail: "Confirm it will finish on time", responsible: "PM", when: "Schedule", href: "#schedule", amount: null, age: 0 });
+    }
   }
 
   if (viewer.showMargin && input.isOngoing && input.costState === "no-cost") {
