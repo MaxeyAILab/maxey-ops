@@ -32,6 +32,11 @@ export function FigureVisibilityProvider({ children }: { children: React.ReactNo
   return <HiddenContext.Provider value={{ hidden, toggle }}>{children}</HiddenContext.Provider>;
 }
 
+/** True while figures are masked (including before the saved preference has loaded). */
+export function useFiguresHidden(): boolean {
+  return useContext(HiddenContext).hidden !== false;
+}
+
 export function FigureToggle() {
   const { hidden, toggle } = useContext(HiddenContext);
   const isHidden = hidden !== false;
@@ -40,7 +45,7 @@ export function FigureToggle() {
       type="button"
       onClick={toggle}
       aria-pressed={isHidden}
-      className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-sm font-medium text-ink-700 hover:bg-ink-50 dark:border-ink-700 dark:bg-transparent dark:text-ink-200"
+      className="inline-flex items-center gap-1.5 rounded-sm border border-ink-200 bg-ink-50 px-3 py-1.5 text-sm font-medium text-ink-800 hover:bg-ink-100"
     >
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         {isHidden ? (
@@ -72,6 +77,17 @@ export function FigPlain({ children }: { children: React.ReactNode }) {
   const { hidden } = useContext(HiddenContext);
   if (hidden !== false) return <span aria-label="hidden">•••</span>;
   return <>{children}</>;
+}
+
+/** Text with sensitive numbers wrapped as ⟦…⟧ — masked while figures are hidden, unwrapped otherwise. */
+export function FigText({ children }: { children: string }) {
+  const { hidden } = useContext(HiddenContext);
+  const parts = children.split(/⟦(.*?)⟧/g);
+  return (
+    <>
+      {parts.map((part, i) => (i % 2 === 1 ? (hidden !== false ? "•••" : part) : part))}
+    </>
+  );
 }
 
 export function FigChart({ children }: { children: React.ReactNode }) {
