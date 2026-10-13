@@ -189,6 +189,41 @@ enum ProgressReviewStatus {
 // never touches the contract value: staff assess it, then either convert it
 // into a normal PENDING_CLIENT change order (the existing approval flow takes
 // over from there) or decline it with a reason.
+// Quality & safety findings. Counts only — no rates are reported because hours worked
+// aren't captured. INCIDENT findings are restricted to Owner, PM, the person who raised
+// them and the assigned owner.
+enum FindingType {
+  DEFECT
+  PUNCH_ITEM
+  INSPECTION
+  SAFETY_OBSERVATION
+  INCIDENT
+}
+
+enum FindingSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+// OPEN -> IN_PROGRESS -> READY_FOR_REVIEW (closure evidence submitted) -> CLOSED by a reviewer.
+enum FindingStatus {
+  OPEN
+  IN_PROGRESS
+  READY_FOR_REVIEW
+  CLOSED
+}
+
+enum DocumentCategory {
+  DRAWING
+  SPECIFICATION
+  PERMIT
+  CONTRACT
+  REPORT
+  OTHER
+}
+
 enum WorkRequestStatus {
   REQUESTED
   UNDER_REVIEW
@@ -292,6 +327,8 @@ model User {
   rfisAssigned             Rfi[]                   @relation("RfiAssignee")
   rfisRaised               Rfi[]                   @relation("RfiRaiser")
   workRequests             WorkRequest[]           @relation("WorkRequester")
+  findingsRaised           Finding[]               @relation("FindingRaiser")
+  findingsOwned            Finding[]               @relation("FindingOwner")
 }
 
 // Self-service "forgot password" (Spec §8-adjacent hardening). Only the
@@ -412,6 +449,9 @@ model Project {
   milestones      Milestone[]
   rfis            Rfi[]
   workRequests    WorkRequest[]
+  findings        Finding[]
+  closeoutItems   CloseoutItem[]
+  documents       ProjectDocument[]
   materialStocks  ProjectMaterialStock[]
   toolAssets      ToolAsset[]           @relation("ToolCurrentProject")
   materialMovesFrom InventoryMovement[] @relation("MaterialMoveFrom")
@@ -967,6 +1007,8 @@ model Rfi {
   siteInstruction   SiteInstruction? @relation(fields: [siteInstructionId], references: [id], onDelete: SetNull)
   changeOrderId     String?
   changeOrder       ChangeOrder? @relation(fields: [changeOrderId], references: [id], onDelete: SetNull)
+  documentId        String? // the drawing/document this question is about
+  document          ProjectDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
   photos            Json?
   costImpact        ImpactStatus @default(UNKNOWN)
   scheduleImpact    ImpactStatus @default(UNKNOWN)
@@ -984,6 +1026,97 @@ model Rfi {
 
   @@unique([projectId, number])
   @@index([projectId, status])
+}
+
+model Finding {
+  id                 String          @id @default(cuid())
+  projectId          String
+  project            Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  number             Int // project-scoped: QS-001...
+  clientUuid         String?         @unique // offline idempotency
+  type               FindingType
+  severity           FindingSeverity
+  title              String
+  description        String
+  location           String?
+  workItem           String?
+  ownerId            String? // who has to fix it
+  owner              User?           @relation("FindingOwner", fields: [ownerId], references: [id])
+  dueDate            DateTime?       @db.Date
+  status             FindingStatus   @default(OPEN)
+  restricted         Boolean         @default(false) // incidents: visible to Owner, PM, raiser and owner only
+  photos             Json?
+  raisedById         String
+  raisedBy           User            @relation("FindingRaiser", fields: [raisedById], references: [id])
+  createdAt          DateTime        @default(now())
+  // closure: evidence from the fixer, then a separate reviewer closes it
+  closureNote        String?
+  closurePhotos      Json?
+  closureSubmittedById String?
+  closureSubmittedAt DateTime?
+  reviewNote         String? // why it was sent back
+  closedById         String?
+  closedByName       String?
+  closedAt           DateTime?
+
+  @@unique([projectId, number])
+  @@index([projectId, status])
+}
+
+model CloseoutItem {
+  id         String    @id @default(cuid())
+  projectId  String
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title      String
+  category   String?
+  sortOrder  Int       @default(0)
+  required   Boolean   @default(true)
+  done       Boolean   @default(false)
+  doneById   String?
+  doneByName String?
+  doneAt     DateTime?
+  note       String?
+  createdAt  DateTime  @default(now())
+
+  @@index([projectId, sortOrder])
+}
+
+// A controlled project document (drawing, spec, permit...). Only references and metadata are
+// stored here: each revision is either a link to a file kept elsewhere or a small upload in the
+// private bucket. Revisions are never overwritten — a new one supersedes the previous current.
+model ProjectDocument {
+  id              String           @id @default(cuid())
+  projectId       String
+  project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title           String
+  docNo           String? // e.g. drawing number A-101
+  category        DocumentCategory @default(OTHER)
+  visibleToClient Boolean          @default(false)
+  createdById     String
+  createdAt       DateTime         @default(now())
+
+  revisions DocumentRevision[]
+  rfis      Rfi[]
+
+  @@index([projectId])
+}
+
+model DocumentRevision {
+  id             String          @id @default(cuid())
+  documentId     String
+  document       ProjectDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  revision       String // "A", "B", "Rev 3"...
+  url            String // https link, or /api/files/... for an upload
+  isExternal     Boolean         @default(true)
+  fileName       String?
+  notes          String?
+  current        Boolean         @default(true)
+  uploadedById   String
+  uploadedByName String
+  createdAt      DateTime        @default(now())
+  supersededAt   DateTime?
+
+  @@unique([documentId, revision])
 }
 
 model WorkRequest {

@@ -33,6 +33,7 @@ const patchSchema = z.discriminatedUnion("action", [
     milestoneId: z.string().optional().nullable(),
     siteInstructionId: z.string().optional().nullable(),
     changeOrderId: z.string().optional().nullable(),
+    documentId: z.string().optional().nullable(),
     costImpact: impact.optional(),
     scheduleImpact: impact.optional(),
     scheduleImpactDays: z.coerce.number().int().min(-365).max(3650).optional().nullable(),
@@ -145,6 +146,7 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
     milestoneId: body.milestoneId,
     siteInstructionId: body.siteInstructionId,
     changeOrderId: body.changeOrderId,
+    documentId: body.documentId,
   });
   if (body.assigneeId) {
     if (rfi.addressedTo === "CLIENT") throw new ApiError(400, "A client RFI has no staff assignee");
@@ -160,6 +162,7 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
       ...(body.milestoneId !== undefined ? { milestoneId: body.milestoneId || null } : {}),
       ...(body.siteInstructionId !== undefined ? { siteInstructionId: body.siteInstructionId || null } : {}),
       ...(body.changeOrderId !== undefined ? { changeOrderId: body.changeOrderId || null } : {}),
+      ...(body.documentId !== undefined ? { documentId: body.documentId || null } : {}),
       ...(body.costImpact ? { costImpact: body.costImpact } : {}),
       ...(body.scheduleImpact ? { scheduleImpact: body.scheduleImpact } : {}),
       ...(body.scheduleImpactDays !== undefined ? { scheduleImpactDays: body.scheduleImpactDays } : {}),

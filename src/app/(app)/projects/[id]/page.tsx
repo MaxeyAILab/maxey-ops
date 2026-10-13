@@ -54,6 +54,22 @@ import {
 } from "@/lib/billing";
 import { CHANGE_ORDER_LABEL } from "@/lib/change-orders";
 import { requisitionAmount } from "@/lib/requisitions";
+import { AddDocumentForm, CloseoutChecklist, DocumentControls, FindingControls, NewFindingForm } from "@/components/quality-actions";
+import {
+  FINDING_TYPE_LABEL,
+  canCloseFinding,
+  canRaiseFinding,
+  canReopenFinding,
+  canSendBackFinding,
+  canViewFinding,
+  canWorkFinding,
+  findingCounts,
+  findingDueState,
+  formatFindingNumber,
+} from "@/lib/findings";
+import { closeoutProgress } from "@/lib/closeout";
+import { currentRevision, nextRevisionLabel } from "@/lib/documents";
+import { HistoryExportButton } from "@/components/project-overview";
 import { canReviewWorkRequest, formatWorkRequestNumber } from "@/lib/work-requests";
 import { Fig, FigureToggle, FigureVisibilityProvider } from "@/components/figure-visibility";
 import { ActivityFeed, ProgressReviewControls, ProjectSectionNav, type ActivityRow } from "@/components/project-overview";
@@ -127,6 +143,12 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
         orderBy: { sortOrder: "asc" },
         include: { revisions: { orderBy: { revision: "asc" } }, responsible: { select: { name: true } } },
       },
+      findings: {
+        orderBy: { number: "desc" },
+        include: { owner: { select: { name: true } }, raisedBy: { select: { name: true } } },
+      },
+      closeoutItems: { orderBy: { sortOrder: "asc" } },
+      documents: { orderBy: { createdAt: "desc" }, include: { revisions: { orderBy: { createdAt: "desc" } } } },
       workRequests: {
         orderBy: { number: "desc" },
         include: { requestedBy: { select: { name: true } }, changeOrder: { select: { title: true, status: true } } },
@@ -139,6 +161,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
           milestone: { select: { title: true } },
           siteInstruction: { select: { taskId: true, title: true, text: true } },
           changeOrder: { select: { title: true } },
+          document: { select: { title: true, docNo: true } },
         },
       },
     },
@@ -178,6 +201,18 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
       label: t.label,
       outstanding: Math.max(Number(t.amount) - t.payments.reduce((s, x) => s + Number(x.amount), 0), 0),
     }));
+
+  // ----- Phase 4: quality & safety, closeout, documents -----
+  const viewerRef = { id: user.id, role: user.role };
+  const visibleFindings = p.findings.filter((f) => canViewFinding(f, viewerRef));
+  const hiddenFindingCount = p.findings.length - visibleFindings.length;
+  const fCounts = findingCounts(visibleFindings, now);
+  const openFindings = visibleFindings.filter((f) => f.status !== "CLOSED");
+  const closedFindings = visibleFindings.filter((f) => f.status === "CLOSED");
+  const openDefectsAndPunch = p.findings.filter((f) => f.status !== "CLOSED" && (f.type === "DEFECT" || f.type === "PUNCH_ITEM")).length;
+  const closeout = closeoutProgress(p.closeoutItems, openDefectsAndPunch);
+  const docOptions = p.documents.map((d) => ({ id: d.id, label: `${d.docNo ? d.docNo + " — " : ""}${d.title}` }));
+  const canManageQuality = user.role === "OWNER" || user.role === "PM";
 
   // ----- Phase 3: billing, reconciliation, commitments -----
   const termRows = p.paymentTerms.map((t) => {
@@ -319,6 +354,23 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
       estimatedCost: r.estimatedCost != null ? Number(r.estimatedCost) : null,
     })),
     dueTerms,
+    findings: visibleFindings.map((f) => ({
+      id: f.id,
+      number: formatFindingNumber(f.number),
+      title: f.title,
+      severity: f.severity,
+      status: f.status,
+      ownerId: f.ownerId,
+      closureSubmittedById: f.closureSubmittedById,
+      dueState: findingDueState(f, now),
+      createdAt: f.createdAt,
+    })),
+    closeout: {
+      projectStatus: p.status,
+      total: closeout.total,
+      requiredOpen: closeout.requiredTotal - closeout.requiredDone,
+      openDefectsAndPunch,
+    },
     billing: termRows.map((r) => ({
       id: r.t.id,
       label: r.t.label,
@@ -403,6 +455,26 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
       actor: c.clientResponseAt ? "Client" : "Maxey",
       href: "#changes",
     })),
+    ...visibleFindings.slice(0, 8).map((f) => ({
+      key: `fd-${f.id}`,
+      type: "quality" as const,
+      at: f.closedAt ?? f.closureSubmittedAt ?? f.createdAt,
+      title: `${formatFindingNumber(f.number)} ${f.status === "CLOSED" ? "closed" : f.status === "READY_FOR_REVIEW" ? "fix submitted" : "raised"} — ${f.restricted ? "restricted incident" : f.title}`,
+      detail: f.severity.toLowerCase(),
+      actor: f.status === "CLOSED" ? (f.closedByName ?? "—") : f.raisedBy.name,
+      href: "#quality",
+    })),
+    ...p.documents.flatMap((d) =>
+      d.revisions.slice(0, 2).map((r) => ({
+        key: `doc-${r.id}`,
+        type: "document" as const,
+        at: r.createdAt,
+        title: `${d.docNo ? d.docNo + " " : ""}${d.title} — revision ${r.revision}`,
+        detail: "document",
+        actor: r.uploadedByName,
+        href: "#documents",
+      }))
+    ),
     ...p.workRequests.slice(0, 8).map((w) => ({
       key: `aw-${w.id}`,
       type: "request" as const,
@@ -496,6 +568,9 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
     { id: "changes", label: "Changes" },
     { id: "progress", label: "Progress" },
     { id: "requisitions", label: "Requisitions" },
+    { id: "quality", label: "Quality & safety" },
+    { id: "closeout", label: "Closeout" },
+    { id: "documents", label: "Documents" },
     { id: "reports", label: "Daily reports" },
   ];
 
@@ -538,6 +613,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {showMoney && <FigureToggle />}
+            {canManageQuality && <HistoryExportButton projectId={p.id} />}
             <Link
               href={`/projects/${p.id}/report`}
               className="inline-flex min-h-[36px] items-center rounded-lg border border-ink-200 px-3 py-1.5 text-sm font-medium text-ink-700 hover:bg-ink-50"
@@ -788,6 +864,53 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
           </Card>
 
           <Card>
+            <CardHeader
+              title="Quality, safety & closeout"
+              subtitle="Counts of what is open — no rates, because hours worked aren't recorded"
+              action={
+                <a href="#quality" className="text-xs font-medium text-brand-600 hover:underline">
+                  Open →
+                </a>
+              }
+            />
+            <CardBody className="grid gap-4 sm:grid-cols-2">
+              <div className="text-sm">
+                <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">Open findings</p>
+                <p className="mt-1">
+                  <span className="text-2xl font-bold tabular-nums text-ink-900">{fCounts.open}</span>
+                  <span className="ml-2 text-xs text-ink-500">
+                    {fCounts.openBySeverity.CRITICAL} critical · {fCounts.openBySeverity.HIGH} high · {fCounts.openBySeverity.MEDIUM} medium · {fCounts.openBySeverity.LOW} low
+                  </span>
+                </p>
+                <p className="mt-1 text-xs text-ink-600">
+                  {fCounts.overdue > 0 ? <span className="font-medium text-red-700 dark:text-red-300">▲ {fCounts.overdue} past their fix-by date</span> : "✓ None past their fix-by date"}
+                  {fCounts.readyForReview > 0 && <> · {fCounts.readyForReview} awaiting review</>}
+                  {" · "}
+                  {fCounts.closedLast30Days} closed in the last 30 days
+                </p>
+              </div>
+              <div className="text-sm">
+                <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">Closeout</p>
+                {closeout.total === 0 ? (
+                  <p className="mt-1 text-xs text-ink-600">No checklist yet. It can be started from the Closeout section.</p>
+                ) : (
+                  <>
+                    <p className="mt-1">
+                      <span className="text-2xl font-bold tabular-nums text-ink-900">
+                        {closeout.requiredDone}/{closeout.requiredTotal}
+                      </span>
+                      <span className="ml-2 text-xs text-ink-500">required items done</span>
+                    </p>
+                    <p className="mt-1 text-xs text-ink-600">
+                      {closeout.ready ? "✓ Ready for turnover" : `● Not ready — ${closeout.blockers.join("; ")}`}
+                    </p>
+                  </>
+                )}
+              </div>
+            </CardBody>
+          </Card>
+
+          <Card>
             <CardHeader title="Recent site activity" subtitle="Progress, daily reports, changes, requisitions and payments — newest first" />
             <CardBody>
               <ActivityFeed rows={feedRows} />
@@ -925,6 +1048,12 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                         </div>
                       )}
                       {r.changeOrder && <div>Change order: {r.changeOrder.title}</div>}
+                      {r.document && (
+                        <div>
+                          Document: {r.document.docNo ? `${r.document.docNo} — ` : ""}
+                          {r.document.title}
+                        </div>
+                      )}
                     </div>
                     <div className="mt-1.5 text-xs text-ink-600">
                       Cost impact: <strong>{IMPACT_LABEL[r.costImpact]}</strong> · Schedule impact: <strong>{IMPACT_LABEL[r.scheduleImpact]}</strong>
@@ -947,6 +1076,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                       milestones={p.milestones.map((m) => ({ id: m.id, label: m.title }))}
                       instructions={p.instructions.map((i) => ({ id: i.id, label: i.taskId ?? i.title ?? i.text.slice(0, 40) }))}
                       changeOrders={p.changeOrders.map((c) => ({ id: c.id, label: c.title }))}
+                      documents={docOptions}
                       rfi={{
                         id: r.id,
                         status: r.status,
@@ -966,6 +1096,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                         canClose: canCloseRfi(r, actor),
                         canCancel: canCancelRfi(r, actor),
                         canManage: canManageRfi(actor),
+                        documentId: r.documentId,
                       }}
                     />
                   </div>
@@ -994,6 +1125,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                       canSendToClient={canRaiseRfi(user.role, "CLIENT")}
                       staff={staffOptions}
                       milestones={p.milestones.map((m) => ({ id: m.id, label: m.title }))}
+                      documents={docOptions}
                     />
                   </div>
                 </details>
@@ -1598,6 +1730,224 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
             </CardBody>
           </Card>
         </div>
+
+        {/* ---------- Quality & safety ---------- */}
+        <section id="quality" className="scroll-mt-14">
+          <Card>
+            <CardHeader
+              title={`Quality & safety (${openFindings.length} open)`}
+              subtitle="Defects, punch items, inspection findings, safety observations and incidents. Each is fixed by one person and reviewed by another before it closes. Incidents are visible only to the Owner, PM, the reporter and the assignee."
+            />
+            <CardBody className="space-y-3">
+              {hiddenFindingCount > 0 && canManageQuality === false && (
+                <p className="text-xs text-ink-500">Some restricted reports aren’t shown to you.</p>
+              )}
+              {openFindings.map((f) => {
+                const due = findingDueState(f, now);
+                const sevTone =
+                  f.severity === "CRITICAL" || f.severity === "HIGH"
+                    ? "bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300"
+                    : f.severity === "MEDIUM"
+                      ? "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300"
+                      : "bg-ink-200 text-ink-700";
+                return (
+                  <div key={f.id} className="rounded-lg border border-ink-100 p-3 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-medium text-ink-900">
+                        {formatFindingNumber(f.number)} · {f.title}
+                      </span>
+                      <span className="flex flex-wrap items-center gap-1.5 text-xs">
+                        <span className={`rounded-sm px-1.5 py-0.5 font-semibold ${sevTone}`}>{f.severity === "CRITICAL" || f.severity === "HIGH" ? "▲ " : ""}{f.severity.charAt(0) + f.severity.slice(1).toLowerCase()}</span>
+                        <span className="rounded-sm bg-ink-200 px-1.5 py-0.5 font-semibold text-ink-700">{FINDING_TYPE_LABEL[f.type]}</span>
+                        {f.restricted && <span className="rounded-sm bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-900 dark:bg-amber-950/60 dark:text-amber-300">Restricted</span>}
+                        <span className="rounded-sm bg-ink-200 px-1.5 py-0.5 font-semibold text-ink-700">
+                          {f.status === "OPEN" ? "Open" : f.status === "IN_PROGRESS" ? "In progress" : "Awaiting review"}
+                        </span>
+                        {due === "overdue" && <span className="rounded-sm bg-red-100 px-1.5 py-0.5 font-semibold text-red-800 dark:bg-red-950/60 dark:text-red-300">▲ Overdue</span>}
+                        {due === "due-soon" && <span className="rounded-sm bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-900 dark:bg-amber-950/60 dark:text-amber-300">● Due soon</span>}
+                      </span>
+                    </div>
+                    <p className="mt-1 whitespace-pre-line text-xs text-ink-700">{f.description}</p>
+                    {Array.isArray(f.photos) && (f.photos as string[]).length > 0 && (
+                      <div className="mt-2">
+                        <PhotoThumbnails photos={(f.photos as string[]).map((src) => ({ src, label: formatFindingNumber(f.number) }))} />
+                      </div>
+                    )}
+                    <div className="mt-1.5 grid gap-x-6 gap-y-0.5 text-xs text-ink-500 sm:grid-cols-2">
+                      <div>
+                        Raised by {f.raisedBy.name} · {fmtDateTime(f.createdAt)}
+                      </div>
+                      <div>
+                        Fixed by: {f.owner?.name ?? "not assigned"}
+                        {f.dueDate && <> · fix by {fmtDate(f.dueDate)}</>}
+                      </div>
+                      {f.location && <div>Location: {f.location}</div>}
+                      {f.workItem && <div>Work item: {f.workItem}</div>}
+                    </div>
+                    {f.reviewNote && f.status !== "CLOSED" && (
+                      <p className="mt-1.5 rounded-sm bg-red-50 px-2 py-1 text-xs text-red-800 dark:bg-red-950/40 dark:text-red-300">Reviewer note: {f.reviewNote}</p>
+                    )}
+                    {f.closureNote && f.status === "READY_FOR_REVIEW" && (
+                      <div className="mt-1.5 rounded-sm border border-emerald-200 bg-emerald-50 p-2 text-xs text-ink-800 dark:border-emerald-900 dark:bg-emerald-950/30">
+                        <div className="font-semibold">Fix submitted {f.closureSubmittedAt ? fmtDateTime(f.closureSubmittedAt) : ""}</div>
+                        <p className="mt-0.5 whitespace-pre-line">{f.closureNote}</p>
+                        {Array.isArray(f.closurePhotos) && (f.closurePhotos as string[]).length > 0 && (
+                          <div className="mt-1.5">
+                            <PhotoThumbnails photos={(f.closurePhotos as string[]).map((src) => ({ src, label: `${formatFindingNumber(f.number)} fix` }))} />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <FindingControls
+                      staff={staffOptions}
+                      f={{
+                        id: f.id,
+                        status: f.status,
+                        severity: f.severity,
+                        ownerId: f.ownerId,
+                        dueDate: ymd(f.dueDate),
+                        canWork: canWorkFinding(f, viewerRef),
+                        canClose: canCloseFinding(f, viewerRef),
+                        canSendBack: canSendBackFinding(f, viewerRef),
+                        canReopen: canReopenFinding(f, viewerRef),
+                        canEdit: canManageQuality,
+                      }}
+                    />
+                  </div>
+                );
+              })}
+              {openFindings.length === 0 && <p className="text-sm text-ink-400">No open findings.</p>}
+              {closedFindings.length > 0 && (
+                <details className="rounded-lg border border-ink-100 p-3">
+                  <summary className="cursor-pointer text-sm font-medium text-ink-700">Closed ({closedFindings.length})</summary>
+                  <ul className="mt-2 space-y-2 text-xs text-ink-600">
+                    {closedFindings.map((f) => (
+                      <li key={f.id}>
+                        <strong>{formatFindingNumber(f.number)}</strong> · {f.title} — closed {f.closedAt ? fmtDate(f.closedAt) : ""}
+                        {f.closedByName ? ` by ${f.closedByName}` : ""}
+                        {f.closureNote && <> · fix: {f.closureNote.slice(0, 140)}</>}
+                        <FindingControls
+                          staff={staffOptions}
+                          f={{ id: f.id, status: f.status, severity: f.severity, ownerId: f.ownerId, dueDate: ymd(f.dueDate), canWork: false, canClose: false, canSendBack: false, canReopen: canReopenFinding(f, viewerRef), canEdit: false }}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+              {canRaiseFinding(user.role) && (
+                <details className="rounded-lg border border-dashed border-ink-200 p-3">
+                  <summary className="cursor-pointer text-sm font-medium text-ink-700">+ Record a finding</summary>
+                  <div className="mt-3">
+                    <NewFindingForm projectId={p.id} staff={staffOptions} />
+                  </div>
+                </details>
+              )}
+            </CardBody>
+          </Card>
+        </section>
+
+        {/* ---------- Closeout ---------- */}
+        <section id="closeout" className="scroll-mt-14">
+          <Card>
+            <CardHeader
+              title={`Closeout checklist${closeout.total ? ` (${closeout.requiredDone}/${closeout.requiredTotal} required done)` : ""}`}
+              subtitle="What must be finished before turnover. A project is ready only when every required item is done and no defect or punch item is open."
+            />
+            <CardBody className="space-y-3">
+              {closeout.total > 0 && (
+                <p className={`text-sm ${closeout.ready ? "text-emerald-800 dark:text-emerald-300" : "text-ink-700"}`}>
+                  {closeout.ready ? "✓ Ready for turnover." : `Not ready yet — ${closeout.blockers.join("; ")}.`}
+                </p>
+              )}
+              <CloseoutChecklist
+                projectId={p.id}
+                canEdit={canManageQuality}
+                items={p.closeoutItems.map((i) => ({
+                  id: i.id,
+                  title: i.title,
+                  category: i.category,
+                  required: i.required,
+                  done: i.done,
+                  doneByName: i.doneByName,
+                  doneAt: i.doneAt ? fmtDate(i.doneAt) : null,
+                  note: i.note,
+                }))}
+              />
+            </CardBody>
+          </Card>
+        </section>
+
+        {/* ---------- Documents ---------- */}
+        <section id="documents" className="scroll-mt-14">
+          <Card>
+            <CardHeader
+              title={`Documents & drawings (${p.documents.length})`}
+              subtitle="Each document keeps every revision — a new one supersedes the current, nothing is overwritten. Files stay where you keep them (link) or are uploaded small (3 MB max)."
+            />
+            <CardBody className="space-y-3">
+              {p.documents.map((d) => {
+                const cur = currentRevision(d.revisions);
+                const older = d.revisions.filter((r) => r.id !== cur?.id);
+                return (
+                  <div key={d.id} className="rounded-lg border border-ink-100 p-3 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-medium text-ink-900">
+                        {d.docNo && <span className="mr-1.5 text-ink-500">{d.docNo}</span>}
+                        {d.title}
+                      </span>
+                      <span className="flex items-center gap-1.5 text-xs">
+                        <span className="rounded-sm bg-ink-200 px-1.5 py-0.5 font-semibold text-ink-700">{d.category.charAt(0) + d.category.slice(1).toLowerCase()}</span>
+                        {d.visibleToClient && <span className="rounded-sm bg-emerald-100 px-1.5 py-0.5 font-semibold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">Shared with client</span>}
+                      </span>
+                    </div>
+                    {cur ? (
+                      <p className="mt-1 text-xs text-ink-700">
+                        Current: <strong>revision {cur.revision}</strong> ·{" "}
+                        <a href={cur.url} target="_blank" rel="noopener noreferrer" className="font-medium text-brand-600 hover:underline">
+                          {cur.fileName ?? (cur.isExternal ? "open link" : "open file")} ↗
+                        </a>{" "}
+                        · {cur.uploadedByName}, {fmtDate(cur.createdAt)}
+                        {cur.notes && <> — {cur.notes}</>}
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">No current revision.</p>
+                    )}
+                    {older.length > 0 && (
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-xs text-ink-500">Superseded revisions ({older.length})</summary>
+                        <ul className="mt-1 space-y-0.5 text-xs text-ink-500">
+                          {older.map((r) => (
+                            <li key={r.id}>
+                              Revision {r.revision} ·{" "}
+                              <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-brand-600 hover:underline">
+                                {r.fileName ?? "open"} ↗
+                              </a>{" "}
+                              · {r.uploadedByName}, {fmtDate(r.createdAt)}
+                              {r.supersededAt && ` · superseded ${fmtDate(r.supersededAt)}`}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                    {canManageQuality && (
+                      <DocumentControls id={d.id} visibleToClient={d.visibleToClient} isOwner={isOwnerUser} suggestedRevision={nextRevisionLabel(d.revisions.map((r) => r.revision))} />
+                    )}
+                  </div>
+                );
+              })}
+              {p.documents.length === 0 && <p className="text-sm text-ink-400">No documents registered yet.</p>}
+              {canManageQuality && (
+                <details className="rounded-lg border border-dashed border-ink-200 p-3">
+                  <summary className="cursor-pointer text-sm font-medium text-ink-700">+ Add a document</summary>
+                  <div className="mt-3">
+                    <AddDocumentForm projectId={p.id} />
+                  </div>
+                </details>
+              )}
+            </CardBody>
+          </Card>
+        </section>
 
         <Card>
           <CardHeader

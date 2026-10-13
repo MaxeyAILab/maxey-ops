@@ -246,7 +246,7 @@ function Kpis({ d, now }: { d: OwnerDashboardData; now: Date }) {
         value={k.pulse.open}
         chip={<SeverityChip severity={k.pulse.open > 0 ? 1 : 0} />}
         lines={[
-          `${k.pulse.overdueInstructions} overdue instructions · ${k.pulse.criticalRequisitions} urgent requisitions · ${k.pulse.permitIssues} permit alerts`,
+          `${k.pulse.overdueInstructions} overdue instructions · ${k.pulse.criticalRequisitions} urgent requisitions · ${k.pulse.permitIssues} permit alerts · ${k.pulse.criticalFindings} open critical findings`,
           "Safety incidents aren’t tracked yet",
         ]}
       />

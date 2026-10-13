@@ -80,11 +80,13 @@ export function NewRfiForm({
   canSendToClient,
   staff,
   milestones,
+  documents = [],
 }: {
   projectId: string;
   canSendToClient: boolean;
   staff: Option[];
   milestones: Option[];
+  documents?: Option[];
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -110,6 +112,7 @@ export function NewRfiForm({
       workItem: v("workItem"),
       dailyReportNo: v("dailyReportNo"),
       milestoneId: v("milestoneId"),
+      documentId: v("documentId"),
       photos,
     });
     setBusy(false);
@@ -181,6 +184,19 @@ export function NewRfiForm({
           </Select>
         </div>
       )}
+      {documents.length > 0 && (
+        <div>
+          <Label htmlFor="rfi-doc">Related drawing / document</Label>
+          <Select id="rfi-doc" name="documentId" defaultValue="">
+            <option value="">— none —</option>
+            {documents.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.label}
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
       <PhotoInput label="Photos / sketches" max={4} onChange={setPhotos} />
       {error && <p className="text-sm text-red-600">{error}</p>}
       <Button type="submit" disabled={busy} className="w-full">
@@ -209,6 +225,7 @@ export interface RfiControlProps {
   canClose: boolean;
   canCancel: boolean;
   canManage: boolean;
+  documentId: string | null;
 }
 
 export function RfiControls({
@@ -217,12 +234,14 @@ export function RfiControls({
   milestones,
   instructions,
   changeOrders,
+  documents = [],
 }: {
   rfi: RfiControlProps;
   staff: Option[];
   milestones: Option[];
   instructions: Option[];
   changeOrders: Option[];
+  documents?: Option[];
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<null | "answer" | "edit">(null);
@@ -276,6 +295,7 @@ export function RfiControls({
       milestoneId: str(fd.get("milestoneId")),
       siteInstructionId: str(fd.get("siteInstructionId")),
       changeOrderId: str(fd.get("changeOrderId")),
+      documentId: str(fd.get("documentId")),
       costImpact: fd.get("costImpact"),
       scheduleImpact: fd.get("scheduleImpact"),
       scheduleImpactDays: num(fd.get("scheduleImpactDays")),
@@ -381,6 +401,7 @@ export function RfiControls({
           {optSelect("milestoneId", "Milestone", milestones, rfi.milestoneId)}
           {optSelect("siteInstructionId", "Linked site instruction", instructions, rfi.siteInstructionId)}
           {optSelect("changeOrderId", "Linked change order", changeOrders, rfi.changeOrderId)}
+          {documents.length > 0 && optSelect("documentId", "Related drawing / document", documents, rfi.documentId)}
           <ImpactFields idPrefix={`ed-${rfi.id}`} cost={rfi.costImpact} schedule={rfi.scheduleImpact} days={rfi.scheduleImpactDays} note={rfi.impactNote} />
           <div className="flex gap-2">
             <Button type="submit" disabled={busy} className="text-xs">

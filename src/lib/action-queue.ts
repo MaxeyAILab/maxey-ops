@@ -5,6 +5,7 @@ import type { MilestoneHealth } from "@/lib/milestones";
 import type { RfiAddresseeLike, RfiDueState, RfiStatusLike } from "@/lib/rfi";
 import type { WorkRequestStatusLike } from "@/lib/work-requests";
 import type { BillingState } from "@/lib/billing";
+import type { FindingDueState, FindingSeverityLike, FindingStatusLike } from "@/lib/findings";
 
 const DAY = 86_400_000;
 const ageDays = (d: Date, now: Date) => Math.max(0, Math.floor((now.getTime() - d.getTime()) / DAY));
@@ -60,6 +61,19 @@ export interface ActionInput {
     dueState: RfiDueState;
     createdAt: Date;
   }[];
+  /** Already filtered to findings this viewer is allowed to see (restricted incidents removed). */
+  findings?: {
+    id: string;
+    number: string;
+    title: string;
+    severity: FindingSeverityLike;
+    status: FindingStatusLike;
+    ownerId: string | null;
+    closureSubmittedById: string | null;
+    dueState: FindingDueState;
+    createdAt: Date;
+  }[];
+  closeout?: { projectStatus: string; total: number; requiredOpen: number; openDefectsAndPunch: number };
   billing?: { id: string; label: string; state: BillingState; daysOverdue: number | null; outstanding: number }[];
   retention?: { id: string; label: string; outstanding: number; overdue: boolean | null; daysUntil: number | null }[];
   potentialChanges?: { id: string; title: string; createdAt: Date }[];
@@ -265,6 +279,41 @@ export function buildActionQueue(input: ActionInput): ActionItem[] {
         amount: null,
         age,
       });
+    }
+  }
+
+  for (const f of input.findings ?? []) {
+    if (f.status === "CLOSED") continue;
+    const mine = f.ownerId === viewer.userId;
+    const age = ageDays(f.createdAt, now);
+    const high = f.severity === "CRITICAL" || f.severity === "HIGH";
+    if (f.status === "READY_FOR_REVIEW") {
+      const canReview = viewer.role === "OWNER" || (viewer.role === "PM" && f.closureSubmittedById !== viewer.userId);
+      if (canReview) {
+        items.push({ key: `fnd-${f.id}`, severity: 1, title: `Review the fix: ${f.number} ${f.title}`, detail: "The fix was submitted — accept it or send it back", responsible: "PM / Owner", when: "Ready for review", href: "#quality", amount: null, age });
+      }
+      continue;
+    }
+    if (!(isApprover || mine)) continue;
+    if (f.dueState === "overdue") {
+      items.push({ key: `fnd-${f.id}`, severity: high ? 2 : 1, title: `Overdue ${f.severity.toLowerCase()} finding: ${f.number} ${f.title}`, detail: mine ? "Assigned to you — past its fix-by date" : "Past its fix-by date", responsible: "Assignee", when: "Overdue", href: "#quality", amount: null, age });
+    } else if (f.severity === "CRITICAL" && isApprover) {
+      items.push({ key: `fnd-${f.id}`, severity: 2, title: `Critical finding open: ${f.number} ${f.title}`, detail: "Needs a fix and closure evidence", responsible: "Assignee", when: `Open ${age}d`, href: "#quality", amount: null, age });
+    } else if (mine && (f.dueState === "due-soon" || high)) {
+      items.push({ key: `fnd-${f.id}`, severity: 1, title: `Assigned to you: ${f.number} ${f.title}`, detail: f.dueState === "due-soon" ? "Fix-by date is close" : "High-severity finding", responsible: "You", when: "Assigned", href: "#quality", amount: null, age });
+    }
+  }
+
+  if (isApprover && input.closeout) {
+    const c = input.closeout;
+    if (c.projectStatus === "TURNED_OVER" && (c.requiredOpen > 0 || c.openDefectsAndPunch > 0)) {
+      items.push({ key: "closeout", severity: 2, title: "Turned over with closeout still open", detail: `${c.requiredOpen} required item${c.requiredOpen === 1 ? "" : "s"} and ${c.openDefectsAndPunch} defect/punch item${c.openDefectsAndPunch === 1 ? "" : "s"} outstanding`, responsible: "PM", when: "Closeout", href: "#closeout", amount: null, age: 0 });
+    } else if (c.projectStatus === "FOR_PUNCHLIST") {
+      if (c.total === 0) {
+        items.push({ key: "closeout", severity: 1, title: "Start the closeout checklist", detail: "The project is at punch-list stage with no closeout checklist", responsible: "PM", when: "Closeout", href: "#closeout", amount: null, age: 0 });
+      } else if (c.requiredOpen > 0) {
+        items.push({ key: "closeout", severity: 1, title: `Closeout: ${c.requiredOpen} required item${c.requiredOpen === 1 ? "" : "s"} still open`, detail: "Finish the checklist before turnover", responsible: "PM", when: "Closeout", href: "#closeout", amount: null, age: 0 });
+      }
     }
   }
 

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { STORAGE_BUCKET, storageConfigured, supabaseAdmin } from "@/lib/supabase";
+import { parseDocumentDataUrl } from "@/lib/documents";
 
 /**
  * Photo/document storage adapter. Callers only ever see the returned URL.
@@ -61,4 +62,30 @@ export async function savePhotos(dataUrls: string[] | undefined): Promise<string
     }
   }
   return urls;
+}
+
+/**
+ * Save a small document upload (PDF or image, max 3 MB) from a data URL. Validation lives in
+ * parseDocumentDataUrl so the type and size rules are tested in one place. Larger files should
+ * stay in the team's shared drive and be attached as a link instead.
+ */
+export async function saveDocument(dataUrl: string): Promise<string> {
+  const parsed = parseDocumentDataUrl(dataUrl);
+  if (!parsed.ok) throw new Error(parsed.error);
+  const ext = parsed.mime === "application/pdf" ? "pdf" : parsed.mime === "image/jpeg" ? "jpg" : parsed.mime.split("/")[1];
+  const buf = Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64");
+  const fileName = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}.${ext}`;
+
+  if (storageConfigured) {
+    const now = new Date();
+    const key = `docs/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, "0")}/${fileName}`;
+    const supabase = supabaseAdmin()!;
+    const { error } = await supabase.storage.from(STORAGE_BUCKET).upload(key, buf, { contentType: parsed.mime, upsert: false });
+    if (error) throw new Error(`Upload failed: ${error.message}`);
+    return `/api/files/${key}`;
+  }
+
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  fs.writeFileSync(path.join(UPLOAD_DIR, fileName), buf);
+  return `/uploads/${fileName}`;
 }

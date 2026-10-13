@@ -19,6 +19,7 @@ const createSchema = z.object({
   workItem: z.string().max(200).optional().nullable(),
   dailyReportNo: z.string().max(40).optional().nullable(),
   milestoneId: z.string().optional().nullable(),
+  documentId: z.string().optional().nullable(),
   photos: z.array(z.string()).max(4).optional(),
 });
 
@@ -39,7 +40,7 @@ export const POST = handleApi(async (req: NextRequest) => {
   if (!project) throw new ApiError(404, "Project not found");
 
   const { dueDate } = parseDates(body, ["dueDate"]);
-  await assertLinksBelongToProject(body.projectId, { milestoneId: body.milestoneId });
+  await assertLinksBelongToProject(body.projectId, { milestoneId: body.milestoneId, documentId: body.documentId });
   if (body.addressedTo === "INTERNAL" && body.assigneeId) await assertActiveStaff(body.assigneeId, "The assignee");
 
   const photos = await savePhotos(body.photos);
@@ -60,6 +61,7 @@ export const POST = handleApi(async (req: NextRequest) => {
           workItem: body.workItem || null,
           dailyReportNo: body.dailyReportNo || null,
           milestoneId: body.milestoneId || null,
+          documentId: body.documentId || null,
           photos: photos.length ? photos : undefined,
           raisedById: user.id,
         },

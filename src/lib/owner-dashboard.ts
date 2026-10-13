@@ -170,7 +170,7 @@ export interface OwnerDashboardData {
     };
     due: { total: number; terms: number; projects: number; overdueTotal: number; overdueCount: number; noDueDateTotal: number; hasDueDates: boolean };
     atRisk: { total: number; count: number; critical: number; top: string | null };
-    pulse: { open: number; overdueInstructions: number; criticalRequisitions: number; permitIssues: number };
+    pulse: { open: number; overdueInstructions: number; criticalRequisitions: number; permitIssues: number; criticalFindings: number };
   };
   attention: AttentionItem[];
   attentionTotal: number;
@@ -228,6 +228,7 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
     approvedNoPoRows,
     overdueInstr,
     permits,
+    criticalFindings,
     onDuty,
     pendingTimeRequests,
     unapprovedPayroll,
@@ -318,6 +319,7 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
       where: { expiryDate: { lte: new Date(now.getTime() + 30 * DAY) } },
       orderBy: { expiryDate: "asc" },
     }),
+    prisma.finding.count({ where: { status: { not: "CLOSED" }, severity: "CRITICAL" } }),
     prisma.attendance.count({ where: { timeOut: null } }),
     prisma.timeAdjustmentRequest.count({ where: { status: "PENDING" } }),
     prisma.payrollRun.count({ where: { status: { in: ["DRAFT", "REVIEW"] } } }),
@@ -584,7 +586,7 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
   const overdueInstructions = overdueInstr.length;
   const criticalRequisitions = pendingReqs.filter((r) => r.urgency === "CRITICAL" || r.urgency === "HIGH").length;
   const permitIssues = permits.length;
-  const pulseOpen = overdueInstructions + criticalRequisitions + permitIssues;
+  const pulseOpen = overdueInstructions + criticalRequisitions + permitIssues + criticalFindings;
 
   // procurement
   const sumEst = (rs: { estimatedCost: unknown }[]) => rs.reduce((s, r) => s + Number(r.estimatedCost ?? 0), 0);
@@ -723,7 +725,7 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
         hasDueDates,
       },
       atRisk: { total: activeRows.length, count: atRiskRows.length, critical: atRiskRows.filter((r) => r.severity === 2).length, top: atRiskTop },
-      pulse: { open: pulseOpen, overdueInstructions, criticalRequisitions, permitIssues },
+      pulse: { open: pulseOpen, overdueInstructions, criticalRequisitions, permitIssues, criticalFindings },
     },
     attention: attentionAll.slice(0, 6),
     attentionTotal: attentionAll.length,

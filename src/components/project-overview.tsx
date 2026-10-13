@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
-import { FigText } from "@/components/figure-visibility";
+import { FigText, useFiguresHidden } from "@/components/figure-visibility";
 
 // ---------- progress review (PM / Owner) ----------
 
@@ -77,7 +77,7 @@ export function ProgressReviewControls({ entryId }: { entryId: string }) {
 
 export interface ActivityRow {
   key: string;
-  type: "progress" | "report" | "change" | "payment" | "requisition" | "rfi" | "milestone" | "request";
+  type: "progress" | "report" | "change" | "payment" | "requisition" | "rfi" | "milestone" | "request" | "quality" | "document";
   at: string; // ISO
   title: string;
   detail: string;
@@ -95,6 +95,8 @@ const TYPE_LABELS: Record<ActivityRow["type"], string> = {
   rfi: "RFIs",
   milestone: "Milestones",
   request: "Additional work",
+  quality: "Quality & safety",
+  document: "Documents",
 };
 
 const dateFmt = new Intl.DateTimeFormat("en-PH", {
@@ -169,5 +171,21 @@ export function ProjectSectionNav({ sections }: { sections: { id: string; label:
         ))}
       </ul>
     </nav>
+  );
+}
+
+// ---------- project history export ----------
+
+/** Owner/PM: download the project's audit trail as CSV. Honours "Hide figures": when it is on, money is left out of the file. */
+export function HistoryExportButton({ projectId }: { projectId: string }) {
+  const hidden = useFiguresHidden();
+  return (
+    <a
+      href={`/api/projects/${projectId}/history-export${hidden ? "?figures=hidden" : ""}`}
+      className="inline-flex min-h-[36px] items-center rounded-lg border border-ink-200 px-3 py-1.5 text-sm font-medium text-ink-700 hover:bg-ink-50"
+      title={hidden ? "Figures are hidden, so amounts are left out of the file" : "Download the full history, including amounts"}
+    >
+      ⬇ Export history
+    </a>
   );
 }

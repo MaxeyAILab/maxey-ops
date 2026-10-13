@@ -251,6 +251,51 @@ describe("buildActionQueue: billing, retention and potential changes", () => {
   });
 });
 
+describe("buildActionQueue: findings and closeout", () => {
+  const f = (over: Record<string, unknown> = {}) => ({
+    id: "f1", number: "QS-001", title: "Honeycombing on C-4", severity: "MEDIUM" as const, status: "OPEN" as const,
+    ownerId: "eng", closureSubmittedById: null as string | null, dueState: "none" as const, createdAt: ago(2), ...over,
+  });
+  const foreman = (id = "u-foreman") => ({ userId: id, role: "FOREMAN", showMoney: false, showMargin: false });
+
+  it("flags an overdue finding, escalating high and critical ones", () => {
+    expect(buildActionQueue(input({ findings: [f({ dueState: "overdue" })] }))[0].severity).toBe(1);
+    expect(buildActionQueue(input({ findings: [f({ dueState: "overdue", severity: "HIGH" })] }))[0].severity).toBe(2);
+  });
+
+  it("always surfaces an open critical finding to approvers", () => {
+    const q = buildActionQueue(input({ findings: [f({ severity: "CRITICAL" })] }));
+    expect(q[0]).toMatchObject({ severity: 2, key: "fnd-f1" });
+  });
+
+  it("tells the assignee about their own finding only when it is due soon, overdue or high severity", () => {
+    expect(buildActionQueue(input({ viewer: foreman("eng"), findings: [f()] }))).toHaveLength(0);
+    expect(buildActionQueue(input({ viewer: foreman("eng"), findings: [f({ dueState: "due-soon" })] }))).toHaveLength(1);
+    expect(buildActionQueue(input({ viewer: foreman("eng"), findings: [f({ severity: "HIGH" })] }))).toHaveLength(1);
+    expect(buildActionQueue(input({ viewer: foreman("other"), findings: [f({ dueState: "overdue" })] }))).toHaveLength(0);
+  });
+
+  it("asks a reviewer other than the submitter to review a fix, but lets the Owner always review", () => {
+    const ready = f({ status: "READY_FOR_REVIEW" as const, closureSubmittedById: "u-pm" });
+    expect(buildActionQueue(input({ findings: [ready] }))).toHaveLength(0); // the PM who submitted it can't review it
+    expect(buildActionQueue(input({ viewer: { userId: "pm2", role: "PM", showMoney: true, showMargin: false }, findings: [ready] }))).toHaveLength(1);
+    expect(buildActionQueue(input({ viewer: { userId: "o", role: "OWNER", showMoney: true, showMargin: true }, findings: [ready] }))).toHaveLength(1);
+  });
+
+  it("ignores closed findings", () => {
+    expect(buildActionQueue(input({ findings: [f({ status: "CLOSED" as const, severity: "CRITICAL" })] }))).toHaveLength(0);
+  });
+
+  it("nudges closeout at punch-list stage and flags a turnover with open items", () => {
+    const base = { total: 8, requiredOpen: 3, openDefectsAndPunch: 0 };
+    expect(buildActionQueue(input({ closeout: { projectStatus: "FOR_PUNCHLIST", ...base } }))[0].title).toContain("3 required items");
+    expect(buildActionQueue(input({ closeout: { projectStatus: "FOR_PUNCHLIST", total: 0, requiredOpen: 0, openDefectsAndPunch: 0 } }))[0].title).toContain("Start the closeout checklist");
+    expect(buildActionQueue(input({ closeout: { projectStatus: "TURNED_OVER", ...base } }))[0].severity).toBe(2);
+    expect(buildActionQueue(input({ closeout: { projectStatus: "ONGOING_CONSTRUCTION", ...base } }))).toHaveLength(0);
+    expect(buildActionQueue(input({ closeout: { projectStatus: "FOR_PUNCHLIST", total: 8, requiredOpen: 0, openDefectsAndPunch: 0 } }))).toHaveLength(0);
+  });
+});
+
 describe("mergeActivity", () => {
   const live = [{ key: "a", type: "report" as const, at: ago(1), title: "DCR-002", detail: "", actor: "Joe", href: "#", refId: "r2" }];
   const logs = [

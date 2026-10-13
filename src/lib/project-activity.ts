@@ -28,7 +28,7 @@ export async function logProjectActivity(params: {
 
 export interface ActivityItem {
   key: string;
-  type: "progress" | "report" | "change" | "payment" | "requisition" | "rfi" | "milestone" | "request";
+  type: "progress" | "report" | "change" | "payment" | "requisition" | "rfi" | "milestone" | "request" | "quality" | "document";
   at: Date;
   title: string;
   detail: string;

@@ -70,6 +70,17 @@ export default async function PortalPage() {
         orderBy: { sortOrder: "asc" },
         select: { id: true, title: true, description: true, status: true, baselineFinish: true, forecastFinish: true, actualFinish: true },
       },
+      // Only documents the team chose to share, and only their current revision.
+      documents: {
+        where: { visibleToClient: true },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          title: true,
+          docNo: true,
+          revisions: { where: { current: true }, select: { revision: true, url: true, fileName: true, createdAt: true }, take: 1 },
+        },
+      },
       // The client's own additional-work requests. The team's estimate and
       // internal note are never selected — a price only reaches the client as a change order.
       workRequests: {
@@ -422,6 +433,32 @@ export default async function PortalPage() {
                   )}
                 </CardBody>
               </Card>
+
+              {p.documents.some((d) => d.revisions.length > 0) && (
+                <Card>
+                  <CardHeader title="Project documents" subtitle="Drawings and documents shared with you — always the latest revision" />
+                  <CardBody className="space-y-2">
+                    {p.documents
+                      .filter((d) => d.revisions.length > 0)
+                      .map((d) => (
+                        <div key={d.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-ink-100 px-3 py-2 text-sm">
+                          <div>
+                            <div className="font-medium text-ink-800">
+                              {d.docNo && <span className="mr-1.5 text-ink-500">{d.docNo}</span>}
+                              {d.title}
+                            </div>
+                            <div className="text-xs text-ink-400">
+                              Revision {d.revisions[0].revision} · {fmtDate(d.revisions[0].createdAt)}
+                            </div>
+                          </div>
+                          <a href={d.revisions[0].url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-brand-600 hover:underline">
+                            Open ↗
+                          </a>
+                        </div>
+                      ))}
+                  </CardBody>
+                </Card>
+              )}
 
               {dailyReports.length > 0 && (
                 <Card>
