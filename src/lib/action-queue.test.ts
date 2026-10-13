@@ -183,6 +183,32 @@ describe("buildActionQueue: RFIs and milestones", () => {
   });
 });
 
+describe("buildActionQueue: additional work requests", () => {
+  const wr = (over: Record<string, unknown> = {}) => ({ id: "w1", number: "AW-001", title: "Covered walkway", status: "REQUESTED" as const, createdAt: ago(0), ...over });
+
+  it("asks approvers to act on a new client request, escalating after 2 days", () => {
+    expect(buildActionQueue(input({ workRequests: [wr()] }))[0].severity).toBe(1);
+    expect(buildActionQueue(input({ workRequests: [wr({ createdAt: ago(3) })] }))[0].severity).toBe(2);
+  });
+
+  it("stays quiet for converted, declined and withdrawn requests", () => {
+    for (const status of ["CONVERTED", "DECLINED", "WITHDRAWN"] as const) {
+      expect(buildActionQueue(input({ workRequests: [wr({ status })] }))).toHaveLength(0);
+    }
+  });
+
+  it("nudges only when a request has been under review for more than 5 days", () => {
+    expect(buildActionQueue(input({ workRequests: [wr({ status: "UNDER_REVIEW", createdAt: ago(3) })] }))).toHaveLength(0);
+    expect(buildActionQueue(input({ workRequests: [wr({ status: "UNDER_REVIEW", createdAt: ago(8) })] }))).toHaveLength(1);
+  });
+
+  it("does not show requests to foremen, and never attaches an amount", () => {
+    const foreman = { userId: "f", role: "FOREMAN", showMoney: false, showMargin: false };
+    expect(buildActionQueue(input({ viewer: foreman, workRequests: [wr()] }))).toHaveLength(0);
+    expect(buildActionQueue(input({ workRequests: [wr()] }))[0].amount).toBeNull();
+  });
+});
+
 describe("mergeActivity", () => {
   const live = [{ key: "a", type: "report" as const, at: ago(1), title: "DCR-002", detail: "", actor: "Joe", href: "#", refId: "r2" }];
   const logs = [

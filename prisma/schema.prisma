@@ -183,6 +183,18 @@ enum ProgressReviewStatus {
   APPROVED
 }
 
+// A client's request for additional work. It is NOT a priced change order and
+// never touches the contract value: staff assess it, then either convert it
+// into a normal PENDING_CLIENT change order (the existing approval flow takes
+// over from there) or decline it with a reason.
+enum WorkRequestStatus {
+  REQUESTED
+  UNDER_REVIEW
+  CONVERTED
+  DECLINED
+  WITHDRAWN
+}
+
 enum MilestoneStatus {
   NOT_STARTED
   IN_PROGRESS
@@ -277,6 +289,7 @@ model User {
   milestonesResponsible    Milestone[]             @relation("MilestoneResponsible")
   rfisAssigned             Rfi[]                   @relation("RfiAssignee")
   rfisRaised               Rfi[]                   @relation("RfiRaiser")
+  workRequests             WorkRequest[]           @relation("WorkRequester")
 }
 
 // Self-service "forgot password" (Spec §8-adjacent hardening). Only the
@@ -396,6 +409,7 @@ model Project {
   activityLogs    ProjectActivityLog[]
   milestones      Milestone[]
   rfis            Rfi[]
+  workRequests    WorkRequest[]
   materialStocks  ProjectMaterialStock[]
   toolAssets      ToolAsset[]           @relation("ToolCurrentProject")
   materialMovesFrom InventoryMovement[] @relation("MaterialMoveFrom")
@@ -545,7 +559,8 @@ model ChangeOrder {
   createdBy          User              @relation("COCreator", fields: [createdById], references: [id])
   createdAt          DateTime          @default(now())
 
-  rfis Rfi[]
+  rfis        Rfi[]
+  workRequest WorkRequest?
 }
 
 model ProgressEntry {
@@ -946,6 +961,34 @@ model Rfi {
   respondedByName   String?
   respondedAt       DateTime?
   closedAt          DateTime?
+
+  @@unique([projectId, number])
+  @@index([projectId, status])
+}
+
+model WorkRequest {
+  id              String            @id @default(cuid())
+  projectId       String
+  project         Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  number          Int // project-scoped: AW-001, AW-002...
+  title           String
+  description     String
+  photos          Json?
+  requestedById   String
+  requestedBy     User              @relation("WorkRequester", fields: [requestedById], references: [id])
+  status          WorkRequestStatus @default(REQUESTED)
+  createdAt       DateTime          @default(now())
+  // Staff assessment — the estimate and note are internal until a change order is sent.
+  estimatedCost   Decimal?          @db.Decimal(14, 2)
+  estimatedDays   Int?
+  internalNote    String?
+  declineReason   String? // shown to the client
+  reviewedById    String?
+  reviewedByName  String?
+  reviewedAt      DateTime?
+  changeOrderId   String?           @unique
+  changeOrder     ChangeOrder?      @relation(fields: [changeOrderId], references: [id], onDelete: SetNull)
+  withdrawnAt     DateTime?
 
   @@unique([projectId, number])
   @@index([projectId, status])

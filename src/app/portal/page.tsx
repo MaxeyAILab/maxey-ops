@@ -14,6 +14,8 @@ import { computeMilestoneHealth } from "@/lib/milestones";
 import { formatRfiNumber } from "@/lib/rfi";
 import { HEALTH_CHIP, HEALTH_ICON } from "@/components/milestone-timeline";
 import { ClientRfiRespond } from "@/components/rfi-actions";
+import { NewWorkRequestForm, WithdrawWorkRequestButton } from "@/components/work-request-actions";
+import { clientStatusLabel, formatWorkRequestNumber, isOpenWorkRequest } from "@/lib/work-requests";
 
 // A client sees a plain status, never internal planning detail like "no baseline".
 const CLIENT_HEALTH: Record<string, string> = {
@@ -66,6 +68,21 @@ export default async function PortalPage() {
         where: { visibleToClient: true },
         orderBy: { sortOrder: "asc" },
         select: { id: true, title: true, description: true, status: true, baselineFinish: true, forecastFinish: true, actualFinish: true },
+      },
+      // The client's own additional-work requests. The team's estimate and
+      // internal note are never selected — a price only reaches the client as a change order.
+      workRequests: {
+        orderBy: { number: "desc" },
+        select: {
+          id: true,
+          number: true,
+          title: true,
+          description: true,
+          status: true,
+          createdAt: true,
+          declineReason: true,
+          changeOrder: { select: { title: true, status: true } },
+        },
       },
       // Only RFIs addressed to the client — internal ones never leave the staff side.
       rfis: {
@@ -363,6 +380,47 @@ export default async function PortalPage() {
                   )}
                 </div>
               </div>
+
+              <Card>
+                <CardHeader title="Request additional work" subtitle="Want something added or changed? Tell us — we'll assess it and get back to you." />
+                <CardBody className="space-y-4">
+                  <details className="rounded-lg border border-dashed border-ink-200 p-3" open={p.workRequests.length === 0}>
+                    <summary className="cursor-pointer text-sm font-medium text-ink-700">+ New request</summary>
+                    <div className="mt-3">
+                      <NewWorkRequestForm projectId={p.id} />
+                    </div>
+                  </details>
+                  {p.workRequests.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">Your requests</p>
+                      {p.workRequests.map((w) => (
+                        <div key={w.id} className="rounded-lg border border-ink-100 px-3 py-2 text-sm">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="font-medium text-ink-800">
+                              {formatWorkRequestNumber(w.number)} · {w.title}
+                            </div>
+                            <span className="rounded-sm bg-ink-200 px-2 py-0.5 text-xs font-semibold text-ink-700">{clientStatusLabel(w.status)}</span>
+                          </div>
+                          <p className="mt-1 whitespace-pre-line text-xs text-ink-500">{w.description}</p>
+                          <p className="mt-1 text-xs text-ink-400">Sent {fmtDateTime(w.createdAt)}</p>
+                          {w.status === "CONVERTED" && w.changeOrder && (
+                            <p className="mt-1 text-xs text-ink-600">
+                              We've sent you a change order, “{w.changeOrder.title}”
+                              {w.changeOrder.status === "PENDING_CLIENT" ? " — please review it in the approval section above." : ` (${w.changeOrder.status.toLowerCase()}).`}
+                            </p>
+                          )}
+                          {w.status === "DECLINED" && w.declineReason && <p className="mt-1 text-xs text-ink-600">Our reply: {w.declineReason}</p>}
+                          {isOpenWorkRequest(w.status) && (
+                            <div className="mt-1.5">
+                              <WithdrawWorkRequestButton id={w.id} />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardBody>
+              </Card>
 
               {dailyReports.length > 0 && (
                 <Card>

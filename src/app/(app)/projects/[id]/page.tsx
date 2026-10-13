@@ -39,6 +39,8 @@ import {
 import { HEALTH_CHIP, HEALTH_ICON, HEALTH_LABEL, MilestoneTimeline } from "@/components/milestone-timeline";
 import { AddMilestoneForm, MilestoneControls } from "@/components/milestone-actions";
 import { NewRfiForm, RfiControls } from "@/components/rfi-actions";
+import { WorkRequestControls } from "@/components/work-request-actions";
+import { canReviewWorkRequest, formatWorkRequestNumber } from "@/lib/work-requests";
 import { Fig, FigureToggle, FigureVisibilityProvider } from "@/components/figure-visibility";
 import { ActivityFeed, ProgressReviewControls, ProjectSectionNav, type ActivityRow } from "@/components/project-overview";
 
@@ -95,6 +97,10 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
       milestones: {
         orderBy: { sortOrder: "asc" },
         include: { revisions: { orderBy: { revision: "asc" } }, responsible: { select: { name: true } } },
+      },
+      workRequests: {
+        orderBy: { number: "desc" },
+        include: { requestedBy: { select: { name: true } }, changeOrder: { select: { title: true, status: true } } },
       },
       rfis: {
         orderBy: { number: "desc" },
@@ -249,6 +255,13 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
     weightsTotal,
     costState: forecast.costState,
     isOngoing,
+    workRequests: p.workRequests.map((w) => ({
+      id: w.id,
+      number: formatWorkRequestNumber(w.number),
+      title: w.title,
+      status: w.status,
+      createdAt: w.createdAt,
+    })),
     rfis: p.rfis.map((r) => ({
       id: r.id,
       number: formatRfiNumber(r.number),
@@ -305,6 +318,15 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
       detail: "",
       actor: c.clientResponseAt ? "Client" : "Maxey",
       href: "#changes",
+    })),
+    ...p.workRequests.slice(0, 8).map((w) => ({
+      key: `aw-${w.id}`,
+      type: "request" as const,
+      at: w.reviewedAt ?? w.createdAt,
+      title: `${formatWorkRequestNumber(w.number)} ${w.status === "REQUESTED" ? "requested" : w.status === "UNDER_REVIEW" ? "under review" : w.status === "CONVERTED" ? "sent as a change order" : w.status === "DECLINED" ? "declined" : "withdrawn"} — ${w.title}`,
+      detail: "additional work",
+      actor: w.status === "REQUESTED" || w.status === "WITHDRAWN" ? w.requestedBy.name : (w.reviewedByName ?? w.requestedBy.name),
+      href: "#additional-work",
     })),
     ...p.rfis.slice(0, 8).map((r) => ({
       key: `rfi-${r.id}`,
@@ -385,6 +407,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
     { id: "overview", label: "Overview" },
     { id: "schedule", label: "Schedule" },
     { id: "rfis", label: "RFIs" },
+    { id: "additional-work", label: "Additional work" },
     ...(showMoney ? [{ id: "commercial", label: "Commercial" }] : []),
     { id: "changes", label: "Changes" },
     { id: "progress", label: "Progress" },
@@ -534,7 +557,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
             </div>
           )}
 
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
             <Card>
               <CardHeader
                 title="Progress & schedule"
@@ -888,7 +911,96 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
           </Card>
         </section>
 
-        <div id="commercial" className="grid scroll-mt-14 gap-6 lg:grid-cols-2">
+        {/* ---------- Additional work requested by the client ---------- */}
+        <section id="additional-work" className="scroll-mt-14">
+          <Card>
+            <CardHeader
+              title={`Additional work requests (${p.workRequests.filter((w) => w.status === "REQUESTED" || w.status === "UNDER_REVIEW").length} open)`}
+              subtitle="Requests from the client's portal. They carry no price and never change the contract value — send one on as a change order, or decline it with a reason."
+            />
+            <CardBody className="space-y-3">
+              {p.workRequests.map((w) => (
+                <div key={w.id} className="rounded-lg border border-ink-100 p-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium text-ink-900">
+                      {formatWorkRequestNumber(w.number)} · {w.title}
+                    </span>
+                    <span
+                      className={`rounded-sm px-2 py-0.5 text-xs font-semibold ${
+                        w.status === "REQUESTED"
+                          ? "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300"
+                          : w.status === "UNDER_REVIEW"
+                            ? "bg-blue-100 text-blue-900 dark:bg-blue-950/60 dark:text-blue-300"
+                            : w.status === "CONVERTED"
+                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                              : "bg-ink-200 text-ink-700"
+                      }`}
+                    >
+                      {w.status === "REQUESTED"
+                        ? "New request"
+                        : w.status === "UNDER_REVIEW"
+                          ? "Under review"
+                          : w.status === "CONVERTED"
+                            ? "Sent as change order"
+                            : w.status === "DECLINED"
+                              ? "Declined"
+                              : "Withdrawn by client"}
+                    </span>
+                  </div>
+                  <p className="mt-1 whitespace-pre-line text-xs text-ink-700">{w.description}</p>
+                  {Array.isArray(w.photos) && (w.photos as string[]).length > 0 && (
+                    <div className="mt-2">
+                      <PhotoThumbnails photos={(w.photos as string[]).map((src) => ({ src, label: formatWorkRequestNumber(w.number) }))} />
+                    </div>
+                  )}
+                  <div className="mt-1.5 grid gap-x-6 gap-y-0.5 text-xs text-ink-500 sm:grid-cols-2">
+                    <div>
+                      Requested by {w.requestedBy.name} · {fmtDateTime(w.createdAt)}
+                    </div>
+                    {w.reviewedByName && (
+                      <div>
+                        Handled by {w.reviewedByName}
+                        {w.reviewedAt && ` · ${fmtDateTime(w.reviewedAt)}`}
+                      </div>
+                    )}
+                    {showMoney && (w.estimatedCost != null || w.estimatedDays != null) && (
+                      <div>
+                        Estimate (internal):{" "}
+                        {w.estimatedCost != null ? <Fig>{php(w.estimatedCost.toString())}</Fig> : "cost not set"}
+                        {w.estimatedDays != null && <> · {w.estimatedDays} day(s)</>}
+                      </div>
+                    )}
+                    {w.changeOrder && (
+                      <div>
+                        Change order: {w.changeOrder.title} ({CO_LABEL[w.changeOrder.status] ?? w.changeOrder.status.toLowerCase()}) — see Changes
+                      </div>
+                    )}
+                  </div>
+                  {w.internalNote && <p className="mt-1.5 rounded-sm bg-ink-100 px-2 py-1 text-xs text-ink-600">Internal note: {w.internalNote}</p>}
+                  {w.declineReason && <p className="mt-1.5 text-xs text-ink-600">Reason given to the client: {w.declineReason}</p>}
+                  {canReviewWorkRequest(user.role) && (
+                    <WorkRequestControls
+                      wr={{
+                        id: w.id,
+                        status: w.status,
+                        title: w.title,
+                        description: w.description,
+                        estimatedCost: w.estimatedCost != null ? Number(w.estimatedCost) : null,
+                        estimatedDays: w.estimatedDays,
+                        internalNote: w.internalNote,
+                      }}
+                    />
+                  )}
+                </div>
+              ))}
+              {p.workRequests.length === 0 && (
+                <p className="text-sm text-ink-400">No additional work requested yet. Clients can send requests from their portal.</p>
+              )}
+            </CardBody>
+          </Card>
+        </section>
+
+        <div id="commercial" className="grid scroll-mt-14 gap-6 lg:grid-cols-2 [&>*]:min-w-0">
           {showMoney && (
             <Card>
               <CardHeader title="Payment terms & billing" subtitle="Downpayment, milestones, retention — paid = cash received" />
@@ -1049,7 +1161,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
           </Card>
         )}
 
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-6 lg:grid-cols-2 [&>*]:min-w-0">
           <Card>
             <CardHeader
               title={`Progress timeline (${p.progressEntries.length})`}

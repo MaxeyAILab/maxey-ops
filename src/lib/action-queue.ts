@@ -3,6 +3,7 @@ import type { ScheduleState } from "@/lib/schedule";
 import type { CostState } from "@/lib/forecast";
 import type { MilestoneHealth } from "@/lib/milestones";
 import type { RfiAddresseeLike, RfiDueState, RfiStatusLike } from "@/lib/rfi";
+import type { WorkRequestStatusLike } from "@/lib/work-requests";
 
 const DAY = 86_400_000;
 const ageDays = (d: Date, now: Date) => Math.max(0, Math.floor((now.getTime() - d.getTime()) / DAY));
@@ -58,6 +59,7 @@ export interface ActionInput {
     dueState: RfiDueState;
     createdAt: Date;
   }[];
+  workRequests?: { id: string; number: string; title: string; status: WorkRequestStatusLike; createdAt: Date }[];
   milestones?: {
     id: string;
     title: string;
@@ -259,6 +261,37 @@ export function buildActionQueue(input: ActionInput): ActionItem[] {
         amount: null,
         age,
       });
+    }
+  }
+
+  if (isApprover) {
+    for (const w of input.workRequests ?? []) {
+      const age = ageDays(w.createdAt, now);
+      if (w.status === "REQUESTED") {
+        items.push({
+          key: `aw-${w.id}`,
+          severity: age > 2 ? 2 : 1,
+          title: `Client requested additional work: ${w.title}`,
+          detail: `${w.number} — acknowledge it, price it, then send a change order or decline`,
+          responsible: "PM / Owner",
+          when: age === 0 ? "Requested today" : `Waiting ${age}d`,
+          href: "#additional-work",
+          amount: null,
+          age,
+        });
+      } else if (w.status === "UNDER_REVIEW" && age > 5) {
+        items.push({
+          key: `aw-${w.id}`,
+          severity: 1,
+          title: `Additional work still under review: ${w.title}`,
+          detail: `${w.number} — the client is waiting for a decision`,
+          responsible: "PM / Owner",
+          when: `Open ${age}d`,
+          href: "#additional-work",
+          amount: null,
+          age,
+        });
+      }
     }
   }
 
