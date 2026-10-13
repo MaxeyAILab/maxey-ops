@@ -998,6 +998,8 @@ model Rfi {
   addressedTo       RfiAddressee @default(INTERNAL)
   assigneeId        String? // staff member expected to answer an INTERNAL RFI
   assignee          User?        @relation("RfiAssignee", fields: [assigneeId], references: [id])
+  answerApprovedById String? // Owner who let an assigned foreman answer this RFI (foremen can't answer without it)
+  answerApprovedAt  DateTime?
   status            RfiStatus    @default(OPEN)
   dueDate           DateTime?    @db.Date
   workItem          String? // free-text reference to a progress work item

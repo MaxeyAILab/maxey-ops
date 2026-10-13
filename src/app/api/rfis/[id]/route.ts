@@ -7,7 +7,7 @@ import { notifyUser } from "@/lib/notify-user";
 import { savePhotos } from "@/lib/storage";
 import { parseDates } from "@/lib/date-input";
 import { canCancelRfi, canCloseRfi, canManageRfi, canRespondToRfi, formatRfiNumber } from "@/lib/rfi";
-import { assertActiveStaff, assertLinksBelongToProject } from "@/lib/rfi-links";
+import { assertLinksBelongToProject, assertRfiAssignee } from "@/lib/rfi-links";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 
 const impact = z.enum(["UNKNOWN", "NONE_IDENTIFIED", "POSSIBLE", "ASSESSED"]);
@@ -25,6 +25,8 @@ const patchSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("close") }),
   z.object({ action: z.literal("reopen") }),
   z.object({ action: z.literal("cancel") }),
+  z.object({ action: z.literal("approve_answer") }),
+  z.object({ action: z.literal("revoke_answer") }),
   z.object({
     action: z.literal("update"),
     assigneeId: z.string().optional().nullable(),
@@ -63,7 +65,7 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
     throw new ApiError(404, "RFI not found");
   }
   const label = formatRfiNumber(rfi.number);
-  const actor = { id: user.id, role: user.role, clientId: user.clientId };
+  const actor = { id: user.id, role: user.role, clientId: user.clientId, department: user.department };
   const isApprover = canManageRfi(actor);
 
   if (body.action === "respond") {
@@ -71,7 +73,8 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
     if (!verdict.ok) throw new ApiError(403, verdict.reason);
     const photos = await savePhotos(body.responsePhotos);
     const res = await prisma.rfi.updateMany({
-      where: { id: rfi.id, status: "OPEN" },
+      // A foreman's answer also requires the Owner's approval to still be in place at the moment of saving.
+      where: { id: rfi.id, status: "OPEN", ...(user.role === "FOREMAN" ? { assigneeId: user.id, answerApprovedAt: { not: null } } : {}) },
       data: {
         status: "ANSWERED",
         responseText: body.responseText,
@@ -123,6 +126,34 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
     return NextResponse.json({ ok: true });
   }
 
+  if (body.action === "approve_answer" || body.action === "revoke_answer") {
+    if (user.role !== "OWNER") throw new ApiError(403, "Only the Owner can approve a foreman to answer an RFI");
+    if (rfi.addressedTo !== "INTERNAL" || rfi.status !== "OPEN") throw new ApiError(409, "Only an open internal RFI can be changed this way");
+    const assignee = rfi.assigneeId ? await prisma.user.findUnique({ where: { id: rfi.assigneeId }, select: { id: true, name: true, role: true } }) : null;
+    if (!assignee || assignee.role !== "FOREMAN") {
+      throw new ApiError(400, "This RFI isn't assigned to a foreman — only foremen need the Owner's approval to answer");
+    }
+    const approving = body.action === "approve_answer";
+    // Conditional on the assignee we looked at, so reassigning at the same moment can't carry an approval to someone else.
+    const res = await prisma.rfi.updateMany({
+      where: { id: rfi.id, status: "OPEN", assigneeId: assignee.id },
+      data: approving ? { answerApprovedById: user.id, answerApprovedAt: new Date() } : { answerApprovedById: null, answerApprovedAt: null },
+    });
+    if (res.count === 0) throw new ApiError(409, "This RFI changed — refresh the page");
+    await audit({
+      entityType: "Rfi",
+      entityId: rfi.id,
+      actorId: user.id,
+      actorName: user.name,
+      action: approving ? "RFI_ANSWER_APPROVED" : "RFI_ANSWER_APPROVAL_REVOKED",
+      diff: { project: rfi.project.name, number: label, foreman: assignee.name },
+    });
+    if (approving) {
+      await notifyUser(assignee.id, "You can now answer an RFI", `The Owner approved you to answer ${label} on ${rfi.project.name} — open Maxey Ops.`);
+    }
+    return NextResponse.json({ ok: true });
+  }
+
   if (!isApprover) throw new ApiError(403, "Only the PM or Owner can do this");
 
   if (body.action === "reopen") {
@@ -154,12 +185,15 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
   });
   if (body.assigneeId) {
     if (rfi.addressedTo === "CLIENT") throw new ApiError(400, "A client RFI has no staff assignee");
-    await assertActiveStaff(body.assigneeId, "The assignee");
+    await assertRfiAssignee(body.assigneeId);
   }
   const updated = await prisma.rfi.update({
     where: { id: rfi.id },
     data: {
-      ...(body.assigneeId !== undefined ? { assigneeId: body.assigneeId || null } : {}),
+      // Changing the assignee clears any approval, which belonged to the previous assignee.
+      ...(body.assigneeId !== undefined && (body.assigneeId || null) !== rfi.assigneeId
+        ? { assigneeId: body.assigneeId || null, answerApprovedById: null, answerApprovedAt: null }
+        : {}),
       ...(body.dueDate !== undefined ? { dueDate } : {}),
       ...(body.workItem !== undefined ? { workItem: body.workItem || null } : {}),
       ...(body.dailyReportNo !== undefined ? { dailyReportNo: body.dailyReportNo || null } : {}),

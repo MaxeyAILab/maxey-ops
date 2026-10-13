@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { computeMilestoneHealth, manilaToday, parseDateOnly, upcomingMilestones, type MilestoneDates } from "./milestones";
-import { canCancelRfi, canCloseRfi, canRaiseRfi, canRespondToRfi, formatRfiNumber, rfiDueState } from "./rfi";
+import { canBeRfiAssignee, canCancelRfi, canCloseRfi, canRaiseRfi, canRespondToRfi, formatRfiNumber, needsAnswerApproval, rfiDueState } from "./rfi";
 
 // Noon Manila on 2026-10-12 (04:00 UTC)
 const now = new Date("2026-10-12T04:00:00Z");
@@ -111,11 +111,43 @@ describe("RFI rules", () => {
   const internal = { addressedTo: "INTERNAL" as const, assigneeId: "eng", status: "OPEN" as const };
   const toClient = { addressedTo: "CLIENT" as const, assigneeId: null, status: "OPEN" as const };
 
-  it("restricts who can answer an internal RFI", () => {
+  it("restricts who can answer an internal RFI to the Owner, PM, project engineer and project architect", () => {
     expect(canRespondToRfi(internal, { id: "pm", role: "PM" }, "c1").ok).toBe(true);
-    expect(canRespondToRfi(internal, { id: "eng", role: "OFFICE" }, "c1").ok).toBe(true); // the assignee
-    expect(canRespondToRfi(internal, { id: "other", role: "FOREMAN" }, "c1").ok).toBe(false);
-    expect(canRespondToRfi(internal, { id: "x", role: "CLIENT", clientId: "c1" }, "c1").ok).toBe(false);
+    expect(canRespondToRfi(internal, { id: "o", role: "OWNER" }, "c1").ok).toBe(true);
+    expect(canRespondToRfi(internal, { id: "e", role: "OFFICE", department: "ENGINEER" }, "c1").ok).toBe(true);
+    expect(canRespondToRfi(internal, { id: "a", role: "OFFICE", department: "ARCHITECT" }, "c1").ok).toBe(true);
+    // being the assignee is not enough for anyone else on staff
+    for (const role of ["OFFICE", "PURCHASING", "ACCOUNTING", "DRIVER"]) {
+      expect(canRespondToRfi(internal, { id: "eng", role }, "c1").ok).toBe(false);
+    }
+    expect(canRespondToRfi(internal, { id: "x", role: "CLIENT", clientId: "c1", department: "ENGINEER" }, "c1").ok).toBe(false);
+  });
+
+  it("lets a foreman answer only their own assigned RFI, and only after the Owner approves", () => {
+    const foremanRfi = { ...internal, assigneeId: "f1" };
+    const approved = { ...foremanRfi, answerApprovedAt: new Date("2026-10-01") };
+    expect(canRespondToRfi(foremanRfi, { id: "f1", role: "FOREMAN" }, "c1").ok).toBe(false); // not approved yet
+    expect(canRespondToRfi(approved, { id: "f1", role: "FOREMAN" }, "c1").ok).toBe(true);
+    expect(canRespondToRfi(approved, { id: "f2", role: "FOREMAN" }, "c1").ok).toBe(false); // approval belongs to the assignee
+    expect(canRespondToRfi({ ...approved, assigneeId: null }, { id: "f1", role: "FOREMAN" }, "c1").ok).toBe(false);
+  });
+
+  it("knows when an assigned foreman still needs the Owner's approval", () => {
+    const r = { addressedTo: "INTERNAL" as const, status: "OPEN" as const, assigneeId: "f1", answerApprovedAt: null };
+    expect(needsAnswerApproval(r, "FOREMAN")).toBe(true);
+    expect(needsAnswerApproval({ ...r, answerApprovedAt: new Date() }, "FOREMAN")).toBe(false);
+    expect(needsAnswerApproval(r, "PM")).toBe(false);
+    expect(needsAnswerApproval({ ...r, assigneeId: null }, null)).toBe(false);
+    expect(needsAnswerApproval({ ...r, status: "ANSWERED" }, "FOREMAN")).toBe(false);
+  });
+
+  it("only offers people who can answer (or a foreman) as RFI assignees", () => {
+    expect(canBeRfiAssignee({ role: "PM" })).toBe(true);
+    expect(canBeRfiAssignee({ role: "FOREMAN" })).toBe(true);
+    expect(canBeRfiAssignee({ role: "OFFICE", department: "ARCHITECT" })).toBe(true);
+    expect(canBeRfiAssignee({ role: "OFFICE", department: "OFFICE" })).toBe(false);
+    expect(canBeRfiAssignee({ role: "PURCHASING" })).toBe(false);
+    expect(canBeRfiAssignee({ role: "CLIENT", department: "ENGINEER" })).toBe(false);
   });
 
   it("only lets the project's own client answer a client RFI, and flags Owner answers as on-behalf", () => {

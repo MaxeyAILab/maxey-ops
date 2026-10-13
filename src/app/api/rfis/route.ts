@@ -8,7 +8,7 @@ import { notifyUser } from "@/lib/notify-user";
 import { savePhotos } from "@/lib/storage";
 import { parseDates } from "@/lib/date-input";
 import { canRaiseRfi, formatRfiNumber } from "@/lib/rfi";
-import { assertActiveStaff, assertLinksBelongToProject } from "@/lib/rfi-links";
+import { assertLinksBelongToProject, assertRfiAssignee } from "@/lib/rfi-links";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 
 const createSchema = z.object({
@@ -53,7 +53,7 @@ export const POST = handleApi(async (req: NextRequest) => {
 
   const { dueDate } = parseDates(body, ["dueDate"]);
   await assertLinksBelongToProject(body.projectId, { milestoneId: body.milestoneId, documentId: body.documentId });
-  if (body.addressedTo === "INTERNAL" && body.assigneeId) await assertActiveStaff(body.assigneeId, "The assignee");
+  if (body.addressedTo === "INTERNAL" && body.assigneeId) await assertRfiAssignee(body.assigneeId);
 
   const photos = await savePhotos(body.photos);
 

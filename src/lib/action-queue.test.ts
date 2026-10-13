@@ -141,6 +141,16 @@ describe("buildActionQueue: RFIs and milestones", () => {
     expect(other).toHaveLength(0);
   });
 
+  it("only asks people who may actually answer, and asks the Owner to approve a foreman", () => {
+    const foremanRfi = rfi({ assigneeId: "fm", assigneeName: "Mark", needsApproval: true, canAnswer: false });
+    const foreman = buildActionQueue(input({ viewer: noMoney("fm", "FOREMAN"), rfis: [foremanRfi] }));
+    expect(foreman).toHaveLength(0); // can't answer yet, so no "needs your answer" nag
+    const owner = buildActionQueue(input({ viewer: noMoney("o", "OWNER"), rfis: [{ ...foremanRfi, canAnswer: true }] }));
+    expect(owner.map((i) => i.key)).toContain("rfi-approve-r1");
+    const pm = buildActionQueue(input({ rfis: [{ ...foremanRfi, canAnswer: true }] }));
+    expect(pm.map((i) => i.key)).not.toContain("rfi-approve-r1"); // approval is the Owner's call
+  });
+
   it("stays quiet about a fresh RFI that is not due soon", () => {
     expect(buildActionQueue(input({ rfis: [rfi({ dueState: "ok", createdAt: ago(0) })] }))).toHaveLength(0);
   });

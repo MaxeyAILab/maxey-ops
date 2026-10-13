@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/rbac";
+import { canBeRfiAssignee } from "@/lib/rfi";
 
 /**
  * Every record an RFI links to must belong to the same project as the RFI —
@@ -31,4 +32,13 @@ export async function assertLinksBelongToProject(
 export async function assertActiveStaff(userId: string, what: string) {
   const u = await prisma.user.findFirst({ where: { id: userId, active: true, role: { not: "CLIENT" } }, select: { id: true } });
   if (!u) throw new ApiError(400, `${what} must be an active staff member`);
+}
+
+/** An internal RFI can only be assigned to someone who can answer it, or a foreman (who needs the Owner's approval to answer). */
+export async function assertRfiAssignee(userId: string) {
+  const u = await prisma.user.findFirst({ where: { id: userId, active: true, role: { not: "CLIENT" } }, select: { role: true, department: true } });
+  if (!u) throw new ApiError(400, "The assignee must be an active staff member");
+  if (!canBeRfiAssignee(u)) {
+    throw new ApiError(400, "An RFI can be assigned to the Owner, a PM, a Project Engineer, a Project Architect or a foreman");
+  }
 }

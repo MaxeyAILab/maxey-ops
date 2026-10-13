@@ -33,6 +33,8 @@ import {
   canManageRfi,
   canRaiseRfi,
   canRespondToRfi,
+  canBeRfiAssignee,
+  needsAnswerApproval,
   formatRfiNumber,
   rfiDueState,
 } from "@/lib/rfi";
@@ -291,10 +293,19 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
   const isOwnerUser = user.role === "OWNER";
   const staff = await prisma.user.findMany({
     where: { active: true, role: { not: "CLIENT" } },
-    select: { id: true, name: true, role: true },
+    select: { id: true, name: true, role: true, department: true },
     orderBy: { name: "asc" },
   });
   const staffOptions = staff.map((u) => ({ id: u.id, name: u.name, label: `${u.name} (${u.role.toLowerCase()})` }));
+  // Internal RFIs can only go to people who can answer them (or a foreman, who needs the Owner's approval).
+  const staffRole = new Map(staff.map((u) => [u.id, u.role]));
+  const rfiAssigneeOptions = staff
+    .filter(canBeRfiAssignee)
+    .map((u) => ({
+      id: u.id,
+      name: u.name,
+      label: `${u.name} (${u.department === "ENGINEER" ? "project engineer" : u.department === "ARCHITECT" ? "project architect" : u.role.toLowerCase()})`,
+    }));
 
   const ymd = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
   const todayKey = new Date(manilaToday(now) * 86_400_000).toISOString().slice(0, 10);
@@ -321,7 +332,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
     now,
     30
   ).slice(0, 5);
-  const actor = { id: user.id, role: user.role, clientId: user.clientId };
+  const actor = { id: user.id, role: user.role, clientId: user.clientId, department: user.department };
   const canRaise = canRaiseRfi(user.role, "INTERNAL");
   const openRfis = p.rfis.filter((r) => r.status === "OPEN" || r.status === "ANSWERED");
   const closedRfis = p.rfis.filter((r) => r.status === "CLOSED" || r.status === "CANCELLED");
@@ -426,6 +437,8 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
       addressedTo: r.addressedTo,
       assigneeId: r.assigneeId,
       assigneeName: r.assignee?.name ?? null,
+      canAnswer: canRespondToRfi(r, actor, p.clientId).ok,
+      needsApproval: needsAnswerApproval(r, r.assigneeId ? staffRole.get(r.assigneeId) : null),
       raisedById: r.raisedById,
       dueState: rfiDueState(r, now),
       createdAt: r.createdAt,
@@ -1083,7 +1096,15 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                         Raised by {r.raisedBy.name} · {fmtDateTime(r.createdAt)}
                       </div>
                       <div>
-                        {r.addressedTo === "CLIENT" ? "Waiting on: the client" : `Assigned to: ${r.assignee?.name ?? "PM / Owner"}`}
+                        {r.addressedTo === "CLIENT"
+                          ? "Waiting on: the client"
+                          : `Assigned to: ${r.assignee?.name ?? "Owner / PM / project engineer or architect"}${
+                              needsAnswerApproval(r, r.assigneeId ? staffRole.get(r.assigneeId) : null)
+                                ? " — waiting for the Owner's approval to answer"
+                                : r.answerApprovedAt && r.status === "OPEN"
+                                  ? " — approved by the Owner to answer"
+                                  : ""
+                            }`}
                         {r.dueDate && <> · needed by {fmtDate(r.dueDate)}</>}
                       </div>
                       {r.workItem && <div>Work item: {r.workItem}</div>}
@@ -1122,7 +1143,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                       </div>
                     )}
                     <RfiControls
-                      staff={staffOptions}
+                      staff={rfiAssigneeOptions}
                       milestones={p.milestones.map((m) => ({ id: m.id, label: m.title }))}
                       instructions={p.instructions.map((i) => ({ id: i.id, label: i.taskId ?? i.title ?? i.text.slice(0, 40) }))}
                       changeOrders={p.changeOrders.map((c) => ({ id: c.id, label: c.title }))}
@@ -1143,6 +1164,8 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                         scheduleImpactDays: r.scheduleImpactDays,
                         impactNote: r.impactNote,
                         canRespond: verdict.ok,
+                        canApproveForeman: isOwnerUser && r.status === "OPEN" && r.addressedTo === "INTERNAL" && (r.assigneeId ? staffRole.get(r.assigneeId) === "FOREMAN" : false),
+                        foremanApproved: r.answerApprovedAt != null,
                         canClose: canCloseRfi(r, actor),
                         canCancel: canCancelRfi(r, actor),
                         canManage: canManageRfi(actor),
@@ -1173,7 +1196,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                     <NewRfiForm
                       projectId={p.id}
                       canSendToClient={canRaiseRfi(user.role, "CLIENT")}
-                      staff={staffOptions}
+                      staff={rfiAssigneeOptions}
                       milestones={p.milestones.map((m) => ({ id: m.id, label: m.title }))}
                       documents={docOptions}
                     />

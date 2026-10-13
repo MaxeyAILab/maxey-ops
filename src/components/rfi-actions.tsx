@@ -156,7 +156,7 @@ export function NewRfiForm({
           <div>
             <Label htmlFor="rfi-assignee">Assign to</Label>
             <Select id="rfi-assignee" name="assigneeId" defaultValue="">
-              <option value="">PM / Owner</option>
+              <option value="">Owner / PM / project engineer or architect</option>
               {staff.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.label}
@@ -232,6 +232,8 @@ export interface RfiControlProps {
   scheduleImpactDays: number | null;
   impactNote: string | null;
   canRespond: boolean;
+  canApproveForeman: boolean; // Owner only: this RFI is assigned to a foreman who needs approval to answer
+  foremanApproved: boolean;
   canClose: boolean;
   canCancel: boolean;
   canManage: boolean;
@@ -336,6 +338,16 @@ export function RfiControls({
             Answer
           </button>
         )}
+        {rfi.canApproveForeman && !rfi.foremanApproved && (
+          <button type="button" disabled={busy} className="min-h-[32px] rounded-sm border border-brand-500 px-3 text-xs font-semibold text-brand-600 hover:bg-brand-50" onClick={() => run({ action: "approve_answer" })}>
+            Approve the foreman to answer
+          </button>
+        )}
+        {rfi.canApproveForeman && rfi.foremanApproved && (
+          <button type="button" disabled={busy} className={link} onClick={() => confirm("Take back the approval? The foreman will no longer be able to answer this RFI.") && run({ action: "revoke_answer" })}>
+            Withdraw the foreman&apos;s approval
+          </button>
+        )}
         {rfi.canClose && (
           <button type="button" disabled={busy} className={link} onClick={() => run({ action: "close" })}>
             Confirm resolved &amp; close
@@ -386,7 +398,7 @@ export function RfiControls({
               <div>
                 <Label htmlFor={`as-${rfi.id}`}>Assigned to</Label>
                 <Select id={`as-${rfi.id}`} name="assigneeId" defaultValue={rfi.assigneeId ?? ""}>
-                  <option value="">PM / Owner</option>
+                  <option value="">Owner / PM / project engineer or architect</option>
                   {staff.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.label}

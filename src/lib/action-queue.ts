@@ -57,6 +57,10 @@ export interface ActionInput {
     addressedTo: RfiAddresseeLike;
     assigneeId: string | null;
     assigneeName: string | null;
+    /** Whether this viewer is allowed to answer it (Owner, PM, project engineer/architect, or an approved foreman). */
+    canAnswer?: boolean;
+    /** Assigned to a foreman the Owner has not approved yet. */
+    needsApproval?: boolean;
     raisedById: string;
     dueState: RfiDueState;
     createdAt: Date;
@@ -239,7 +243,7 @@ export function buildActionQueue(input: ActionInput): ActionItem[] {
   for (const r of input.rfis ?? []) {
     const age = ageDays(r.createdAt, now);
     if (r.status === "OPEN") {
-      const mine = isApprover || r.assigneeId === viewer.userId;
+      const mine = r.canAnswer ?? (isApprover || r.assigneeId === viewer.userId);
       if (r.addressedTo === "INTERNAL" && mine && (r.dueState === "overdue" || r.dueState === "due-soon" || age > 3)) {
         items.push({
           key: `rfi-${r.id}`,
@@ -247,6 +251,19 @@ export function buildActionQueue(input: ActionInput): ActionItem[] {
           title: `${r.number} needs an answer: ${r.subject}`,
           detail: r.dueState === "overdue" ? "Past its due date" : "Due soon or waiting several days",
           responsible: r.assigneeName ?? "PM / Owner",
+          when: age === 0 ? "Raised today" : `Open ${age}d`,
+          href: "#rfis",
+          amount: null,
+          age,
+        });
+      }
+      if (r.addressedTo === "INTERNAL" && r.needsApproval && viewer.role === "OWNER") {
+        items.push({
+          key: `rfi-approve-${r.id}`,
+          severity: 1,
+          title: `${r.number} is waiting for your approval: ${r.subject}`,
+          detail: `${r.assigneeName ?? "The foreman"} is assigned but can't answer until you approve it`,
+          responsible: "Owner",
           when: age === 0 ? "Raised today" : `Open ${age}d`,
           href: "#rfis",
           amount: null,
