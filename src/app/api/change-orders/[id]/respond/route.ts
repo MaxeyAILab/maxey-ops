@@ -47,22 +47,41 @@ export const POST = handleApi(
       });
       if (claimed.count === 0) throw new ApiError(409, "This change order was already answered");
       const updated = await db.changeOrder.findUniqueOrThrow({ where: { id: params.id } });
-      // Approved change orders auto-post into project value/cashflow (Spec 6.8)
-      if (body.decision === "APPROVED" && Number(co.costImpact) !== 0) {
-        await db.project.update({
-          where: { id: co.projectId },
-          data: { contractValue: { increment: co.costImpact } },
-        });
-        await db.paymentTerm.create({
-          data: {
-            projectId: co.projectId,
-            type: "PARTIAL",
-            label: `Change order: ${co.title}`,
-            amount: co.costImpact,
-            status: "DUE",
-            sortOrder: 99,
-          },
-        });
+      // Approved change orders auto-post into project value/cashflow (Spec 6.8). The
+      // increment is atomic and its result is recorded on the change order, so there is
+      // always a before/after record of exactly what this approval did to the contract.
+      if (body.decision === "APPROVED") {
+        if (Number(co.costImpact) !== 0) {
+          const project = await db.project.update({
+            where: { id: co.projectId },
+            data: { contractValue: { increment: co.costImpact } },
+            select: { contractValue: true },
+          });
+          await db.changeOrder.update({
+            where: { id: co.id },
+            data: {
+              contractAfter: project.contractValue,
+              contractBefore: project.contractValue.minus(co.costImpact),
+              incorporatedAt: new Date(),
+            },
+          });
+          await db.paymentTerm.create({
+            data: {
+              projectId: co.projectId,
+              type: "PARTIAL",
+              label: `Change order: ${co.title}`,
+              amount: co.costImpact,
+              status: "DUE",
+              sortOrder: 99,
+            },
+          });
+        } else {
+          const project = await db.project.findUniqueOrThrow({ where: { id: co.projectId }, select: { contractValue: true } });
+          await db.changeOrder.update({
+            where: { id: co.id },
+            data: { contractBefore: project.contractValue, contractAfter: project.contractValue, incorporatedAt: new Date() },
+          });
+        }
       }
       return updated;
     });

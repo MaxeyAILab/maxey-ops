@@ -4,6 +4,7 @@ import { getBidPipeline, getCashRunway, type CashRunway } from "@/lib/finance-da
 import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
 import { fmtDate } from "@/lib/format";
 import { computeForecast, type CostState } from "@/lib/forecast";
+import { receivablesAging, type TermInput } from "@/lib/billing";
 import { computeSchedule, type ScheduleState } from "@/lib/schedule";
 import { requisitionAmount } from "@/lib/requisitions";
 import { COMPLETED_STATUSES, ONGOING_STATUSES, STATUS_LABELS } from "@/lib/project-status";
@@ -167,7 +168,7 @@ export interface OwnerDashboardData {
       netMovement: number;
       runway: CashRunway;
     };
-    due: { total: number; terms: number; projects: number };
+    due: { total: number; terms: number; projects: number; overdueTotal: number; overdueCount: number; noDueDateTotal: number; hasDueDates: boolean };
     atRisk: { total: number; count: number; critical: number; top: string | null };
     pulse: { open: number; overdueInstructions: number; criticalRequisitions: number; permitIssues: number };
   };
@@ -486,12 +487,21 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
   // receivables due: milestones marked DUE, net of payments recorded against them
   const dueTerms: DueTerm[] = [];
   const retentionRows: RetentionRow[] = [];
+  const allTerms: TermInput[] = [];
   for (const p of projects) {
     if (!rows.some((r) => r.id === p.id) && !completedRows.some((r) => r.id === p.id)) continue;
     const paidByTerm = new Map<string, number>();
     for (const pay of p.payments)
       if (pay.paymentTermId) paidByTerm.set(pay.paymentTermId, (paidByTerm.get(pay.paymentTermId) ?? 0) + Number(pay.amount));
     for (const t of p.paymentTerms) {
+      allTerms.push({
+        status: t.status,
+        amount: Number(t.amount),
+        paid: paidByTerm.get(t.id) ?? 0,
+        invoicedAt: t.invoicedAt,
+        certifiedAt: t.certifiedAt,
+        dueDate: t.dueDate,
+      });
       if (t.status === "DUE") {
         const outstanding = Math.max(Number(t.amount) - (paidByTerm.get(t.id) ?? 0), 0);
         if (outstanding > 0)
@@ -512,6 +522,8 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
   dueTerms.sort((a, b) => b.outstanding - a.outstanding);
   retentionRows.sort((a, b) => b.amount - a.amount);
   const dueTotal = dueTerms.reduce((s, t) => s + t.outstanding, 0);
+  const aging = receivablesAging(allTerms, now);
+  const hasDueDates = allTerms.some((t) => t.dueDate != null);
 
   // cash flow buckets
   const bucketing: "weekly" | "monthly" = filters.period === "30d" || filters.period === "90d" ? "weekly" : "monthly";
@@ -631,14 +643,14 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
         href: "/requisitions",
       });
   }
-  if (dueTotal > 0)
+  if (dueTotal > 0 || aging.overdueTotal > 0)
     attentionAll.push({
       key: "due",
-      severity: 1,
-      title: `${dueTerms.length} billing milestone${dueTerms.length === 1 ? "" : "s"} due for collection`,
+      severity: aging.overdueCount > 0 ? 2 : 1,
+      title: aging.overdueCount > 0 ? `${aging.overdueCount} payment${aging.overdueCount === 1 ? "" : "s"} past the due date` : `${dueTerms.length} billing milestone${dueTerms.length === 1 ? "" : "s"} due for collection`,
       detail: dueTerms.slice(0, 2).map((t) => t.clientName).join(", ") + (dueTerms.length > 2 ? "…" : ""),
-      impact: "to collect",
-      impactAmount: dueTotal,
+      impact: aging.overdueCount > 0 ? "overdue" : "to collect",
+      impactAmount: aging.overdueCount > 0 ? aging.overdueTotal : dueTotal,
       owner: "Accounting",
       when: "Milestone due",
       href: "/finance",
@@ -701,7 +713,15 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
         coveredContractPct: rowsContract > 0 ? (reliableContract / rowsContract) * 100 : 0,
       },
       cash: { snapshot: cashSnapshot, netMovement: collected - committedOut, runway },
-      due: { total: dueTotal, terms: dueTerms.length, projects: new Set(dueTerms.map((t) => t.projectId)).size },
+      due: {
+        total: dueTotal,
+        terms: dueTerms.length,
+        projects: new Set(dueTerms.map((t) => t.projectId)).size,
+        overdueTotal: aging.overdueTotal,
+        overdueCount: aging.overdueCount,
+        noDueDateTotal: aging.noDueDate,
+        hasDueDates,
+      },
       atRisk: { total: activeRows.length, count: atRiskRows.length, critical: atRiskRows.filter((r) => r.severity === 2).length, top: atRiskTop },
       pulse: { open: pulseOpen, overdueInstructions, criticalRequisitions, permitIssues },
     },

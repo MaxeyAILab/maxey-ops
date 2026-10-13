@@ -11,6 +11,9 @@ const createSchema = z.object({
   description: z.string().min(1).max(5000),
   costImpact: z.coerce.number().default(0),
   timeImpactDays: z.coerce.number().int().default(0),
+  asPotential: z.boolean().optional().default(false), // save internally; not sent to the client
+  estimatedCost: z.coerce.number().min(0).optional().nullable(), // potential only; blank = not priced yet
+  reason: z.string().max(2000).optional().nullable(),
 });
 
 /**
@@ -32,8 +35,13 @@ export const POST = handleApi(async (req: NextRequest) => {
       projectId: body.projectId,
       title: body.title,
       description: body.description,
-      costImpact: body.costImpact,
+      // A potential change carries only an optional estimate: its costImpact stays 0 until it is
+      // priced and sent, so it can never be mistaken for (or counted as) an approved amount.
+      costImpact: body.asPotential ? 0 : body.costImpact,
+      estimatedCost: body.asPotential ? (body.estimatedCost ?? null) : null,
       timeImpactDays: body.timeImpactDays,
+      reason: body.reason || null,
+      status: body.asPotential ? "POTENTIAL" : "PENDING_CLIENT",
       createdById: user.id,
     },
   });
@@ -43,14 +51,16 @@ export const POST = handleApi(async (req: NextRequest) => {
     entityId: co.id,
     actorId: user.id,
     actorName: user.name,
-    action: "CHANGE_ORDER_CREATED",
-    diff: { project: project.name, costImpact: body.costImpact, days: body.timeImpactDays },
+    action: body.asPotential ? "CHANGE_ORDER_POTENTIAL_LOGGED" : "CHANGE_ORDER_CREATED",
+    diff: { project: project.name, costImpact: body.asPotential ? null : body.costImpact, estimatedCost: body.asPotential ? (body.estimatedCost ?? null) : null, days: body.timeImpactDays },
   });
-  await notify({
-    to: { name: project.client.name, email: project.client.email, phone: project.client.phone },
-    subject: "Change order awaiting your approval",
-    message: `${body.title} — please review it in your Maxey Construction client portal.`,
-  });
+  if (!body.asPotential) {
+    await notify({
+      to: { name: project.client.name, email: project.client.email, phone: project.client.phone },
+      subject: "Change order awaiting your approval",
+      message: `${body.title} — please review it in your Maxey Construction client portal.`,
+    });
+  }
 
   return NextResponse.json(co, { status: 201 });
 });

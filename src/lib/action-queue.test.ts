@@ -209,6 +209,48 @@ describe("buildActionQueue: additional work requests", () => {
   });
 });
 
+describe("buildActionQueue: billing, retention and potential changes", () => {
+  it("flags overdue payments for money viewers, escalating after 30 days, with the unpaid amount", () => {
+    const q = buildActionQueue(input({ billing: [{ id: "b1", label: "Progress billing 2", state: "overdue", daysOverdue: 12, outstanding: 80_000 }, { id: "b2", label: "Downpayment", state: "overdue", daysOverdue: 45, outstanding: 20_000 }] }));
+    expect(q.map((i) => [i.key, i.severity, i.amount])).toEqual([["bill-b2", 2, 20_000], ["bill-b1", 1, 80_000]]);
+  });
+
+  it("hides billing items from roles without money access", () => {
+    const noMoney = { userId: "x", role: "PM", showMoney: false, showMargin: false };
+    expect(buildActionQueue(input({ viewer: noMoney, billing: [{ id: "b1", label: "x", state: "overdue", daysOverdue: 50, outstanding: 1 }] }))).toHaveLength(0);
+  });
+
+  it("ignores paid, billed-but-not-late and fully settled terms", () => {
+    const q = buildActionQueue(input({ billing: [
+      { id: "a", label: "a", state: "paid", daysOverdue: null, outstanding: 0 },
+      { id: "b", label: "b", state: "billed", daysOverdue: null, outstanding: 5 },
+      { id: "c", label: "c", state: "overdue", daysOverdue: 9, outstanding: 0 },
+    ] }));
+    expect(q).toHaveLength(0);
+  });
+
+  it("asks accounting to invoice a term that is due but not invoiced", () => {
+    const q = buildActionQueue(input({ billing: [{ id: "d", label: "Final billing", state: "due-not-invoiced", daysOverdue: null, outstanding: 9_000 }] }));
+    expect(q[0].title).toContain("Ready to invoice");
+  });
+
+  it("flags only retention whose release date has passed, never one with no date", () => {
+    const q = buildActionQueue(input({ retention: [
+      { id: "r1", label: "Retention 10%", outstanding: 50_000, overdue: true, daysUntil: -6 },
+      { id: "r2", label: "Retention B", outstanding: 10_000, overdue: false, daysUntil: 20 },
+      { id: "r3", label: "Retention C", outstanding: 10_000, overdue: null, daysUntil: null },
+    ] }));
+    expect(q.map((i) => i.key)).toEqual(["ret-r1"]);
+  });
+
+  it("nudges approvers about a potential change left unsent for over two weeks", () => {
+    expect(buildActionQueue(input({ potentialChanges: [{ id: "p1", title: "Gate move", createdAt: ago(5) }] }))).toHaveLength(0);
+    expect(buildActionQueue(input({ potentialChanges: [{ id: "p1", title: "Gate move", createdAt: ago(20) }] }))[0].key).toBe("pot-p1");
+    const foreman = { userId: "f", role: "FOREMAN", showMoney: false, showMargin: false };
+    expect(buildActionQueue(input({ viewer: foreman, potentialChanges: [{ id: "p1", title: "Gate move", createdAt: ago(20) }] }))).toHaveLength(0);
+  });
+});
+
 describe("mergeActivity", () => {
   const live = [{ key: "a", type: "report" as const, at: ago(1), title: "DCR-002", detail: "", actor: "Joe", href: "#", refId: "r2" }];
   const logs = [

@@ -201,14 +201,29 @@ function Kpis({ d, now }: { d: OwnerDashboardData; now: Date }) {
         label="Receivables due"
         href="/finance"
         value={<Fig>{phpCompact(k.due.total)}</Fig>}
-        chip={k.due.total > 0 ? <Pill tone="watch">● To collect</Pill> : <Pill tone="ok">✓ Nothing due</Pill>}
+        chip={k.due.overdueCount > 0 ? <Pill tone="watch">▲ Overdue</Pill> : k.due.total > 0 ? <Pill tone="watch">● To collect</Pill> : <Pill tone="ok">✓ Nothing due</Pill>}
         lines={[
           `${k.due.terms} milestone${k.due.terms === 1 ? "" : "s"} · ${k.due.projects} project${k.due.projects === 1 ? "" : "s"}`,
           <span key="r">
             <Fig>{phpCompact(d.retention.total)}</Fig> retention held by clients
           </span>,
-          "No due dates recorded — lateness isn’t measured",
-        ]}
+          k.due.overdueCount > 0 ? (
+            <span key="o" className="font-medium text-red-700 dark:text-red-300">
+              <Fig>{phpCompact(k.due.overdueTotal)}</Fig> past due ({k.due.overdueCount})
+            </span>
+          ) : k.due.hasDueDates ? (
+            "Nothing is past its due date"
+          ) : (
+            "No due dates entered — lateness isn’t measured"
+          ),
+          k.due.noDueDateTotal > 0 ? (
+            <span key="n">
+              <Fig>{phpCompact(k.due.noDueDateTotal)}</Fig> billed with no due date
+            </span>
+          ) : (
+            ""
+          ),
+        ].filter(Boolean)}
       />
       <Kpi
         label="At-risk projects"

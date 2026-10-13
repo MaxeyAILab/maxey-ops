@@ -24,9 +24,12 @@ export function PaymentForm({
   const [attachments, setAttachments] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // One key per attempt: a double click or a retry after a dropped connection records the payment once.
+  const [submitKey, setSubmitKey] = useState(() => crypto.randomUUID());
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (busy) return;
     setBusy(true);
     setError("");
     const fd = new FormData(e.currentTarget);
@@ -41,12 +44,14 @@ export function PaymentForm({
         method: fd.get("method") || undefined,
         reference: fd.get("reference") || undefined,
         attachments,
+        clientUuid: submitKey,
       }),
     });
     setBusy(false);
     if (res.ok) {
       (e.target as HTMLFormElement).reset?.();
       setAttachments([]);
+      setSubmitKey(crypto.randomUUID());
       router.refresh();
     } else setError((await res.json()).error ?? "Failed to record payment");
   }

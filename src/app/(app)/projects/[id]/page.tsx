@@ -40,6 +40,20 @@ import { HEALTH_CHIP, HEALTH_ICON, HEALTH_LABEL, MilestoneTimeline } from "@/com
 import { AddMilestoneForm, MilestoneControls } from "@/components/milestone-actions";
 import { NewRfiForm, RfiControls } from "@/components/rfi-actions";
 import { WorkRequestControls } from "@/components/work-request-actions";
+import { BillingDetailsButton, ChangeLifecycleControls, PotentialChangeForm } from "@/components/commercial-actions";
+import {
+  BILLING_LABEL,
+  billingCoverage,
+  commitmentSummary,
+  costFreshness,
+  paymentTermState,
+  receivablesAging,
+  reconcileContract,
+  retentionSchedule,
+  type BillingState,
+} from "@/lib/billing";
+import { CHANGE_ORDER_LABEL } from "@/lib/change-orders";
+import { requisitionAmount } from "@/lib/requisitions";
 import { canReviewWorkRequest, formatWorkRequestNumber } from "@/lib/work-requests";
 import { Fig, FigureToggle, FigureVisibilityProvider } from "@/components/figure-visibility";
 import { ActivityFeed, ProgressReviewControls, ProjectSectionNav, type ActivityRow } from "@/components/project-overview";
@@ -58,7 +72,22 @@ const IMPACT_LABEL: Record<string, string> = {
   POSSIBLE: "possible",
   ASSESSED: "assessed",
 };
-const CO_LABEL: Record<string, string> = { PENDING_CLIENT: "awaiting client", APPROVED: "approved", REJECTED: "rejected" };
+const CO_LABEL: Record<string, string> = { POTENTIAL: "potential", PENDING_CLIENT: "awaiting client", APPROVED: "approved", REJECTED: "rejected", WITHDRAWN: "withdrawn" };
+const BILLING_TONE: Record<BillingState, string> = {
+  paid: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300",
+  overdue: "bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300",
+  partial: "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300",
+  billed: "bg-blue-100 text-blue-900 dark:bg-blue-950/60 dark:text-blue-300",
+  "due-not-invoiced": "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300",
+  "not-billed": "bg-ink-200 text-ink-700",
+};
+const CO_TONE: Record<string, string> = {
+  POTENTIAL: "bg-blue-100 text-blue-900 dark:bg-blue-950/60 dark:text-blue-300",
+  PENDING_CLIENT: "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300",
+  APPROVED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300",
+  REJECTED: "bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300",
+  WITHDRAWN: "bg-ink-200 text-ink-700",
+};
 
 export default async function ProjectDetailPage({ params }: { params: { id: string } }) {
   const user = await getSessionUser();
@@ -130,14 +159,12 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
   const contractValue = Number(p.contractValue);
   const received = p.payments.reduce((s, x) => s + Number(x.amount), 0);
   const laborCost = p.payrollRuns.reduce((s, r) => s + runGross(r.entries), 0);
+  // Same rule as finance and the dashboard (requisitionAmount): a cancelled PO commits nothing.
   const committed =
     laborCost +
     p.requisitions
       .filter((r) => ["APPROVED", "PO_ISSUED", "DELIVERED"].includes(r.status))
-      .reduce(
-        (s, r) => s + (r.purchaseOrder ? Number(r.purchaseOrder.totalCost) : Number(r.estimatedCost ?? 0)),
-        0
-      );
+      .reduce((s, r) => s + requisitionAmount(r), 0);
   const retentionHeld = p.paymentTerms
     .filter((t) => t.type === "RETENTION" && t.status !== "PAID")
     .reduce((s, t) => s + Number(t.amount), 0);
@@ -151,6 +178,54 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
       label: t.label,
       outstanding: Math.max(Number(t.amount) - t.payments.reduce((s, x) => s + Number(x.amount), 0), 0),
     }));
+
+  // ----- Phase 3: billing, reconciliation, commitments -----
+  const termRows = p.paymentTerms.map((t) => {
+    const paid = t.payments.reduce((sum, x) => sum + Number(x.amount), 0);
+    const input = {
+      status: t.status,
+      amount: Number(t.amount),
+      paid,
+      invoicedAt: t.invoicedAt,
+      certifiedAt: t.certifiedAt,
+      dueDate: t.dueDate,
+    };
+    return { t, paid, input, state: paymentTermState(input, now) };
+  });
+  const aging = receivablesAging(termRows.map((r) => r.input), now);
+  const retentionRows = retentionSchedule(
+    termRows.map((r) => ({
+      id: r.t.id,
+      label: r.t.label,
+      type: r.t.type,
+      status: r.t.status,
+      amount: Number(r.t.amount),
+      paid: r.paid,
+      retentionReleaseDate: r.t.retentionReleaseDate,
+    })),
+    now
+  );
+  const commitments = commitmentSummary(
+    p.requisitions.map((r) => ({
+      status: r.status,
+      estimatedCost: r.estimatedCost != null ? Number(r.estimatedCost) : null,
+      po: r.purchaseOrder ? { totalCost: Number(r.purchaseOrder.totalCost), status: r.purchaseOrder.status } : null,
+    }))
+  );
+  const reconciliation = reconcileContract({
+    currentContract: contractValue,
+    changeOrders: p.changeOrders.map((c) => ({
+      status: c.status,
+      costImpact: Number(c.costImpact),
+      estimatedCost: c.estimatedCost != null ? Number(c.estimatedCost) : null,
+    })),
+  });
+  const coverage = billingCoverage(p.paymentTerms.map((t) => Number(t.amount)), contractValue);
+  const latestCostAt = [
+    ...p.requisitions.filter((r) => ["APPROVED", "PO_ISSUED", "DELIVERED"].includes(r.status)).map((r) => r.approvedAt ?? r.submittedAt),
+    ...p.payrollRuns.map((r) => r.createdAt),
+  ].reduce<Date | null>((max, d) => (!max || d > max ? d : max), null);
+  const costFresh = costFreshness(latestCostAt, new Date());
 
   // Verified progress counts approved entries only; submitted work is shown beside it.
   const workItemStatuses = computeWorkItemStatuses(p.progressEntries);
@@ -244,6 +319,15 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
       estimatedCost: r.estimatedCost != null ? Number(r.estimatedCost) : null,
     })),
     dueTerms,
+    billing: termRows.map((r) => ({
+      id: r.t.id,
+      label: r.t.label,
+      state: r.state.state,
+      daysOverdue: r.state.daysOverdue,
+      outstanding: r.state.outstanding,
+    })),
+    retention: retentionRows.map((r) => ({ id: r.id, label: r.label, outstanding: r.outstanding, overdue: r.overdue, daysUntil: r.daysUntil })),
+    potentialChanges: p.changeOrders.filter((c) => c.status === "POTENTIAL").map((c) => ({ id: c.id, title: c.title, createdAt: c.createdAt })),
     instructions: p.instructions.map((i) => ({
       id: i.id,
       label: i.taskId ?? i.title ?? i.text.slice(0, 40),
@@ -536,6 +620,13 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                         <>
                           forecast profit <Fig>{php(forecast.forecastProfit)}</Fig>
                           {forecast.costState === "early" ? " · early estimate" : ""} · cost to date ÷ verified progress
+                          {costFresh.costAgeDays != null && (
+                            <span className={costFresh.costStale ? "font-medium text-amber-800 dark:text-amber-300" : ""}>
+                              {" "}
+                              · cost data {costFresh.costAgeDays === 0 ? "updated today" : `${costFresh.costAgeDays}d old`}
+                              {costFresh.costStale ? " — stale" : ""}
+                            </span>
+                          )}
                         </>
                       ) : (
                         "not shown until costs and verified progress both exist"
@@ -1014,8 +1105,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                   </tr>
                 </thead>
                 <tbody>
-                  {p.paymentTerms.map((t) => {
-                    const paid = t.payments.reduce((s, x) => s + Number(x.amount), 0);
+                  {termRows.map(({ t, paid, state }) => {
                     return (
                       <tr key={t.id}>
                         <Td>
@@ -1029,7 +1119,34 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                           <Fig>{php(paid)}</Fig>
                         </Td>
                         <Td>
-                          <Badge value={t.status} />
+                          <span className={`inline-block rounded-sm px-2 py-0.5 text-xs font-semibold ${BILLING_TONE[state.state]}`}>
+                            {BILLING_LABEL[state.state]}
+                            {state.daysOverdue ? ` · ${state.daysOverdue}d` : ""}
+                          </span>
+                          <div className="mt-1 space-y-0.5 text-[11px] text-ink-500">
+                            {t.invoicedAt && (
+                              <div>
+                                Invoice {t.invoiceNo ? `${t.invoiceNo} · ` : ""}
+                                {fmtDate(t.invoicedAt)}
+                                {state.certified && t.certifiedAt ? ` · certified ${fmtDate(t.certifiedAt)}` : ""}
+                              </div>
+                            )}
+                            <div>{t.dueDate ? `Due ${fmtDate(t.dueDate)}` : t.invoicedAt ? "No due date entered" : ""}</div>
+                            {t.type === "RETENTION" && t.retentionReleaseDate && <div>Release {fmtDate(t.retentionReleaseDate)}</div>}
+                          </div>
+                          {canRecordPayment && (
+                            <BillingDetailsButton
+                              term={{
+                                id: t.id,
+                                type: t.type,
+                                invoiceNo: t.invoiceNo,
+                                invoicedAt: ymd(t.invoicedAt),
+                                certifiedAt: ymd(t.certifiedAt),
+                                dueDate: ymd(t.dueDate),
+                                retentionReleaseDate: ymd(t.retentionReleaseDate),
+                              }}
+                            />
+                          )}
                         </Td>
                       </tr>
                     );
@@ -1079,19 +1196,45 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                 <div key={co.id} className="rounded-lg border border-ink-100 p-3 text-sm">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-medium text-ink-900">{co.title}</span>
-                    <Badge value={co.status} />
+                    <span className={`rounded-sm px-2 py-0.5 text-xs font-semibold ${CO_TONE[co.status]}`}>{CHANGE_ORDER_LABEL[co.status]}</span>
                   </div>
                   <p className="mt-1 text-xs text-ink-500">{co.description}</p>
+                  {co.reason && <p className="mt-1 text-xs text-ink-500">Why: {co.reason}</p>}
                   <p className="mt-1 text-xs text-ink-600">
-                    {showMoney && (
-                      <>
-                        Cost impact <Fig>{php(co.costImpact.toString())}</Fig>
-                        {co.status === "PENDING_CLIENT" && " (pending — not in contract value)"} ·{" "}
-                      </>
-                    )}
+                    {showMoney &&
+                      (co.status === "POTENTIAL" ? (
+                        <>
+                          {co.estimatedCost != null ? (
+                            <>
+                              Estimate <Fig>{php(co.estimatedCost.toString())}</Fig>
+                            </>
+                          ) : (
+                            "Not priced yet"
+                          )}{" "}
+                          (internal — not in contract value) ·{" "}
+                        </>
+                      ) : (
+                        <>
+                          Cost impact <Fig>{php(co.costImpact.toString())}</Fig>
+                          {co.status === "PENDING_CLIENT" && " (pending — not in contract value)"}
+                          {co.status === "REJECTED" && " (rejected — not in contract value)"}
+                          {co.status === "WITHDRAWN" && " (withdrawn — not in contract value)"} ·{" "}
+                        </>
+                      ))}
                     {co.timeImpactDays} day(s)
                     {co.clientResponseAt && ` · responded ${fmtDateTime(co.clientResponseAt)}`}
                   </p>
+                  {showMoney && co.status === "APPROVED" && co.contractBefore != null && co.contractAfter != null && (
+                    <p className="mt-1 text-[11px] text-ink-500">
+                      Contract value <Fig>{php(co.contractBefore.toString())}</Fig> → <Fig>{php(co.contractAfter.toString())}</Fig>
+                      {co.incorporatedAt && ` on ${fmtDate(co.incorporatedAt)}`}
+                    </p>
+                  )}
+                  {co.status === "WITHDRAWN" && co.withdrawnReason && (
+                    <p className="mt-1 text-[11px] text-ink-500">
+                      Withdrawn{co.withdrawnAt ? ` ${fmtDate(co.withdrawnAt)}` : ""}: {co.withdrawnReason}
+                    </p>
+                  )}
                   {user.role === "OWNER" && co.status === "PENDING_CLIENT" && (
                     <div className="mt-2 flex items-center gap-3">
                       <EditChangeOrderButton
@@ -1106,20 +1249,193 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                       <DeleteChangeOrderButton changeOrderId={co.id} />
                     </div>
                   )}
+                  {canCreateCO && (
+                    <ChangeLifecycleControls
+                      co={{
+                        id: co.id,
+                        status: co.status,
+                        title: co.title,
+                        description: co.description,
+                        estimatedCost: co.estimatedCost != null ? Number(co.estimatedCost) : null,
+                        timeImpactDays: co.timeImpactDays,
+                        reason: co.reason,
+                      }}
+                    />
+                  )}
                 </div>
               ))}
               {p.changeOrders.length === 0 && <p className="text-sm text-ink-400">No change orders.</p>}
               {canCreateCO && (
-                <details className="rounded-lg border border-dashed border-ink-200 p-3">
-                  <summary className="cursor-pointer text-sm font-medium text-ink-700">+ New change order</summary>
-                  <div className="mt-3">
-                    <ChangeOrderForm projectId={p.id} />
-                  </div>
-                </details>
+                <>
+                  <details className="rounded-lg border border-dashed border-ink-200 p-3">
+                    <summary className="cursor-pointer text-sm font-medium text-ink-700">+ New change order (sent to the client now)</summary>
+                    <div className="mt-3">
+                      <ChangeOrderForm projectId={p.id} />
+                    </div>
+                  </details>
+                  <details className="rounded-lg border border-dashed border-ink-200 p-3">
+                    <summary className="cursor-pointer text-sm font-medium text-ink-700">+ Log a potential change (internal, not sent)</summary>
+                    <div className="mt-3">
+                      <PotentialChangeForm projectId={p.id} />
+                    </div>
+                  </details>
+                </>
               )}
             </CardBody>
           </Card>
         </div>
+
+        {showMoney && (
+          <section id="commercial-summary" className="scroll-mt-14 grid gap-4 lg:grid-cols-3 [&>*]:min-w-0">
+            <Card>
+              <CardHeader title="Contract reconciliation" subtitle="Only approved change orders are in the contract value" />
+              <CardBody className="space-y-2 text-sm">
+                <div className="flex justify-between gap-3">
+                  <span className="text-ink-600">Original contract (derived)</span>
+                  <span className="tabular-nums"><Fig>{php(reconciliation.original)}</Fig></span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-ink-600">+ Approved change orders ({reconciliation.approvedCount})</span>
+                  <span className="tabular-nums"><Fig>{php(reconciliation.approvedTotal)}</Fig></span>
+                </div>
+                <div className="flex justify-between gap-3 border-t border-ink-100 pt-2 font-semibold text-ink-900">
+                  <span>= Approved contract value</span>
+                  <span className="tabular-nums"><Fig>{php(reconciliation.current)}</Fig></span>
+                </div>
+                <div className="flex justify-between gap-3 text-xs text-ink-500">
+                  <span>Awaiting client ({reconciliation.pendingCount}) — not included</span>
+                  <span className="tabular-nums"><Fig>{php(reconciliation.pendingTotal)}</Fig></span>
+                </div>
+                <div className="flex justify-between gap-3 text-xs text-ink-500">
+                  <span>
+                    Potential ({reconciliation.potentialCount}) — not included
+                    {reconciliation.potentialUnpriced > 0 && `, ${reconciliation.potentialUnpriced} not priced`}
+                  </span>
+                  <span className="tabular-nums"><Fig>{php(reconciliation.potentialPricedTotal)}</Fig></span>
+                </div>
+                {reconciliation.inconsistent && (
+                  <p className="rounded-sm bg-red-50 px-2 py-1 text-xs text-red-800 dark:bg-red-950/40 dark:text-red-300">
+                    ▲ Approved change orders add up to more than the current contract value — check the contract value.
+                  </p>
+                )}
+                <p className="border-t border-ink-100 pt-2 text-xs text-ink-600">
+                  {coverage.status === "none" && "No billing terms are set up yet."}
+                  {coverage.status === "complete" && "✓ Billing terms add up to the contract value."}
+                  {coverage.status === "under" && (
+                    <>
+                      ● Billing terms cover <Fig>{php(coverage.termsTotal)}</Fig> — <Fig>{php(coverage.difference)}</Fig> of the contract isn’t scheduled for billing yet.
+                    </>
+                  )}
+                  {coverage.status === "over" && (
+                    <>
+                      ▲ Billing terms total <Fig>{php(coverage.termsTotal)}</Fig>, which is <Fig>{php(Math.abs(coverage.difference))}</Fig> more than the contract value.
+                    </>
+                  )}
+                </p>
+              </CardBody>
+            </Card>
+
+            <Card>
+              <CardHeader title="Receivables & retention" subtitle="An invoice is not cash — only recorded payments reduce what is owed" />
+              <CardBody className="space-y-3 text-sm">
+                <div className="space-y-1">
+                  {(
+                    [
+                      ["Overdue", aging.overdueTotal, "text-red-700 dark:text-red-300"],
+                      ["  1–30 days late", aging.days1to30, ""],
+                      ["  31–60 days late", aging.days31to60, ""],
+                      ["  61–90 days late", aging.days61to90, ""],
+                      ["  over 90 days late", aging.days90plus, ""],
+                      ["Billed, not yet due", aging.notYetDue, ""],
+                      ["Billed, no due date entered", aging.noDueDate, "text-amber-800 dark:text-amber-300"],
+                      ["Due, not yet invoiced", aging.notInvoiced, ""],
+                    ] as const
+                  )
+                    .filter(([label, amount]) => amount > 0 || label === "Overdue")
+                    .map(([label, amount, tone]) => (
+                      <div key={label} className={`flex justify-between gap-3 ${tone}`}>
+                        <span className="whitespace-pre text-ink-700">{label}</span>
+                        <span className="tabular-nums"><Fig>{php(amount)}</Fig></span>
+                      </div>
+                    ))}
+                </div>
+                {aging.noDueDate > 0 && (
+                  <p className="text-xs text-amber-800 dark:text-amber-300">
+                    ● Some billed amounts have no due date, so their lateness can’t be measured — add due dates under “Billing details”.
+                  </p>
+                )}
+                <div className="border-t border-ink-100 pt-2">
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-500">Retention held</p>
+                  {retentionRows.length === 0 ? (
+                    <p className="text-xs text-ink-500">No retention outstanding.</p>
+                  ) : (
+                    <ul className="space-y-1 text-xs">
+                      {retentionRows.map((r) => (
+                        <li key={r.id} className="flex justify-between gap-3">
+                          <span className={r.overdue ? "text-red-700 dark:text-red-300" : "text-ink-700"}>
+                            {r.label} ·{" "}
+                            {r.releaseDate
+                              ? r.overdue
+                                ? `release date passed ${Math.abs(r.daysUntil ?? 0)}d ago`
+                                : `release ${fmtDate(r.releaseDate)}`
+                              : "no release date recorded"}
+                          </span>
+                          <span className="tabular-nums"><Fig>{php(r.outstanding)}</Fig></span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </CardBody>
+            </Card>
+
+            {showMargin ? (
+              <Card>
+                <CardHeader title="Commitments" subtitle="A requisition is a request. Only approved ones are committed cost" />
+                <CardBody className="space-y-2 text-sm">
+                  <div className="flex justify-between gap-3 text-ink-500">
+                    <span>Awaiting approval ({commitments.pending.count}) — not committed</span>
+                    <span className="tabular-nums"><Fig>{php(commitments.pending.amount)}</Fig></span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-ink-700">Approved, no PO yet ({commitments.approved.count}) — at estimate</span>
+                    <span className="tabular-nums"><Fig>{php(commitments.approved.amount)}</Fig></span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-ink-700">PO issued ({commitments.ordered.count}) — at PO amount</span>
+                    <span className="tabular-nums"><Fig>{php(commitments.ordered.amount)}</Fig></span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-ink-700">Delivered ({commitments.delivered.count})</span>
+                    <span className="tabular-nums"><Fig>{php(commitments.delivered.amount)}</Fig></span>
+                  </div>
+                  <div className="flex justify-between gap-3 border-t border-ink-100 pt-2">
+                    <span className="text-ink-700">Materials &amp; other committed</span>
+                    <span className="tabular-nums"><Fig>{php(commitments.committedTotal)}</Fig></span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-ink-700">+ Payroll (approved / paid runs)</span>
+                    <span className="tabular-nums"><Fig>{php(laborCost)}</Fig></span>
+                  </div>
+                  <div className="flex justify-between gap-3 border-t border-ink-100 pt-2 font-semibold text-ink-900">
+                    <span>= Committed cost</span>
+                    <span className="tabular-nums"><Fig>{php(commitments.committedTotal + laborCost)}</Fig></span>
+                  </div>
+                  {commitments.approved.withoutEstimate > 0 && (
+                    <p className="text-xs text-amber-800 dark:text-amber-300">
+                      ● {commitments.approved.withoutEstimate} approved requisition{commitments.approved.withoutEstimate === 1 ? " has" : "s have"} no estimate, so it counts as ₱0 until a PO or estimate is entered.
+                    </p>
+                  )}
+                  {Math.abs(commitments.committedTotal + laborCost - committed) > 0.5 && (
+                    <p className="text-xs text-red-700 dark:text-red-300">▲ This doesn’t match the Committed cost figure above — please report it.</p>
+                  )}
+                </CardBody>
+              </Card>
+            ) : (
+              <div />
+            )}
+          </section>
+        )}
 
         {/* Portal access — Owner only (account creation rule) */}
         {user.role === "OWNER" && (

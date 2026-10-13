@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { savePhotos } from "@/lib/storage";
@@ -13,6 +14,7 @@ const createSchema = z.object({
   method: z.string().max(50).optional(),
   reference: z.string().max(100).optional(),
   attachments: z.array(z.string()).max(6).optional(), // check photos / ARs / receipts
+  clientUuid: z.string().uuid().optional(), // one per form submit: a double click or retry records once
 });
 
 /**
@@ -27,8 +29,22 @@ export const POST = handleApi(async (req: NextRequest) => {
   const project = await prisma.project.findUnique({ where: { id: body.projectId } });
   if (!project) throw new ApiError(404, "Project not found");
 
+  // A retry of the same submit returns the payment already recorded instead of adding a second one.
+  if (body.clientUuid) {
+    const existing = await prisma.payment.findUnique({ where: { clientUuid: body.clientUuid } });
+    if (existing) return NextResponse.json(existing, { status: 200 });
+  }
+  // The billing term must belong to this project — otherwise a payment could be booked against
+  // (and mark as paid) another project's term.
+  if (body.paymentTermId) {
+    const term = await prisma.paymentTerm.findUnique({ where: { id: body.paymentTermId }, select: { projectId: true } });
+    if (!term || term.projectId !== body.projectId) throw new ApiError(400, "That billing term isn't part of this project");
+  }
+
   const attachmentUrls = await savePhotos(body.attachments);
-  const payment = await prisma.$transaction(async (db) => {
+  let payment;
+  try {
+    payment = await prisma.$transaction(async (db) => {
     const payment = await db.payment.create({
       data: {
         projectId: body.projectId,
@@ -38,6 +54,7 @@ export const POST = handleApi(async (req: NextRequest) => {
         method: body.method,
         reference: body.reference,
         attachments: attachmentUrls.length ? attachmentUrls : undefined,
+        clientUuid: body.clientUuid,
         recordedById: user.id,
       },
     });
@@ -55,7 +72,16 @@ export const POST = handleApi(async (req: NextRequest) => {
       }
     }
     return payment;
-  });
+    });
+  } catch (err) {
+    // Two identical submits racing past the check above: the unique key lets exactly one through,
+    // and the other gets the payment that was recorded rather than an error.
+    if (body.clientUuid && err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const existing = await prisma.payment.findUnique({ where: { clientUuid: body.clientUuid } });
+      if (existing) return NextResponse.json(existing, { status: 200 });
+    }
+    throw err;
+  }
 
   await audit({
     entityType: "Payment",

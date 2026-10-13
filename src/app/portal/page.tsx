@@ -48,7 +48,8 @@ export default async function PortalPage() {
     where: { clientId: user.clientId },
     include: {
       paymentTerms: { orderBy: { sortOrder: "asc" }, include: { payments: true } },
-      changeOrders: { orderBy: { createdAt: "desc" } },
+      // Internal states (potential, withdrawn) are never shown to the client.
+      changeOrders: { where: { status: { in: ["PENDING_CLIENT", "APPROVED", "REJECTED"] } }, orderBy: { createdAt: "desc" } },
       // No `take` here — the weighted-accomplishment calc needs each work
       // item's latest visible entry, which the timeline list below caps to
       // the most recent 20 separately, for display only.

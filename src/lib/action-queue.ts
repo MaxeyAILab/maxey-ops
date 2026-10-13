@@ -4,6 +4,7 @@ import type { CostState } from "@/lib/forecast";
 import type { MilestoneHealth } from "@/lib/milestones";
 import type { RfiAddresseeLike, RfiDueState, RfiStatusLike } from "@/lib/rfi";
 import type { WorkRequestStatusLike } from "@/lib/work-requests";
+import type { BillingState } from "@/lib/billing";
 
 const DAY = 86_400_000;
 const ageDays = (d: Date, now: Date) => Math.max(0, Math.floor((now.getTime() - d.getTime()) / DAY));
@@ -59,6 +60,9 @@ export interface ActionInput {
     dueState: RfiDueState;
     createdAt: Date;
   }[];
+  billing?: { id: string; label: string; state: BillingState; daysOverdue: number | null; outstanding: number }[];
+  retention?: { id: string; label: string; outstanding: number; overdue: boolean | null; daysUntil: number | null }[];
+  potentialChanges?: { id: string; title: string; createdAt: Date }[];
   workRequests?: { id: string; number: string; title: string; status: WorkRequestStatusLike; createdAt: Date }[];
   milestones?: {
     id: string;
@@ -261,6 +265,71 @@ export function buildActionQueue(input: ActionInput): ActionItem[] {
         amount: null,
         age,
       });
+    }
+  }
+
+  if (viewer.showMoney) {
+    for (const b of input.billing ?? []) {
+      if (b.outstanding <= 0) continue;
+      if (b.state === "overdue") {
+        items.push({
+          key: `bill-${b.id}`,
+          severity: (b.daysOverdue ?? 0) > 30 ? 2 : 1,
+          title: `Payment overdue: ${b.label}`,
+          detail: `${b.daysOverdue}d past the due date — invoice issued, payment not received`,
+          responsible: "Accounting",
+          when: `${b.daysOverdue}d overdue`,
+          href: "#commercial",
+          amount: b.outstanding,
+          age: b.daysOverdue ?? 0,
+        });
+      } else if (b.state === "due-not-invoiced") {
+        items.push({
+          key: `bill-${b.id}`,
+          severity: 1,
+          title: `Ready to invoice: ${b.label}`,
+          detail: "Marked due but no invoice recorded",
+          responsible: "Accounting",
+          when: "Due",
+          href: "#commercial",
+          amount: b.outstanding,
+          age: 0,
+        });
+      }
+    }
+    for (const r of input.retention ?? []) {
+      if (r.overdue) {
+        items.push({
+          key: `ret-${r.id}`,
+          severity: 1,
+          title: `Retention release date passed: ${r.label}`,
+          detail: `${Math.abs(r.daysUntil ?? 0)}d past the expected release — follow up with the client`,
+          responsible: "Accounting",
+          when: `${Math.abs(r.daysUntil ?? 0)}d overdue`,
+          href: "#commercial",
+          amount: r.outstanding,
+          age: Math.abs(r.daysUntil ?? 0),
+        });
+      }
+    }
+  }
+
+  if (isApprover) {
+    for (const c of input.potentialChanges ?? []) {
+      const age = ageDays(c.createdAt, now);
+      if (age > 14) {
+        items.push({
+          key: `pot-${c.id}`,
+          severity: 1,
+          title: `Potential change not yet priced or sent: ${c.title}`,
+          detail: "Decide whether to price it for the client or withdraw it",
+          responsible: "PM / Owner",
+          when: `Logged ${age}d ago`,
+          href: "#changes",
+          amount: null,
+          age,
+        });
+      }
     }
   }
 
