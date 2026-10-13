@@ -16,7 +16,7 @@ const patchSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("acknowledge") }),
   z.object({
     action: z.literal("assess"),
-    estimatedCost: z.coerce.number().min(0).max(1_000_000_000).optional().nullable(),
+    estimatedCost: z.coerce.number().min(-1_000_000_000).max(1_000_000_000).optional().nullable(),
     estimatedDays: z.coerce.number().int().min(0).max(3650).optional().nullable(),
     internalNote: z.string().max(2000).optional().nullable(),
   }),
@@ -62,7 +62,7 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
       throw new ApiError(409, "This request has already been handled, so it can't be withdrawn");
     }
     const res = await prisma.workRequest.updateMany({
-      where: { id: wr.id, status: { in: [...OPEN] } },
+      where: { id: wr.id, source: "PORTAL", status: { in: [...OPEN] } },
       data: { status: "WITHDRAWN", withdrawnAt: new Date() },
     });
     if (res.count === 0) throw new ApiError(409, "This request was just handled by the team — refresh the page");
@@ -120,7 +120,7 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
   }
 
   // ----- convert to a change order -----
-  const problem = validateConversion({ costImpact: body.costImpact, timeImpactDays: body.timeImpactDays });
+  const problem = validateConversion({ costImpact: body.costImpact, timeImpactDays: body.timeImpactDays }, wr.kind);
   if (problem) throw new ApiError(400, problem);
   const costImpact = body.costImpact as number;
   const timeImpactDays = body.timeImpactDays as number;
@@ -171,7 +171,7 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
   });
   await notify({
     to: { name: wr.project.client.name, email: wr.project.client.email, phone: wr.project.client.phone },
-    subject: "Change order awaiting your approval",
+    subject: "Quotation awaiting your approval",
     message: `${co.title} — please review it in your Maxey Construction client portal.`,
   });
 

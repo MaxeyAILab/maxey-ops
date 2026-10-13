@@ -406,8 +406,8 @@ export function buildActionQueue(input: ActionInput): ActionItem[] {
         items.push({
           key: `aw-${w.id}`,
           severity: age > 2 ? 2 : 1,
-          title: `Client requested additional work: ${w.title}`,
-          detail: `${w.number} — acknowledge it, price it, then send a change order or decline`,
+          title: `Client request: ${w.title}`,
+          detail: `${w.number} — acknowledge it, price it, then send a quotation or decline`,
           responsible: "PM / Owner",
           when: age === 0 ? "Requested today" : `Waiting ${age}d`,
           href: "#additional-work",
@@ -418,7 +418,7 @@ export function buildActionQueue(input: ActionInput): ActionItem[] {
         items.push({
           key: `aw-${w.id}`,
           severity: 1,
-          title: `Additional work still under review: ${w.title}`,
+          title: `Client request still being priced: ${w.title}`,
           detail: `${w.number} — the client is waiting for a decision`,
           responsible: "PM / Owner",
           when: `Open ${age}d`,

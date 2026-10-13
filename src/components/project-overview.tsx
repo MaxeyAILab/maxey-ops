@@ -94,7 +94,7 @@ const TYPE_LABELS: Record<ActivityRow["type"], string> = {
   requisition: "Requisitions",
   rfi: "RFIs",
   milestone: "Milestones",
-  request: "Additional work",
+  request: "Client requests",
   quality: "Quality & safety",
   document: "Documents",
 };

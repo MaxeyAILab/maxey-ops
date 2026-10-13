@@ -57,6 +57,10 @@ export const POST = handleApi(
             data: { contractValue: { increment: co.costImpact } },
             select: { contractValue: true },
           });
+          // A credit (reduction) can't take the contract below zero — undo the whole approval if it would.
+          if (Number(project.contractValue) < 0) {
+            throw new ApiError(409, "This credit is larger than the contract value, so it can't be approved — ask the team to correct it");
+          }
           await db.changeOrder.update({
             where: { id: co.id },
             data: {
@@ -65,16 +69,21 @@ export const POST = handleApi(
               incorporatedAt: new Date(),
             },
           });
-          await db.paymentTerm.create({
-            data: {
-              projectId: co.projectId,
-              type: "PARTIAL",
-              label: `Change order: ${co.title}`,
-              amount: co.costImpact,
-              status: "DUE",
-              sortOrder: 99,
-            },
-          });
+          // Additional cost becomes a billing term. A credit doesn't create a negative bill: the contract value
+          // drops, and the billing-schedule check will flag that the schedule now exceeds the contract so the team
+          // adjusts the terms deliberately.
+          if (Number(co.costImpact) > 0) {
+            await db.paymentTerm.create({
+              data: {
+                projectId: co.projectId,
+                type: "PARTIAL",
+                label: `Change order: ${co.title}`,
+                amount: co.costImpact,
+                status: "DUE",
+                sortOrder: 99,
+              },
+            });
+          }
         } else {
           const project = await db.project.findUniqueOrThrow({ where: { id: co.projectId }, select: { contractValue: true } });
           await db.changeOrder.update({

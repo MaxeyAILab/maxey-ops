@@ -41,7 +41,8 @@ import {
 import { HEALTH_CHIP, HEALTH_ICON, HEALTH_LABEL, MilestoneTimeline } from "@/components/milestone-timeline";
 import { AddMilestoneForm, MilestoneControls, MilestoneTemplateButtons } from "@/components/milestone-actions";
 import { NewRfiForm, RfiControls } from "@/components/rfi-actions";
-import { WorkRequestControls } from "@/components/work-request-actions";
+import { RecordInstructionForm, WorkRequestControls } from "@/components/work-request-actions";
+import { RequestThread } from "@/components/request-thread";
 import { BillingDetailsButton, ChangeLifecycleControls, PotentialChangeForm } from "@/components/commercial-actions";
 import {
   BILLING_LABEL,
@@ -73,7 +74,7 @@ import { closeoutProgress } from "@/lib/closeout";
 import { currentRevision, nextRevisionLabel } from "@/lib/documents";
 import { HistoryExportButton } from "@/components/project-overview";
 import { dataQualityGaps } from "@/lib/data-quality";
-import { canReviewWorkRequest, formatWorkRequestNumber } from "@/lib/work-requests";
+import { KIND_LABEL, SOURCE_LABEL, canRecordClientInstruction, canReviewWorkRequest, formatWorkRequestNumber } from "@/lib/work-requests";
 import { Fig, FigureToggle, FigureVisibilityProvider } from "@/components/figure-visibility";
 import { ActivityFeed, ProgressReviewControls, ProjectSectionNav, type ActivityRow } from "@/components/project-overview";
 
@@ -127,7 +128,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
         include: { purchaseOrder: true, submittedBy: { select: { name: true } } },
       },
       payrollRuns: { where: { status: { in: ["APPROVED", "PAID"] } } },
-      changeOrders: { orderBy: { createdAt: "desc" } },
+      changeOrders: { orderBy: { createdAt: "desc" }, include: { workRequest: { select: { number: true } } } },
       progressEntries: {
         orderBy: { createdAt: "desc" },
         include: { submittedBy: { select: { name: true } } },
@@ -512,8 +513,8 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
       key: `aw-${w.id}`,
       type: "request" as const,
       at: w.reviewedAt ?? w.createdAt,
-      title: `${formatWorkRequestNumber(w.number)} ${w.status === "REQUESTED" ? "requested" : w.status === "UNDER_REVIEW" ? "under review" : w.status === "CONVERTED" ? "sent as a change order" : w.status === "DECLINED" ? "declined" : "withdrawn"} — ${w.title}`,
-      detail: "additional work",
+      title: `${formatWorkRequestNumber(w.number)} ${w.status === "REQUESTED" ? "requested" : w.status === "UNDER_REVIEW" ? "under review" : w.status === "CONVERTED" ? "priced and sent as a quotation" : w.status === "DECLINED" ? "declined" : "withdrawn"} — ${w.title}`,
+      detail: "client request",
       actor: w.status === "REQUESTED" || w.status === "WITHDRAWN" ? w.requestedBy.name : (w.reviewedByName ?? w.requestedBy.name),
       href: "#additional-work",
     })),
@@ -596,7 +597,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
     { id: "overview", label: "Overview" },
     { id: "schedule", label: "Schedule" },
     { id: "rfis", label: "RFIs" },
-    { id: "additional-work", label: "Additional work" },
+    { id: "additional-work", label: "Client requests" },
     ...(showMoney ? [{ id: "commercial", label: "Commercial" }] : []),
     { id: "changes", label: "Changes" },
     { id: "progress", label: "Progress" },
@@ -1207,42 +1208,34 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
           </Card>
         </section>
 
-        {/* ---------- Additional work requested by the client ---------- */}
+        {/* ---------- Client requests: additions, changes and reductions ---------- */}
         <section id="additional-work" className="scroll-mt-14">
           <Card>
             <CardHeader
-              title={`Additional work requests (${p.workRequests.filter((w) => w.status === "REQUESTED" || w.status === "UNDER_REVIEW").length} open)`}
-              subtitle="Requests from the client's portal. They carry no price and never change the contract value — send one on as a change order, or decline it with a reason."
+              title={`Client requests (${p.workRequests.filter((w) => w.status === "REQUESTED" || w.status === "UNDER_REVIEW").length} open)`}
+              subtitle="Everything the client asks to add, change or take out — sent from their portal or recorded by us from a call, message, meeting or site visit. A request carries no price and never changes the contract value: price it and send a quotation, or decline it with a reason."
             />
             <CardBody className="space-y-3">
+              {canRecordClientInstruction(user.role) && (
+                <details className="rounded-lg border border-dashed border-ink-200 p-3">
+                  <summary className="cursor-pointer text-sm font-medium text-ink-700">+ Record an instruction the client gave us</summary>
+                  <div className="mt-3">
+                    <RecordInstructionForm projectId={p.id} today={todayKey} />
+                  </div>
+                </details>
+              )}
               {p.workRequests.map((w) => (
                 <div key={w.id} className="rounded-lg border border-ink-100 p-3 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-medium text-ink-900">
                       {formatWorkRequestNumber(w.number)} · {w.title}
                     </span>
-                    <span
-                      className={`rounded-sm px-2 py-0.5 text-xs font-semibold ${
-                        w.status === "REQUESTED"
-                          ? "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300"
-                          : w.status === "UNDER_REVIEW"
-                            ? "bg-blue-100 text-blue-900 dark:bg-blue-950/60 dark:text-blue-300"
-                            : w.status === "CONVERTED"
-                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
-                              : "bg-ink-200 text-ink-700"
-                      }`}
-                    >
-                      {w.status === "REQUESTED"
-                        ? "New request"
-                        : w.status === "UNDER_REVIEW"
-                          ? "Under review"
-                          : w.status === "CONVERTED"
-                            ? "Sent as change order"
-                            : w.status === "DECLINED"
-                              ? "Declined"
-                              : "Withdrawn by client"}
+                    <span className="flex items-center gap-1.5 text-xs">
+                      <span className="rounded-sm bg-ink-200 px-1.5 py-0.5 font-semibold text-ink-700">{KIND_LABEL[w.kind]}</span>
+                      {w.source !== "PORTAL" && <span className="rounded-sm bg-ink-200 px-1.5 py-0.5 font-semibold text-ink-700">{SOURCE_LABEL[w.source]}</span>}
                     </span>
                   </div>
+                  <RequestThread status={w.status} co={w.changeOrder} audience="staff" />
                   <p className="mt-1 whitespace-pre-line text-xs text-ink-700">{w.description}</p>
                   {Array.isArray(w.photos) && (w.photos as string[]).length > 0 && (
                     <div className="mt-2">
@@ -1251,7 +1244,14 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                   )}
                   <div className="mt-1.5 grid gap-x-6 gap-y-0.5 text-xs text-ink-500 sm:grid-cols-2">
                     <div>
-                      Requested by {w.requestedBy.name} · {fmtDateTime(w.createdAt)}
+                      {w.source === "PORTAL" ? (
+                        <>Requested by {w.requestedBy.name} · {fmtDateTime(w.createdAt)}</>
+                      ) : (
+                        <>
+                          Instruction from {w.instructedByName ?? "the client"} ({SOURCE_LABEL[w.source].toLowerCase()}
+                          {w.instructedOn ? `, ${fmtDate(w.instructedOn)}` : ""}) · recorded by {w.requestedBy.name} on {fmtDateTime(w.createdAt)}
+                        </>
+                      )}
                     </div>
                     {w.reviewedByName && (
                       <div>
@@ -1268,7 +1268,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                     )}
                     {w.changeOrder && (
                       <div>
-                        Change order: {w.changeOrder.title} ({CO_LABEL[w.changeOrder.status] ?? w.changeOrder.status.toLowerCase()}) — see Changes
+                        Quotation: {w.changeOrder.title} ({CO_LABEL[w.changeOrder.status] ?? w.changeOrder.status.toLowerCase()}) — see Changes
                       </div>
                     )}
                   </div>
@@ -1281,6 +1281,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                         status: w.status,
                         title: w.title,
                         description: w.description,
+                        kind: w.kind,
                         estimatedCost: w.estimatedCost != null ? Number(w.estimatedCost) : null,
                         estimatedDays: w.estimatedDays,
                         internalNote: w.internalNote,
@@ -1290,7 +1291,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                 </div>
               ))}
               {p.workRequests.length === 0 && (
-                <p className="text-sm text-ink-400">No additional work requested yet. Clients can send requests from their portal.</p>
+                <p className="text-sm text-ink-400">No client requests yet. Clients can send them from their portal, and you can record ones they give by phone, message or on site.</p>
               )}
             </CardBody>
           </Card>
@@ -1400,7 +1401,12 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
               {p.changeOrders.map((co) => (
                 <div key={co.id} className="rounded-lg border border-ink-100 p-3 text-sm">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium text-ink-900">{co.title}</span>
+                    <span className="font-medium text-ink-900">
+                      {co.title}
+                      {co.workRequest && (
+                        <span className="ml-2 rounded-sm bg-ink-200 px-1.5 py-0.5 text-[10px] font-semibold text-ink-700">From client request {formatWorkRequestNumber(co.workRequest.number)}</span>
+                      )}
+                    </span>
                     <span className={`rounded-sm px-2 py-0.5 text-xs font-semibold ${CO_TONE[co.status]}`}>{CHANGE_ORDER_LABEL[co.status]}</span>
                   </div>
                   <p className="mt-1 text-xs text-ink-500">{co.description}</p>
@@ -1421,6 +1427,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                       ) : (
                         <>
                           Cost impact <Fig>{php(co.costImpact.toString())}</Fig>
+                          {Number(co.costImpact) < 0 && " (a credit — lowers the contract if approved)"}
                           {co.status === "PENDING_CLIENT" && " (pending — not in contract value)"}
                           {co.status === "REJECTED" && " (rejected — not in contract value)"}
                           {co.status === "WITHDRAWN" && " (withdrawn — not in contract value)"} ·{" "}

@@ -32,7 +32,7 @@ export function ChangeOrderRespond({ changeOrderId }: { changeOrderId: string })
       <div className="space-y-2">
         <p className="text-sm text-ink-700">
           {confirming === "APPROVED"
-            ? "By approving, you authorize this additional work including its cost and schedule impact. This is recorded with your name and a timestamp."
+            ? "By approving, you authorize this change, including its price and schedule impact. This is recorded with your name and a timestamp."
             : "Reject this change order? This is recorded with your name and a timestamp."}
         </p>
         <div className="flex gap-2">

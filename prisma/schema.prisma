@@ -232,6 +232,21 @@ enum WorkRequestStatus {
   WITHDRAWN
 }
 
+enum WorkRequestKind {
+  ADDITION // new work added to the contract
+  CHANGE // a change to work already in the contract (may cost more or less)
+  REDUCTION // scope taken out — priced as a credit back to the client
+}
+
+enum WorkRequestSource {
+  PORTAL // the client sent it themselves
+  PHONE
+  MESSAGE // text / chat
+  EMAIL
+  MEETING
+  SITE // said on site
+}
+
 enum MilestoneStatus {
   NOT_STARTED
   IN_PROGRESS
@@ -1130,8 +1145,13 @@ model WorkRequest {
   title           String
   description     String
   photos          Json?
-  requestedById   String
+  requestedById   String // the client user, or the staff member who recorded the instruction
   requestedBy     User              @relation("WorkRequester", fields: [requestedById], references: [id])
+  kind            WorkRequestKind   @default(ADDITION)
+  source          WorkRequestSource @default(PORTAL)
+  instructedByName String? // who at the client gave the instruction (when staff recorded it)
+  instructedOn    DateTime?         @db.Date // the day it was given
+  clientUuid      String?           @unique // offline idempotency for instructions recorded on site
   status          WorkRequestStatus @default(REQUESTED)
   createdAt       DateTime          @default(now())
   // Staff assessment — the estimate and note are internal until a change order is sent.

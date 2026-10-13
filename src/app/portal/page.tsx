@@ -15,7 +15,9 @@ import { formatRfiNumber } from "@/lib/rfi";
 import { HEALTH_CHIP, HEALTH_ICON } from "@/components/milestone-timeline";
 import { ClientRfiRespond } from "@/components/rfi-actions";
 import { NewWorkRequestForm, WithdrawWorkRequestButton } from "@/components/work-request-actions";
-import { clientStatusLabel, formatWorkRequestNumber, isOpenWorkRequest } from "@/lib/work-requests";
+import { KIND_LABEL, SOURCE_LABEL, formatWorkRequestNumber, isOpenWorkRequest } from "@/lib/work-requests";
+import { RequestThread } from "@/components/request-thread";
+import { costImpactWording } from "@/lib/change-orders";
 
 // A client sees a plain status, never internal planning detail like "no baseline".
 const CLIENT_HEALTH: Record<string, string> = {
@@ -49,7 +51,11 @@ export default async function PortalPage() {
     include: {
       paymentTerms: { orderBy: { sortOrder: "asc" }, include: { payments: true } },
       // Internal states (potential, withdrawn) are never shown to the client.
-      changeOrders: { where: { status: { in: ["PENDING_CLIENT", "APPROVED", "REJECTED"] } }, orderBy: { createdAt: "desc" } },
+      changeOrders: {
+        where: { status: { in: ["PENDING_CLIENT", "APPROVED", "REJECTED"] } },
+        orderBy: { createdAt: "desc" },
+        include: { workRequest: { select: { number: true } } },
+      },
       // No `take` here — the weighted-accomplishment calc needs each work
       // item's latest visible entry, which the timeline list below caps to
       // the most recent 20 separately, for display only.
@@ -81,7 +87,7 @@ export default async function PortalPage() {
           revisions: { where: { current: true }, select: { revision: true, url: true, fileName: true, createdAt: true }, take: 1 },
         },
       },
-      // The client's own additional-work requests. The team's estimate and
+      // The client's requests (their own and ones the team recorded for them). The team's estimate and
       // internal note are never selected — a price only reaches the client as a change order.
       workRequests: {
         orderBy: { number: "desc" },
@@ -93,6 +99,11 @@ export default async function PortalPage() {
           status: true,
           createdAt: true,
           declineReason: true,
+          kind: true,
+          source: true,
+          instructedByName: true,
+          instructedOn: true,
+          requestedBy: { select: { name: true } },
           changeOrder: { select: { title: true, status: true } },
         },
       },
@@ -262,17 +273,25 @@ export default async function PortalPage() {
               {pendingCOs.length > 0 && (
                 <Card className="border-amber-300">
                   <CardHeader
-                    title={`⚠ ${pendingCOs.length} change order(s) awaiting your approval`}
+                    title={`⚠ ${pendingCOs.length} quotation${pendingCOs.length === 1 ? "" : "s"} (change order${pendingCOs.length === 1 ? "" : "s"}) awaiting your approval`}
                     subtitle="Work cannot proceed on these items until you respond"
                   />
                   <CardBody className="space-y-4">
                     {pendingCOs.map((co) => (
                       <div key={co.id} className="rounded-lg border border-ink-100 p-4">
-                        <div className="font-semibold text-ink-900">{co.title}</div>
+                        <div className="font-semibold text-ink-900">
+                          {co.title}
+                          {co.workRequest && (
+                            <span className="ml-2 rounded-sm bg-ink-200 px-1.5 py-0.5 text-[10px] font-semibold text-ink-700">Your request {formatWorkRequestNumber(co.workRequest.number)}</span>
+                          )}
+                        </div>
                         <p className="mt-1 text-sm text-ink-600">{co.description}</p>
                         <p className="mt-2 text-sm font-medium text-ink-800">
-                          Additional cost: {php(co.costImpact.toString())} · Schedule impact:{" "}
-                          {co.timeImpactDays} day(s)
+                          {(() => {
+                            const w = costImpactWording(Number(co.costImpact));
+                            return w.amount == null ? w.label : `${w.label}: ${php(w.amount.toString())}`;
+                          })()}{" "}
+                          · Schedule impact: {co.timeImpactDays} day(s)
                         </p>
                         <div className="mt-3">
                           <ChangeOrderRespond changeOrderId={co.id} />
@@ -377,7 +396,10 @@ export default async function PortalPage() {
                               className="flex items-center justify-between rounded-lg border border-ink-100 px-3 py-2 text-sm"
                             >
                               <div>
-                                <div className="font-medium text-ink-800">{co.title}</div>
+                                <div className="font-medium text-ink-800">
+                                  {co.title}
+                                  {co.workRequest && <span className="ml-2 text-xs font-normal text-ink-400">({formatWorkRequestNumber(co.workRequest.number)})</span>}
+                                </div>
                                 <div className="text-xs text-ink-400">
                                   {co.clientResponseAt
                                     ? `Responded ${fmtDate(co.clientResponseAt)}`
@@ -394,7 +416,10 @@ export default async function PortalPage() {
               </div>
 
               <Card>
-                <CardHeader title="Request additional work" subtitle="Want something added or changed? Tell us — we'll assess it and get back to you." />
+                <CardHeader
+                  title="Request a change or addition"
+                  subtitle="Want something added, changed or taken out? Tell us — we'll price it and send you a quotation to approve."
+                />
                 <CardBody className="space-y-4">
                   <details className="rounded-lg border border-dashed border-ink-200 p-3" open={p.workRequests.length === 0}>
                     <summary className="cursor-pointer text-sm font-medium text-ink-700">+ New request</summary>
@@ -404,25 +429,27 @@ export default async function PortalPage() {
                   </details>
                   {p.workRequests.length > 0 && (
                     <div className="space-y-2">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">Your requests</p>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">Your requests and quotations</p>
                       {p.workRequests.map((w) => (
                         <div key={w.id} className="rounded-lg border border-ink-100 px-3 py-2 text-sm">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="font-medium text-ink-800">
                               {formatWorkRequestNumber(w.number)} · {w.title}
                             </div>
-                            <span className="rounded-sm bg-ink-200 px-2 py-0.5 text-xs font-semibold text-ink-700">{clientStatusLabel(w.status)}</span>
+                            <span className="rounded-sm bg-ink-200 px-1.5 py-0.5 text-xs font-semibold text-ink-700">{KIND_LABEL[w.kind]}</span>
                           </div>
-                          <p className="mt-1 whitespace-pre-line text-xs text-ink-500">{w.description}</p>
-                          <p className="mt-1 text-xs text-ink-400">Sent {fmtDateTime(w.createdAt)}</p>
-                          {w.status === "CONVERTED" && w.changeOrder && (
-                            <p className="mt-1 text-xs text-ink-600">
-                              We've sent you a change order, “{w.changeOrder.title}”
-                              {w.changeOrder.status === "PENDING_CLIENT" ? " — please review it in the approval section above." : ` (${w.changeOrder.status.toLowerCase()}).`}
-                            </p>
+                          <RequestThread status={w.status} co={w.changeOrder} audience="client" />
+                          <p className="mt-2 whitespace-pre-line text-xs text-ink-500">{w.description}</p>
+                          <p className="mt-1 text-xs text-ink-400">
+                            {w.source === "PORTAL"
+                              ? `Sent ${fmtDateTime(w.createdAt)}`
+                              : `Recorded by ${w.requestedBy.name} from your ${SOURCE_LABEL[w.source].toLowerCase()}${w.instructedByName ? ` with ${w.instructedByName}` : ""}${w.instructedOn ? ` on ${fmtDate(w.instructedOn)}` : ""}`}
+                          </p>
+                          {w.status === "CONVERTED" && w.changeOrder?.status === "PENDING_CLIENT" && (
+                            <p className="mt-1 text-xs font-medium text-ink-700">Please review the quotation in the approval section above.</p>
                           )}
                           {w.status === "DECLINED" && w.declineReason && <p className="mt-1 text-xs text-ink-600">Our reply: {w.declineReason}</p>}
-                          {isOpenWorkRequest(w.status) && (
+                          {isOpenWorkRequest(w.status) && w.source === "PORTAL" && (
                             <div className="mt-1.5">
                               <WithdrawWorkRequestButton id={w.id} />
                             </div>

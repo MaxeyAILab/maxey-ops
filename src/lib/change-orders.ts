@@ -24,3 +24,13 @@ export const affectsContractValue = (s: ChangeOrderStatusLike) => s === "APPROVE
 
 /** Sending needs an explicit price and time — a blank is never turned into zero. */
 export const validateSend = (input: { costImpact: number | null | undefined; timeImpactDays: number | null | undefined }) => validateConversion(input);
+
+/**
+ * How a change order's price reads to the client. A negative amount is a credit
+ * back to them (a reduction), never "additional cost" shown with a minus sign.
+ */
+export function costImpactWording(cost: number): { label: string; amount: number | null } {
+  if (cost < 0) return { label: "Credit to you", amount: Math.abs(cost) };
+  if (cost === 0) return { label: "No change in price", amount: null };
+  return { label: "Additional cost", amount: cost };
+}
