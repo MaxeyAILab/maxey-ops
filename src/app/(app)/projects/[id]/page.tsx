@@ -37,7 +37,7 @@ import {
   rfiDueState,
 } from "@/lib/rfi";
 import { HEALTH_CHIP, HEALTH_ICON, HEALTH_LABEL, MilestoneTimeline } from "@/components/milestone-timeline";
-import { AddMilestoneForm, MilestoneControls } from "@/components/milestone-actions";
+import { AddMilestoneForm, MilestoneControls, MilestoneTemplateButtons } from "@/components/milestone-actions";
 import { NewRfiForm, RfiControls } from "@/components/rfi-actions";
 import { WorkRequestControls } from "@/components/work-request-actions";
 import { BillingDetailsButton, ChangeLifecycleControls, PotentialChangeForm } from "@/components/commercial-actions";
@@ -70,6 +70,7 @@ import {
 import { closeoutProgress } from "@/lib/closeout";
 import { currentRevision, nextRevisionLabel } from "@/lib/documents";
 import { HistoryExportButton } from "@/components/project-overview";
+import { dataQualityGaps } from "@/lib/data-quality";
 import { canReviewWorkRequest, formatWorkRequestNumber } from "@/lib/work-requests";
 import { Fig, FigureToggle, FigureVisibilityProvider } from "@/components/figure-visibility";
 import { ActivityFeed, ProgressReviewControls, ProjectSectionNav, type ActivityRow } from "@/components/project-overview";
@@ -324,6 +325,25 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
   const canRaise = canRaiseRfi(user.role, "INTERNAL");
   const openRfis = p.rfis.filter((r) => r.status === "OPEN" || r.status === "ANSWERED");
   const closedRfis = p.rfis.filter((r) => r.status === "CLOSED" || r.status === "CANCELLED");
+
+  const quality = dataQualityGaps({
+    now,
+    status: p.status,
+    startDate: p.startDate,
+    targetEndDate: p.targetEndDate,
+    hasManager: manager != null,
+    milestoneCount: p.milestones.length,
+    milestonesWithBaseline: p.milestones.filter((m) => m.baselineFinish != null).length,
+    progressEntryCount: p.progressEntries.length,
+    weightsTotal,
+    lastProgressAt: p.progressEntries[0]?.createdAt ?? null,
+    progressPct: accomplishmentPct,
+    committed,
+    billingTermCount: p.paymentTerms.length,
+    billingCoverage: coverage.status,
+    billedWithoutDueDate: termRows.filter((r) => r.t.invoicedAt && !r.t.dueDate && r.state.state !== "paid").length,
+    closeoutTotal: closeout.total,
+  });
 
   const actions = buildActionQueue({
     now,
@@ -910,6 +930,35 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
             </CardBody>
           </Card>
 
+          {canManageQuality && quality.checksRun > 0 && (
+            <Card>
+              <CardHeader
+                title="Data completeness"
+                subtitle={`${quality.passed} of ${quality.checksRun} checks pass — missing data is shown here instead of being read as “fine”`}
+              />
+              <CardBody>
+                {quality.gaps.length === 0 ? (
+                  <p className="text-sm text-emerald-800 dark:text-emerald-300">✓ This project’s records are complete and current for its stage.</p>
+                ) : (
+                  <ul className="space-y-1.5 text-sm">
+                    {quality.gaps.map((g) => (
+                      <li key={g.key} className="flex flex-wrap items-baseline justify-between gap-x-3">
+                        <span>
+                          <span className={g.severity === 2 ? "text-red-700 dark:text-red-300" : "text-amber-800 dark:text-amber-300"}>{g.severity === 2 ? "▲" : "●"}</span>{" "}
+                          <span className="font-medium text-ink-900">{g.label}</span>
+                          <span className="text-xs text-ink-500"> — {g.fix}</span>
+                        </span>
+                        <a href={g.href} className="text-xs font-medium text-brand-600 hover:underline">
+                          Fix →
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardBody>
+            </Card>
+          )}
+
           <Card>
             <CardHeader title="Recent site activity" subtitle="Progress, daily reports, changes, requisitions and payments — newest first" />
             <CardBody>
@@ -985,6 +1034,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                 </div>
               ))}
               {milestoneRows.length === 0 && <p className="text-sm text-ink-400">No milestones yet.</p>}
+              {canCreateCO && milestoneRows.length === 0 && <MilestoneTemplateButtons projectId={p.id} defaultStart={ymd(p.startDate) ?? todayKey} />}
               {canCreateCO && (
                 <details className="rounded-lg border border-dashed border-ink-200 p-3">
                   <summary className="cursor-pointer text-sm font-medium text-ink-700">+ Add milestone</summary>

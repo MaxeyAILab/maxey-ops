@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Input, Label, Select, Textarea } from "@/components/ui";
 import { PhotoInput } from "@/components/photo-input";
+import { submitOrQueue } from "@/lib/outbox";
 
 interface Option {
   id: string;
@@ -93,6 +94,7 @@ export function NewRfiForm({
   const [error, setError] = useState("");
   const [addressedTo, setAddressedTo] = useState<"INTERNAL" | "CLIENT">("INTERNAL");
   const [photos, setPhotos] = useState<string[]>([]);
+  const [savedNote, setSavedNote] = useState("");
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -102,25 +104,32 @@ export function NewRfiForm({
     const form = e.currentTarget;
     const fd = new FormData(form);
     const v = (k: string) => (fd.get(k) as string) || null;
-    const r = await send("/api/rfis", "POST", {
-      projectId,
-      subject: fd.get("subject"),
-      question: fd.get("question"),
-      addressedTo,
-      assigneeId: addressedTo === "INTERNAL" ? v("assigneeId") : null,
-      dueDate: v("dueDate"),
-      workItem: v("workItem"),
-      dailyReportNo: v("dailyReportNo"),
-      milestoneId: v("milestoneId"),
-      documentId: v("documentId"),
-      photos,
+    // Goes through the offline outbox: with no signal it is kept on the device and sent later,
+    // and the idempotency key means it can never be raised twice.
+    const r = await submitOrQueue({
+      url: "/api/rfis",
+      label: `RFI: ${fd.get("subject")}`,
+      body: {
+        projectId,
+        subject: fd.get("subject"),
+        question: fd.get("question"),
+        addressedTo,
+        assigneeId: addressedTo === "INTERNAL" ? v("assigneeId") : null,
+        dueDate: v("dueDate"),
+        workItem: v("workItem"),
+        dailyReportNo: v("dailyReportNo"),
+        milestoneId: v("milestoneId"),
+        documentId: v("documentId"),
+        photos,
+      },
     });
     setBusy(false);
     if (r.ok) {
       form.reset();
       setPhotos([]);
+      setSavedNote(r.queued ? "No signal — saved on this device and it will send automatically when you're back online." : "");
       router.refresh();
-    } else setError(r.error);
+    } else setError(r.error ?? "Could not save the RFI");
   }
 
   return (
@@ -199,6 +208,7 @@ export function NewRfiForm({
       )}
       <PhotoInput label="Photos / sketches" max={4} onChange={setPhotos} />
       {error && <p className="text-sm text-red-600">{error}</p>}
+      {savedNote && <p className="text-sm text-emerald-700">{savedNote}</p>}
       <Button type="submit" disabled={busy} className="w-full">
         {busy ? "Sending…" : addressedTo === "CLIENT" ? "Send to client" : "Raise RFI"}
       </Button>

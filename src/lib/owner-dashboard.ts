@@ -206,6 +206,8 @@ export interface OwnerDashboardData {
   nonProject: { label: string; total: number; count: number }[];
   nonProjectTotal: number;
   freshness: Freshness[];
+  /** How many in-construction projects have a basic record gap — counts only, no judgement. */
+  dataGaps: { projects: number; noTargetDate: number; noManager: number; staleProgress: number; noCost: number };
 }
 
 export async function getOwnerDashboard(filters: DashboardFilters): Promise<OwnerDashboardData> {
@@ -689,6 +691,16 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
   const atRiskTop =
     [...atRiskRows].sort((a, b) => b.severity - a.severity)[0]?.issues[0]?.label ?? null;
 
+  const live = rows.filter((r) => !r.isCompleted && !r.isProspective);
+  const working = live.filter((r) => r.status === "ONGOING_CONSTRUCTION" || r.status === "MOBILIZATION");
+  const dataGaps = {
+    projects: live.length,
+    noTargetDate: live.filter((r) => !r.targetEnd).length,
+    noManager: live.filter((r) => !r.manager).length,
+    staleProgress: working.filter((r) => !r.lastProgressAt || daysBetween(r.lastProgressAt, now) > 14).length,
+    noCost: live.filter((r) => r.costState === "no-cost").length,
+  };
+
   return {
     generatedAt: now,
     filters,
@@ -764,6 +776,7 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
     },
     nonProject: nonProject.byCategory.map((c) => ({ label: c.label, total: c.total, count: c.count })),
     nonProjectTotal: nonProject.total,
+    dataGaps,
     freshness: [
       {
         source: "Progress",

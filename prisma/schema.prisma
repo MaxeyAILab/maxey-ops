@@ -992,6 +992,7 @@ model Rfi {
   projectId         String
   project           Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
   number            Int
+  clientUuid        String?      @unique // offline idempotency: raised from site without signal
   subject           String
   question          String
   addressedTo       RfiAddressee @default(INTERNAL)

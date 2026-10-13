@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { notifyOwner } from "@/lib/notify";
+import { notifyUser } from "@/lib/notify-user";
 import { savePhotos } from "@/lib/storage";
 import { parseDates } from "@/lib/date-input";
 import { canCancelRfi, canCloseRfi, canManageRfi, canRespondToRfi, formatRfiNumber } from "@/lib/rfi";
@@ -97,6 +98,9 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
       action: "RFI_ANSWERED",
       diff: { project: rfi.project.name, number: label, onBehalfOfClient: verdict.onBehalfOfClient },
     });
+    if (rfi.raisedById !== user.id) {
+      await notifyUser(rfi.raisedById, "Your RFI was answered", `${label} on ${rfi.project.name} has an answer — open Maxey Ops to review and close it.`);
+    }
     if (user.role === "CLIENT") {
       await notifyOwner(`RFI answered by client`, `${user.name} answered ${label} “${rfi.subject}” on ${rfi.project.name}`);
     }

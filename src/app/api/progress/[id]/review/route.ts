@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
+import { notifyUser } from "@/lib/notify-user";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 
 const schema = z.object({
@@ -74,6 +75,10 @@ export const POST = handleApi(
         note: body.note ?? null,
       },
     });
+
+    if (body.decision === "QUERIED" && entry.submittedById !== user.id) {
+      await notifyUser(entry.submittedById, "A progress entry was queried", `Your update on ${entry.project.name} needs a correction — open Maxey Ops to see the note.`);
+    }
 
     return NextResponse.json({ ok: true, status: body.decision });
   }

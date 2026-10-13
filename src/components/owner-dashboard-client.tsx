@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -58,6 +58,26 @@ export function DashboardControls({
   const params = useSearchParams();
   const [pending, startTransition] = useTransition();
 
+  // "Save as my default view": remembered on this device, and applied when the page is opened
+  // with no filters in the address. It is only ever applied once per visit, so it can't loop.
+  const [savedView, setSavedView] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("maxey:dashboard-view");
+      setSavedView(saved);
+      if (saved && params.toString() === "") router.replace(`${pathname}?${saved}`);
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const currentView = params.toString();
+  function saveView() {
+    try {
+      if (currentView) localStorage.setItem("maxey:dashboard-view", currentView);
+      else localStorage.removeItem("maxey:dashboard-view");
+      setSavedView(currentView || null);
+    } catch {}
+  }
+
   function setParam(key: string, value: string, fallback: string) {
     const next = new URLSearchParams(params.toString());
     if (!value || value === fallback) next.delete(key);
@@ -111,6 +131,13 @@ export function DashboardControls({
         >
           {pending ? "Refreshing…" : "↻ Refresh"}
         </button>
+        {(savedView ?? "") === currentView ? (
+          savedView ? <span className="whitespace-nowrap text-xs text-ink-500">✓ Your default view</span> : null
+        ) : (
+          <button type="button" onClick={saveView} className="rounded-sm border border-ink-200 bg-ink-50 px-2.5 py-1.5 text-xs font-medium text-ink-700 hover:bg-ink-100">
+            {currentView ? "Save as my default view" : "Reset my default view"}
+          </button>
+        )}
         <span className="whitespace-nowrap text-xs text-ink-500">Updated {time}</span>
         <FigureToggle />
       </div>

@@ -586,6 +586,32 @@ export default async function DashboardPage({
           </Panel>
         </div>
 
+        <Panel title="Data completeness" subtitle="Basic records missing on projects in construction — so a gap isn't mistaken for a healthy zero">
+          {d.dataGaps.projects === 0 ? (
+            <p className="text-sm text-ink-500">No projects in construction to check.</p>
+          ) : d.dataGaps.noTargetDate + d.dataGaps.noManager + d.dataGaps.staleProgress + d.dataGaps.noCost === 0 ? (
+            <p className="text-sm text-emerald-800 dark:text-emerald-300">✓ All {d.dataGaps.projects} project{d.dataGaps.projects === 1 ? "" : "s"} in construction have a target date, a PM, recent progress and recorded costs.</p>
+          ) : (
+            <ul className="grid gap-2 text-sm sm:grid-cols-2">
+              {(
+                [
+                  ["No target finish date", d.dataGaps.noTargetDate],
+                  ["No project manager assigned", d.dataGaps.noManager],
+                  ["No progress update in 14+ days", d.dataGaps.staleProgress],
+                  ["Progress reported but no cost recorded", d.dataGaps.noCost],
+                ] as const
+              ).map(([label, n]) => (
+                <li key={label} className="flex justify-between gap-3 rounded-sm bg-ink-100 px-3 py-2">
+                  <span className="text-ink-700">{label}</span>
+                  <span className={`font-semibold tabular-nums ${n > 0 ? "text-amber-800 dark:text-amber-300" : "text-emerald-800 dark:text-emerald-300"}`}>
+                    {n} of {d.dataGaps.projects}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+
         <Panel title="Non-project expenses" subtitle="Emergency, office and warehouse purchases — not counted in any project’s cost or margin">
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {d.nonProject.map((c) => (

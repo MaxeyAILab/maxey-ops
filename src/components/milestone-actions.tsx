@@ -314,3 +314,47 @@ export function MilestoneControls({ m, isOwner, staff }: { m: EditableMilestone;
     </div>
   );
 }
+
+/** Start an empty schedule from a template (forecast dates only — the Owner still sets the baseline). */
+export function MilestoneTemplateButtons({ projectId, defaultStart }: { projectId: string; defaultStart: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function apply(template: "building" | "civil", startDate: string) {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    const r = await send("/api/milestones/template", "POST", { projectId, template, startDate: startDate || null });
+    setBusy(false);
+    if (r.ok) router.refresh();
+    else setError(r.error);
+  }
+
+  return (
+    <form
+      className="space-y-2 rounded-sm border border-dashed border-ink-200 p-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+      }}
+    >
+      <p className="text-sm font-medium text-ink-700">Start from a template</p>
+      <p className="text-xs text-ink-500">
+        Lays the usual phases end to end from the start date as <em>forecast</em> dates for you to adjust. It is not an approved plan — the Owner sets the baseline afterwards.
+      </p>
+      <div>
+        <Label htmlFor="tpl-start">Start date</Label>
+        <Input id="tpl-start" name="start" type="date" defaultValue={defaultStart} />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" disabled={busy} className="text-xs" onClick={(e) => apply("building", (e.currentTarget.form!.elements.namedItem("start") as HTMLInputElement).value)}>
+          Building construction
+        </Button>
+        <Button type="button" variant="secondary" disabled={busy} className="text-xs" onClick={(e) => apply("civil", (e.currentTarget.form!.elements.namedItem("start") as HTMLInputElement).value)}>
+          Civil / road works
+        </Button>
+      </div>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </form>
+  );
+}

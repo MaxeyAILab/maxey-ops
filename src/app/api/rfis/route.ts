@@ -3,6 +3,8 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
+import { notify } from "@/lib/notify";
+import { notifyUser } from "@/lib/notify-user";
 import { savePhotos } from "@/lib/storage";
 import { parseDates } from "@/lib/date-input";
 import { canRaiseRfi, formatRfiNumber } from "@/lib/rfi";
@@ -11,6 +13,8 @@ import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 
 const createSchema = z.object({
   projectId: z.string().min(1),
+  clientUuid: z.string().uuid().optional(),
+  submittedAt: z.coerce.date().optional(), // device time, from the offline outbox
   subject: z.string().trim().min(3).max(200),
   question: z.string().trim().min(3).max(5000),
   addressedTo: z.enum(["INTERNAL", "CLIENT"]).default("INTERNAL"),
@@ -36,7 +40,15 @@ export const POST = handleApi(async (req: NextRequest) => {
     throw new ApiError(403, "Only the PM or Owner can send an RFI to the client");
   }
 
-  const project = await prisma.project.findUnique({ where: { id: body.projectId }, select: { id: true, name: true } });
+  if (body.clientUuid) {
+    const existing = await prisma.rfi.findUnique({ where: { clientUuid: body.clientUuid }, select: { id: true } });
+    if (existing) return NextResponse.json({ error: "Already synced", id: existing.id }, { status: 409 });
+  }
+
+  const project = await prisma.project.findUnique({
+    where: { id: body.projectId },
+    select: { id: true, name: true, client: { select: { name: true, email: true, phone: true } } },
+  });
   if (!project) throw new ApiError(404, "Project not found");
 
   const { dueDate } = parseDates(body, ["dueDate"]);
@@ -53,6 +65,7 @@ export const POST = handleApi(async (req: NextRequest) => {
         data: {
           projectId: body.projectId,
           number,
+          clientUuid: body.clientUuid,
           subject: body.subject,
           question: body.question,
           addressedTo: body.addressedTo,
@@ -64,6 +77,7 @@ export const POST = handleApi(async (req: NextRequest) => {
           documentId: body.documentId || null,
           photos: photos.length ? photos : undefined,
           raisedById: user.id,
+          ...(body.submittedAt ? { createdAt: body.submittedAt } : {}),
         },
       });
       await audit({
@@ -74,9 +88,26 @@ export const POST = handleApi(async (req: NextRequest) => {
         action: "RFI_RAISED",
         diff: { project: project.name, number: formatRfiNumber(number), subject: body.subject, addressedTo: body.addressedTo },
       });
+      // Short, neutral messages — the detail stays in the app, where permissions are enforced.
+      if (body.addressedTo === "INTERNAL" && body.assigneeId && body.assigneeId !== user.id) {
+        await notifyUser(body.assigneeId, "An RFI was assigned to you", `${formatRfiNumber(number)} on ${project.name} needs your answer — open Maxey Ops.`);
+      }
+      if (body.addressedTo === "CLIENT") {
+        await notify({
+          to: { name: project.client.name, email: project.client.email, phone: project.client.phone },
+          subject: "A question from Maxey Construction",
+          message: `${formatRfiNumber(number)} on ${project.name} needs your answer — please open your Maxey Construction client portal.`,
+        });
+      }
       return NextResponse.json(rfi, { status: 201 });
     } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") continue; // number taken — retry
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        if (body.clientUuid) {
+          const existing = await prisma.rfi.findUnique({ where: { clientUuid: body.clientUuid }, select: { id: true } });
+          if (existing) return NextResponse.json({ error: "Already synced", id: existing.id }, { status: 409 });
+        }
+        continue; // number taken — retry
+      }
       throw err;
     }
   }

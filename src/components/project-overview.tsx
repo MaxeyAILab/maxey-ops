@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
@@ -108,9 +108,24 @@ const dateFmt = new Intl.DateTimeFormat("en-PH", {
 });
 
 export function ActivityFeed({ rows }: { rows: ActivityRow[] }) {
-  const [filter, setFilter] = useState<ActivityRow["type"] | "all">("all");
+  const [filter, setFilterState] = useState<ActivityRow["type"] | "all">("all");
+  // Remember the chosen filter on this device (a per-person convenience, so it's kept locally).
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("maxey:activity-filter");
+      if (saved) setFilterState(saved as ActivityRow["type"] | "all");
+    } catch {}
+  }, []);
+  const setFilter = (f: ActivityRow["type"] | "all") => {
+    setFilterState(f);
+    try {
+      localStorage.setItem("maxey:activity-filter", f);
+    } catch {}
+  };
   const types = Array.from(new Set(rows.map((r) => r.type)));
-  const shown = filter === "all" ? rows : rows.filter((r) => r.type === filter);
+  // A remembered filter for a type that has no rows here would hide everything — fall back to All.
+  const activeFilter = filter !== "all" && !types.includes(filter) ? "all" : filter;
+  const shown = activeFilter === "all" ? rows : rows.filter((r) => r.type === activeFilter);
 
   return (
     <div>
@@ -120,9 +135,9 @@ export function ActivityFeed({ rows }: { rows: ActivityRow[] }) {
             key={t}
             type="button"
             onClick={() => setFilter(t)}
-            aria-pressed={filter === t}
+            aria-pressed={activeFilter === t}
             className={`min-h-[32px] rounded-sm border px-2.5 text-xs font-medium ${
-              filter === t ? "border-brand-500 bg-brand-50 text-brand-700" : "border-ink-200 text-ink-600 hover:bg-ink-100"
+              activeFilter === t ? "border-brand-500 bg-brand-50 text-brand-700" : "border-ink-200 text-ink-600 hover:bg-ink-100"
             }`}
           >
             {t === "all" ? "All" : TYPE_LABELS[t]}
@@ -157,7 +172,7 @@ export function ActivityFeed({ rows }: { rows: ActivityRow[] }) {
 
 export function ProjectSectionNav({ sections }: { sections: { id: string; label: string }[] }) {
   return (
-    <nav aria-label="Project sections" className="-mx-4 overflow-x-auto border-b border-ink-200 bg-ink-100/95 px-4 backdrop-blur md:sticky md:top-0 md:z-10">
+    <nav aria-label="Project sections" className="sticky top-[3.6rem] z-10 -mx-4 overflow-x-auto border-b border-ink-200 bg-ink-100/95 px-4 backdrop-blur md:top-0">
       <ul className="flex gap-1 whitespace-nowrap py-1.5 text-sm">
         {sections.map((s) => (
           <li key={s.id}>
