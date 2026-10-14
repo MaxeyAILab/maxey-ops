@@ -5,10 +5,11 @@ import crypto from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi } from "@/lib/rbac";
+import { MAX_PASSWORD_LENGTH, validatePassword } from "@/lib/password-policy";
 
 const schema = z.object({
   token: z.string().min(1),
-  newPassword: z.string().min(8).max(100),
+  newPassword: z.string().max(MAX_PASSWORD_LENGTH),
 });
 
 /**
@@ -28,12 +29,17 @@ export const POST = handleApi(async (req: NextRequest) => {
     throw new ApiError(400, "This reset link is invalid or has expired. Request a new one.");
   }
 
+  const problem = validatePassword(body.newPassword, { email: record.user.email, name: record.user.name });
+  if (problem) throw new ApiError(400, problem);
+
   await prisma.$transaction([
     prisma.user.update({
       where: { id: record.userId },
       data: {
         passwordHash: await bcrypt.hash(body.newPassword, 10),
         mustChangePassword: false,
+        // A reset signs the account out everywhere: whoever may have had the old password loses their session.
+        currentSessionId: null,
       },
     }),
     prisma.passwordResetToken.update({

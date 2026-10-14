@@ -5,6 +5,7 @@ import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Label } from "@/components/ui";
+import { parseLockedError } from "@/lib/login-throttle";
 
 // Deliberately not using the shared Input/Button primitives here — this page
 // keeps the original burgundy accent while the rest of the app moved to the
@@ -30,7 +31,12 @@ export function LoginForm() {
     });
     setBusy(false);
     if (res?.error) {
-      setError("Invalid email or password.");
+      const minutes = parseLockedError(res.error);
+      setError(
+        minutes != null
+          ? `Too many wrong attempts. Sign-in is paused for about ${minutes} minute${minutes === 1 ? "" : "s"} — wait and try again, or use “Forgot password?”.`
+          : "Invalid email or password."
+      );
       return;
     }
     router.push(params.get("callbackUrl") ?? "/dashboard");
@@ -61,7 +67,11 @@ export function LoginForm() {
           className={inputClass}
         />
       </div>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && (
+        <p role="alert" className="text-sm text-red-600">
+          {error}
+        </p>
+      )}
       <button
         type="submit"
         disabled={busy}
@@ -69,6 +79,9 @@ export function LoginForm() {
       >
         {busy ? "Signing in…" : "Sign in"}
       </button>
+      <p className="text-center text-xs text-ink-500">
+        Each account can be signed in on one device at a time — signing in here signs you out anywhere else.
+      </p>
     </form>
   );
 }

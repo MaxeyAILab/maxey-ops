@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button, Input, Label } from "@/components/ui";
+import { MIN_PASSWORD_LENGTH } from "@/lib/password-policy";
 
 export function ChangePasswordForm({
   required,
@@ -18,8 +19,8 @@ export function ChangePasswordForm({
     setError("");
     const fd = new FormData(e.currentTarget);
     const pw = String(fd.get("newPassword") ?? "");
-    if (pw.length < 8) {
-      setError("Use at least 8 characters.");
+    if (pw.length < MIN_PASSWORD_LENGTH) {
+      setError(`Use at least ${MIN_PASSWORD_LENGTH} characters.`);
       return;
     }
     if (pw !== fd.get("confirm")) {
@@ -57,12 +58,12 @@ export function ChangePasswordForm({
         </p>
       </div>
       <div>
-        <Label htmlFor="newPassword">New password (min 8 characters)</Label>
-        <Input id="newPassword" name="newPassword" type="password" required minLength={8} autoComplete="new-password" />
+        <Label htmlFor="newPassword">New password (at least 10 characters — a short sentence works well)</Label>
+        <Input id="newPassword" name="newPassword" type="password" required minLength={MIN_PASSWORD_LENGTH} autoComplete="new-password" />
       </div>
       <div>
         <Label htmlFor="confirm">Confirm new password</Label>
-        <Input id="confirm" name="confirm" type="password" required minLength={8} autoComplete="new-password" />
+        <Input id="confirm" name="confirm" type="password" required minLength={MIN_PASSWORD_LENGTH} autoComplete="new-password" />
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
       <Button type="submit" disabled={busy} className="w-full">

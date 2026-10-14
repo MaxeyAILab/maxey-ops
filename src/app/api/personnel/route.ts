@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { ASSIGNABLE_MENUS } from "@/lib/access";
+import { validatePassword } from "@/lib/password-policy";
 
 const ASSIGNABLE_ROLES = ["PM", "FOREMAN", "PURCHASING", "ACCOUNTING", "DRIVER", "OFFICE"] as const;
 const ASSIGNABLE_MENU_HREFS = new Set(ASSIGNABLE_MENUS.map((m) => m.href));
@@ -18,7 +19,7 @@ const createSchema = z.object({
   hourlyRate: z.coerce.number().positive().optional(),
   phone: z.string().max(30).optional().or(z.literal("")),
   email: z.string().email().optional().or(z.literal("")), // optional: not everyone logs in
-  password: z.string().min(6).max(100).optional().or(z.literal("")),
+  password: z.string().max(100).optional().or(z.literal("")),
   // Site workers: assign directly to a project roster on creation
   projectId: z.string().optional().or(z.literal("")),
   projectStartDate: z.coerce.date().optional(),
@@ -66,6 +67,10 @@ export const POST = handleApi(async (req: NextRequest) => {
     if (!project) throw new ApiError(400, "Unknown project");
   }
 
+  if (body.password) {
+    const problem = validatePassword(body.password, { email, name: body.name });
+    if (problem) throw new ApiError(400, `Password: ${problem}`);
+  }
   const password = body.password || crypto.randomBytes(12).toString("hex");
   const hourlyRate = body.hourlyRate ?? Number(body.dailyRate) / 8;
 

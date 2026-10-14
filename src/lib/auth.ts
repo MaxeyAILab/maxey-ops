@@ -4,6 +4,8 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import { prisma } from "@/lib/prisma";
+import { clearAttempts, beginAttempt, failAttempt } from "@/lib/login-guard";
+import { clientIp, lockedError } from "@/lib/login-throttle";
 import type { Department, Role } from "@prisma/client";
 
 export interface SessionUser {
@@ -16,10 +18,13 @@ export interface SessionUser {
   mustChangePassword: boolean;
   useCustomMenus: boolean;
   customMenus: string[];
-  /** Single-device login tag (every role but OWNER) — undefined for Owner,
-   * who is exempt and may be signed in on multiple devices at once. */
+  /** Single-device login tag, set for every role including the Owner. */
   sessionId?: string;
 }
+
+// Compared against when the email isn't an account, so a missing account takes as long to refuse as a wrong password
+// does — otherwise response time would reveal which emails are registered.
+let dummyHash: string | null = null;
 
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
@@ -31,25 +36,37 @@ export const authOptions: NextAuthOptions = {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         if (!credentials?.email || !credentials.password) return null;
+
+        // Lockout: every attempt is recorded before the password is checked. Too many wrong passwords
+        // for an email from one place (or for one email / from one place overall) pauses sign-in for
+        // about 15 minutes — see src/lib/login-throttle.ts. The check applies to emails that don't
+        // exist too, so a lock can't be used to find out which emails are registered.
+        const attempt = await beginAttempt("LOGIN", credentials.email, clientIp(req?.headers?.["x-forwarded-for"]));
+        if (attempt.blocked) throw new Error(lockedError(attempt.blocked.minutes));
+
         const user = await prisma.user.findUnique({
           where: { email: credentials.email.toLowerCase().trim() },
         });
-        if (!user || !user.active) return null;
-        const ok = await bcrypt.compare(credentials.password, user.passwordHash);
-        if (!ok) return null;
-
-        // Single-device login (every role but Owner, per business rule —
-        // shared/simultaneous logins were driving load concerns). Each
-        // successful login overwrites currentSessionId, so whatever session
-        // a previous device was holding stops matching on its next request
-        // and getSessionUser() treats it as signed out.
-        let sessionId: string | undefined;
-        if (user.role !== "OWNER") {
-          sessionId = crypto.randomBytes(24).toString("hex");
-          await prisma.user.update({ where: { id: user.id }, data: { currentSessionId: sessionId } });
+        if (!user || !user.active) {
+          dummyHash ??= await bcrypt.hash("not-a-real-account", 10);
+          await bcrypt.compare(credentials.password, dummyHash);
+          await failAttempt(attempt);
+          return null;
         }
+        const ok = await bcrypt.compare(credentials.password, user.passwordHash);
+        if (!ok) {
+          await failAttempt(attempt);
+          return null;
+        }
+        await clearAttempts(attempt);
+
+        // Single-device login — every role, the Owner included. Each successful login
+        // overwrites currentSessionId, so whatever session a previous device was holding
+        // stops matching on its next request and getSessionUser() treats it as signed out.
+        const sessionId = crypto.randomBytes(24).toString("hex");
+        await prisma.user.update({ where: { id: user.id }, data: { currentSessionId: sessionId } });
 
         return {
           id: user.id,
@@ -90,8 +107,8 @@ export const authOptions: NextAuthOptions = {
  * so a deactivated account (client after turnover, resigned staff) loses
  * access immediately — not just at next login — and so password-change state
  * is always fresh. This is also the enforcement point for single-device
- * login: every role but Owner is logged out the instant a newer login
- * elsewhere has overwritten currentSessionId.
+ * login: every role, the Owner included, is logged out the instant a newer
+ * login elsewhere (or a password reset) has overwritten currentSessionId.
  */
 export async function getSessionUser(): Promise<SessionUser | null> {
   const session = await getServerSession(authOptions);
@@ -112,8 +129,8 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     },
   });
   if (!dbUser?.active) return null;
-  if (dbUser.role !== "OWNER" && dbUser.currentSessionId !== su.sessionId) {
-    return null; // signed in from another device since this session started
+  if (!dbUser.currentSessionId || dbUser.currentSessionId !== su.sessionId) {
+    return null; // signed in from another device (or the password was reset) since this session started
   }
   return {
     ...su,

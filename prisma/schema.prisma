@@ -1287,3 +1287,30 @@ model AuditLog {
 
   @@index([entityType, entityId])
 }
+
+// ---------- Sign-in protection ----------
+
+enum AuthAttemptKind {
+  LOGIN
+  RESET // forgot-password requests
+}
+
+enum AuthAttemptResult {
+  PENDING // recorded before the password is checked, so a burst of parallel guesses is still counted
+  FAIL
+  BLOCKED // refused by the lockout; kept for the record but never counted toward it
+}
+
+// Successful sign-ins leave no row. Rows older than a day are deleted as new attempts arrive.
+model AuthAttempt {
+  id        String            @id @default(cuid())
+  kind      AuthAttemptKind
+  result    AuthAttemptResult
+  email     String // lower-cased text as typed — also recorded for emails that don't exist, so lockout looks the same either way
+  ip        String
+  createdAt DateTime          @default(now())
+
+  @@index([email, ip, createdAt])
+  @@index([ip, createdAt])
+  @@index([email, createdAt])
+}

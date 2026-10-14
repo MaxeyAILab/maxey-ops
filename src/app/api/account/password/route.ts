@@ -3,10 +3,11 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
-import { handleApi, requireUser } from "@/lib/rbac";
+import { ApiError, handleApi, requireUser } from "@/lib/rbac";
+import { MAX_PASSWORD_LENGTH, validatePassword } from "@/lib/password-policy";
 
 const schema = z.object({
-  newPassword: z.string().min(8).max(100),
+  newPassword: z.string().max(MAX_PASSWORD_LENGTH),
 });
 
 /**
@@ -17,6 +18,8 @@ const schema = z.object({
 export const POST = handleApi(async (req: NextRequest) => {
   const user = await requireUser();
   const body = schema.parse(await req.json());
+  const problem = validatePassword(body.newPassword, { email: user.email, name: user.name });
+  if (problem) throw new ApiError(400, problem);
 
   await prisma.user.update({
     where: { id: user.id },
