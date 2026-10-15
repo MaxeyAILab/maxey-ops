@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PDFDocument } from "pdf-lib";
 import type { PayrollEntry } from "./payroll";
-import { buildPayslip, nextSlipRefs, payslipDateLabel, payslipPeriodLabel, slipFileName, slipMoney, slipYear } from "./payslip";
+import { buildPayslip, daysFromHours, nextSlipRefs, slipDays, payslipDateLabel, payslipPeriodLabel, slipFileName, slipMoney, slipYear } from "./payslip";
 import { SLIP_H, SLIP_W, buildPayslipsPdf } from "./payslip-pdf";
 
 const manila = (day: string, time = "00:00") => new Date(`${day}T${time}:00+08:00`);
@@ -56,6 +56,30 @@ describe("payslip wording", () => {
     expect(slipFileName("Jonnel Magno", manila("2026-09-30", "23:59"), true)).toBe("payslip-jonnel-magno-2026-09-30.pdf");
     expect(slipFileName("OFFICE", manila("2026-09-30", "23:59"), false)).toBe("payslips-office-2026-09-30.pdf");
     expect(slipFileName("!!!", manila("2026-09-30", "23:59"), true)).toBe("payslip-payslip-2026-09-30.pdf");
+  });
+});
+
+describe("days on the payslip", () => {
+  it("are the paid hours in 8-hour days, so they always agree with the hours", () => {
+    expect(daysFromHours(104)).toBe(13);
+    expect(daysFromHours(96)).toBe(12);
+    expect(daysFromHours(100)).toBe(12.5);
+    expect(daysFromHours(91.93)).toBe(11.49);
+    expect(daysFromHours(0)).toBe(0);
+  });
+
+  it("ignore how many days someone clocked in — an edited register must still add up", () => {
+    // the real case: 12 days clocked (96 hrs), Owner added the rest of the cutoff day by hand -> 104 hrs
+    const m = buildPayslip(entry({ daysWorked: 12, regularHours: 104 }), emp, run);
+    expect(m.earnings.days).toBe(13);
+    expect(m.earnings.regularHours).toBe(104);
+  });
+
+  it("prints without trailing zeros", () => {
+    expect(slipDays(13)).toBe("13");
+    expect(slipDays(12.5)).toBe("12.5");
+    expect(slipDays(11.49)).toBe("11.49");
+    expect(slipDays(1)).toBe("1");
   });
 });
 

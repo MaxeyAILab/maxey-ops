@@ -1,7 +1,7 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import { COMPANY } from "@/lib/company";
 import { PAYSLIP_LOGO_PNG_BASE64 } from "@/lib/payslip-logo";
-import { slipMoney, type PayslipModel } from "@/lib/payslip";
+import { slipDays, slipMoney, type PayslipModel } from "@/lib/payslip";
 
 /**
  * Draws payslips in the company's own form. Each payslip is portrait, 3 1/8 in x 5 1/2 in:
@@ -132,7 +132,7 @@ function drawSlip(page: PDFPage, x: number, top: number, slip: PayslipModel, f: 
   const e = slip.earnings;
   const dataH = 28;
   draw(page, `${e.regularHours} hrs`, xs[0] + 3, y - 11, 6.8, f.regular);
-  draw(page, `${e.daysWorked} day${e.daysWorked === 1 ? "" : "s"}`, xs[0] + 3, y - 20, 6, f.regular, "left", SOFT);
+  draw(page, `${slipDays(e.days)} day${e.days === 1 ? "" : "s"}`, xs[0] + 3, y - 20, 6, f.regular, "left", SOFT);
   draw(page, slipMoney(e.hourlyRate), xs[2] - 3, y - 11, 6.8, f.regular, "right");
   draw(page, "per hr", xs[2] - 3, y - 20, 6, f.regular, "right", SOFT);
   if (e.otHours > 0) {

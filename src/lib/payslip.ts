@@ -31,7 +31,7 @@ export interface PayslipModel {
   projectName: string | null;
   earnings: {
     regularHours: number;
-    daysWorked: number;
+    days: number; // regularHours in 8-hour days
     hourlyRate: number;
     otHours: number;
     otPay: number;
@@ -77,6 +77,18 @@ const DEPARTMENT_LABEL: Record<string, string> = {
   ENGINEER: "Engineer",
 };
 
+/**
+ * The days a payslip shows: the regular hours it pays, in 8-hour days (104 hrs = 13 days, 100 hrs = 12.5 days).
+ * Derived from the hours, never from the count of days someone clocked in, because the Owner can edit the register's
+ * hours (for example to add the rest of a cutoff day) and the days must always agree with the hours being paid.
+ */
+export function daysFromHours(regularHours: number): number {
+  return Math.round((regularHours / PAYROLL_CONFIG.regularHoursPerDay) * 100) / 100;
+}
+
+/** "13", "12.5", "11.49" — no trailing zeros. */
+export const slipDays = (days: number) => String(Number(days.toFixed(2)));
+
 export function buildPayslip(entry: PayrollEntry & { slipRef?: string }, employee: SlipEmployeeInfo, run: SlipRunInfo): PayslipModel {
   const otPay = r2(entry.otHours * entry.hourlyRate * PAYROLL_CONFIG.otMultiplier);
   const deductions: PayslipModel["deductions"] = [
@@ -96,7 +108,7 @@ export function buildPayslip(entry: PayrollEntry & { slipRef?: string }, employe
     projectName: run.projectName,
     earnings: {
       regularHours: entry.regularHours,
-      daysWorked: entry.daysWorked,
+      days: daysFromHours(entry.regularHours),
       hourlyRate: entry.hourlyRate,
       otHours: entry.otHours,
       otPay,
