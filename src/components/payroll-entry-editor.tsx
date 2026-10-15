@@ -100,7 +100,10 @@ export function EditablePayrollTable({ runId, initialEntries }: { runId: string;
           <tbody>
             {entries.map((e) => (
               <tr key={e.userId} className="border-b border-ink-50">
-                <td className="px-2 py-1.5 font-medium">{e.name}</td>
+                <td className="px-2 py-1.5 font-medium">
+                  {e.name}
+                  {e.manual && <span className="ml-1.5 rounded-sm bg-ink-200 px-1 py-0.5 text-[10px] font-semibold text-ink-600">added by hand</span>}
+                </td>
                 <td className="px-2 py-1.5 text-right tabular-nums text-ink-500">{e.daysWorked}</td>
                 {(["regularHours", "otHours", "hourlyRate"] as const).map((field) => (
                   <td key={field} className="px-2 py-1.5">
@@ -153,5 +156,79 @@ export function EditablePayrollTable({ runId, initialEntries }: { runId: string;
         {error && <span className="text-sm text-red-600">{error}</span>}
       </div>
     </div>
+  );
+}
+
+export interface AddPersonCandidate {
+  id: string;
+  name: string;
+  /** Hourly rate worked out from their profile, or null when none is set. */
+  rate: number | null;
+}
+
+/**
+ * Owner/PM: put someone on this run who isn't on it — for example the Owner, who doesn't clock in. The hours start
+ * at a full period of working days (Monday–Saturday × 8) and the rate comes from their profile; both can be changed
+ * here, and everything can still be edited in the register afterwards. Only while the run is a draft or in review.
+ */
+export function AddPersonToRun({ runId, candidates, defaultHours, workingDays }: { runId: string; candidates: AddPersonCandidate[]; defaultHours: number; workingDays: number }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [userId, setUserId] = useState(candidates[0]?.id ?? "");
+  const chosen = candidates.find((c) => c.id === userId);
+
+  if (candidates.length === 0) return null;
+
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    const fd = new FormData(e.currentTarget);
+    const rate = fd.get("rate");
+    const res = await fetch(`/api/payroll/${runId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "add_person", userId, regularHours: fd.get("hours"), ...(rate ? { hourlyRate: rate } : {}) }),
+    });
+    setBusy(false);
+    if (res.ok) router.refresh();
+    else setError(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? "Could not add the person");
+  }
+
+  return (
+    <details className="rounded-lg border border-dashed border-ink-200 p-3">
+      <summary className="cursor-pointer text-sm font-medium text-ink-700">+ Add a person to this run</summary>
+      <form onSubmit={onSubmit} className="mt-3 space-y-3">
+        <p className="text-xs text-ink-500">
+          For someone who isn&apos;t on the run because they didn&apos;t clock in. Save any edits in the table above first — adding a person reloads it.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div>
+            <label htmlFor="ap-person" className="mb-1 block text-xs font-medium text-ink-700">Person</label>
+            <select id="ap-person" value={userId} onChange={(ev) => setUserId(ev.target.value)} className="block min-h-[40px] w-full rounded-lg border border-ink-200 bg-ink-50 px-2 text-sm">
+              {candidates.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="ap-hours" className="mb-1 block text-xs font-medium text-ink-700">Regular hours</label>
+            <input id="ap-hours" name="hours" type="number" min="0" max="500" step="0.01" required defaultValue={defaultHours} className="block min-h-[40px] w-full rounded-lg border border-ink-200 bg-ink-50 px-2 text-sm tabular-nums" />
+            <p className="mt-0.5 text-[11px] text-ink-400">{workingDays} working days × 8 hrs</p>
+          </div>
+          <div>
+            <label htmlFor="ap-rate" className="mb-1 block text-xs font-medium text-ink-700">Rate per hour</label>
+            <input id="ap-rate" name="rate" type="number" min="0" step="0.01" placeholder={chosen?.rate ? String(Math.round(chosen.rate * 100) / 100) : "from profile"} className="block min-h-[40px] w-full rounded-lg border border-ink-200 bg-ink-50 px-2 text-sm tabular-nums" />
+            <p className="mt-0.5 text-[11px] text-ink-400">{chosen?.rate ? "Leave blank to use the rate from their profile" : "No rate on their profile — enter one"}</p>
+          </div>
+        </div>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <button type="submit" disabled={busy} className="inline-flex min-h-[40px] items-center rounded-lg bg-brand-500 px-4 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50">
+          {busy ? "Adding…" : "Add to this run"}
+        </button>
+      </form>
+    </details>
   );
 }

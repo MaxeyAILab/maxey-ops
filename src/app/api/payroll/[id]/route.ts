@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
-import { PAYROLL_CONFIG, normalizeEntries, type PayrollEntry } from "@/lib/payroll";
+import { PAYROLL_CONFIG, hourlyRateForUser, normalizeEntries, pricedEntry, type PayrollEntry } from "@/lib/payroll";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { ensureSlipRefs } from "@/lib/payslip-refs";
 
@@ -22,6 +22,13 @@ const patchSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("set_status"), status: z.enum(["REVIEW", "APPROVED", "PAID"]) }),
   z.object({ action: z.literal("cancel_approval") }),
   z.object({ action: z.literal("update_entries"), entries: z.array(entryEditSchema).min(1) }),
+  z.object({
+    action: z.literal("add_person"),
+    userId: z.string().min(1),
+    regularHours: z.coerce.number().min(0).max(500),
+    otHours: z.coerce.number().min(0).max(500).default(0),
+    hourlyRate: z.coerce.number().min(0).max(100000).optional(),
+  }),
 ]);
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -71,6 +78,7 @@ export const PATCH = handleApi(
           net: r2(net),
           // A reference number, once issued, stays with the person on this run.
           ...(prior.slipRef ? { slipRef: prior.slipRef } : {}),
+          ...(prior.manual ? { manual: true } : {}),
         };
       });
       // Keep any existing entry not present in the submitted edit list —
@@ -95,6 +103,52 @@ export const PATCH = handleApi(
       });
 
       return NextResponse.json(updated);
+    }
+
+    if (body.action === "add_person") {
+      const user = await requireUser(["OWNER", "PM"]);
+      const result = await prisma.$transaction(async (db) => {
+        // Lock the run so two edits at once can't overwrite each other's version of the entries.
+        await db.$queryRaw`SELECT id FROM "PayrollRun" WHERE id = ${params.id} FOR UPDATE`;
+        const run = await db.payrollRun.findUnique({ where: { id: params.id }, include: { project: { select: { name: true } } } });
+        if (!run) throw new ApiError(404, "Payroll run not found");
+        if (!["DRAFT", "REVIEW"].includes(run.status)) {
+          throw new ApiError(400, `Cannot add anyone to a run that's ${run.status} — the Owner can cancel the approval first, then add them`);
+        }
+        const existing = normalizeEntries(run.entries as unknown as PayrollEntry[]);
+        if (existing.some((e) => e.userId === body.userId)) throw new ApiError(400, "That person is already on this run");
+
+        const person = await db.user.findFirst({ where: { id: body.userId, active: true, role: { not: "CLIENT" } } });
+        if (!person) throw new ApiError(400, "That person isn't an active staff member");
+
+        let rate = body.hourlyRate;
+        if (run.projectId) {
+          const assignment = await db.projectAssignment.findFirst({ where: { projectId: run.projectId, userId: person.id, active: true } });
+          if (!assignment) throw new ApiError(400, "That person isn't on this project's roster");
+          rate ??= Number(assignment.hourlyRate);
+        } else {
+          if (person.department !== run.department) throw new ApiError(400, `That person isn't in the ${run.department} department`);
+          rate ??= hourlyRateForUser(person, run.periodStart);
+        }
+        if (!(rate > 0)) throw new ApiError(400, "No pay rate is set for this person — enter a rate here, or set one in Personnel");
+
+        // Priced on the rate as the register shows it (to the centavo), so saving the register later can't move the gross.
+        const shownRate = Math.round(rate * 100) / 100;
+        const entry: PayrollEntry = { ...pricedEntry({ id: person.id, name: person.name }, 0, body.regularHours, body.otHours, shownRate), manual: true };
+        const entries = [...existing, entry].sort((a, b) => a.name.localeCompare(b.name));
+        await db.payrollRun.update({ where: { id: run.id }, data: { entries: entries as never } });
+        return { run, entry, workers: entries.length };
+      });
+
+      await audit({
+        entityType: "PayrollRun",
+        entityId: result.run.id,
+        actorId: user.id,
+        actorName: user.name,
+        action: "PAYROLL_PERSON_ADDED",
+        diff: { person: result.entry.name, regularHours: result.entry.regularHours, otHours: result.entry.otHours, hourlyRate: result.entry.hourlyRate, gross: result.entry.gross, workers: result.workers },
+      });
+      return NextResponse.json({ ok: true, entry: result.entry });
     }
 
     if (body.action === "cancel_approval") {

@@ -3,10 +3,10 @@ import { notFound, redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fmtDate, fmtDateTime, php } from "@/lib/format";
-import { normalizeEntries, type PayrollEntry } from "@/lib/payroll";
+import { hourlyRateForUser, normalizeEntries, workingDaysInPeriod, type PayrollEntry } from "@/lib/payroll";
 import { Badge, Card, CardBody, CardHeader, Table, Td, Th } from "@/components/ui";
 import { PayrollStatusButtons } from "@/components/payroll-actions";
-import { EditablePayrollTable } from "@/components/payroll-entry-editor";
+import { AddPersonToRun, EditablePayrollTable } from "@/components/payroll-entry-editor";
 import { PrintButton } from "@/components/print-button";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +34,20 @@ export default async function PayrollRunPage({ params }: { params: { id: string 
     }),
     { gross: 0, deductions: 0, net: 0 }
   );
+
+  // People who could be added by hand: not already on the run, and eligible for it (the run's department, or the project roster).
+  let candidates: { id: string; name: string; rate: number | null }[] = [];
+  if (canEdit) {
+    const onRun = new Set(entries.map((e) => e.userId));
+    if (run.projectId) {
+      const roster = await prisma.projectAssignment.findMany({ where: { projectId: run.projectId, active: true }, include: { user: { select: { id: true, name: true, active: true } } } });
+      candidates = roster.filter((a) => a.user.active && !onRun.has(a.userId)).map((a) => ({ id: a.userId, name: a.user.name, rate: Number(a.hourlyRate) || null }));
+    } else if (run.department) {
+      const staff = await prisma.user.findMany({ where: { department: run.department, active: true, role: { not: "CLIENT" } }, orderBy: { name: "asc" } });
+      candidates = staff.filter((u) => !onRun.has(u.id)).map((u) => ({ id: u.id, name: u.name, rate: hourlyRateForUser(u, run.periodStart) || null }));
+    }
+  }
+  const periodWorkingDays = workingDaysInPeriod(run.periodStart, run.periodEnd);
 
   const auditTrail = await prisma.auditLog.findMany({
     where: { entityType: "PayrollRun", entityId: run.id },
@@ -104,7 +118,11 @@ export default async function PayrollRunPage({ params }: { params: { id: string 
         />
         <CardBody>
           {canEdit ? (
-            <EditablePayrollTable runId={run.id} initialEntries={entries} />
+            <div className="space-y-4">
+              {/* keyed by who is on the run, so adding a person reloads the table with them in it */}
+              <EditablePayrollTable key={entries.map((e) => e.userId).join(",")} runId={run.id} initialEntries={entries} />
+              <AddPersonToRun runId={run.id} candidates={candidates} defaultHours={periodWorkingDays * 8} workingDays={periodWorkingDays} />
+            </div>
           ) : (
             <Table>
               <thead>
@@ -126,7 +144,10 @@ export default async function PayrollRunPage({ params }: { params: { id: string 
               <tbody>
                 {entries.map((e) => (
                   <tr key={e.userId}>
-                    <Td className="font-medium">{e.name}</Td>
+                    <Td className="font-medium">
+                      {e.name}
+                      {e.manual && <span className="ml-1.5 rounded-sm bg-ink-200 px-1 py-0.5 text-[10px] font-semibold text-ink-600">added by hand</span>}
+                    </Td>
                     <Td className="text-right tabular-nums">{e.daysWorked}</Td>
                     <Td className="text-right tabular-nums">{e.regularHours}</Td>
                     <Td className="text-right tabular-nums">{e.otHours}</Td>

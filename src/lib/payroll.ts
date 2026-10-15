@@ -41,6 +41,8 @@ export interface PayrollEntry {
   net: number;
   /** Payslip reference number ("2026-009"), assigned once when the run is approved and never changed. */
   slipRef?: string;
+  /** Added to the run by hand (not built from clock records) — shown in the register so it is never a surprise. */
+  manual?: boolean;
 }
 
 /** meals/cashAdvance postdate some existing PayrollRun.entries JSON blobs —
@@ -118,6 +120,22 @@ function buildEntry(
   // Owner's period-total correction (attendance page) — counted as regular hours.
   regularHours = Math.max(0, regularHours + adjustment);
 
+  return pricedEntry(user, byDay.size, regularHours, otHours, hourlyRate);
+}
+
+/**
+ * Hours + rate → gross, the placeholder statutory deductions and net, rounded to the centavo. The one place a
+ * payroll entry is priced: runs built from clock records and a person added to a run by hand both go through it,
+ * so the two can never be priced differently.
+ */
+export function pricedEntry(
+  user: { id: string; name: string },
+  daysWorked: number,
+  regularHours: number,
+  otHours: number,
+  hourlyRate: number
+): PayrollEntry {
+  const cfg = PAYROLL_CONFIG;
   const gross = regularHours * hourlyRate + otHours * hourlyRate * cfg.otMultiplier;
   const sss = gross * cfg.sssRate;
   const philhealth = gross * cfg.philhealthRate;
@@ -130,7 +148,7 @@ function buildEntry(
   return {
     userId: user.id,
     name: user.name,
-    daysWorked: byDay.size,
+    daysWorked,
     regularHours: r2(regularHours),
     otHours: r2(otHours),
     hourlyRate: r2(hourlyRate),
@@ -142,6 +160,36 @@ function buildEntry(
     cashAdvance: r2(cashAdvance),
     net: r2(net),
   };
+}
+
+/**
+ * The hourly rate for an office-style person: a monthly salary is spread over the month's Monday–Saturday days and
+ * 8-hour days; otherwise the profile's hourly rate, otherwise the daily rate ÷ 8. 0 when none is set.
+ */
+export function hourlyRateForUser(
+  u: { monthlySalary: unknown; hourlyRate: unknown; dailyRate: unknown },
+  periodStart: Date
+): number {
+  const workingDays = workingDaysInManilaMonth(manilaDayKey(periodStart).slice(0, 7));
+  return u.monthlySalary != null
+    ? Number(u.monthlySalary) / workingDays / PAYROLL_CONFIG.regularHoursPerDay
+    : u.hourlyRate != null
+      ? Number(u.hourlyRate)
+      : u.dailyRate != null
+        ? Number(u.dailyRate) / PAYROLL_CONFIG.regularHoursPerDay
+        : 0;
+}
+
+/** Manila calendar days in a pay period that are Monday–Saturday (the office's working days), both ends included. */
+export function workingDaysInPeriod(start: Date, end: Date): number {
+  let count = 0;
+  const last = manilaDayKey(end);
+  for (let key = manilaDayKey(start); key <= last; ) {
+    if (new Date(`${key}T12:00:00.000Z`).getUTCDay() !== 0) count++;
+    const next = new Date(new Date(`${key}T12:00:00.000Z`).getTime() + 86_400_000);
+    key = next.toISOString().slice(0, 10);
+  }
+  return count;
 }
 
 /** Approved early-start/overtime/weekend-work requests relevant to a batch of
@@ -336,21 +384,9 @@ export async function computePayroll(
     fetchPeriodAdjustments(users.map((u) => u.id), periodStart),
   ]);
 
-  // A semi-monthly period never spans two calendar months, so periodStart's
-  // Manila month is the one whose Mon–Sat day count divides the salary.
-  const monthKey = manilaDayKey(periodStart).slice(0, 7);
-  const workingDays = workingDaysInManilaMonth(monthKey);
-
   const entries: PayrollEntry[] = [];
   for (const u of users) {
-    const hourlyRate =
-      u.monthlySalary != null
-        ? Number(u.monthlySalary) / workingDays / PAYROLL_CONFIG.regularHoursPerDay
-        : u.hourlyRate != null
-          ? Number(u.hourlyRate)
-          : u.dailyRate != null
-            ? Number(u.dailyRate) / PAYROLL_CONFIG.regularHoursPerDay
-            : 0;
+    const hourlyRate = hourlyRateForUser(u, periodStart);
     const entry = buildEntry(
       u,
       attendance.filter((a) => a.userId === u.id),
