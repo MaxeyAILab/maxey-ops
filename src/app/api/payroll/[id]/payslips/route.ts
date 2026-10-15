@@ -9,9 +9,9 @@ import { ensureSlipRefs } from "@/lib/payslip-refs";
 
 /**
  * GET /api/payroll/[id]/payslips — payslips in the company's own form, once the run is approved.
- *  - Owner / Accounting / PM: every payslip in the run, A4 portrait with two per sheet, ready to print and cut.
- *    `?only=<userId>` gives a single person's slip instead.
- *  - Anyone else on staff: only their own payslip, on a half-A4 page.
+ *  - Owner / Accounting / PM: every payslip in the run, three per landscape A4 sheet (each slip 3 1/8 x 5 1/2 in), ready
+ *    to print and cut, in employee-ID order. `?only=<userId>` gives a single person's slip instead.
+ *  - Anyone else on staff: only their own payslip, on a page the size of one slip.
  *  - `?inline=1` opens the PDF in the browser (for printing) instead of downloading it.
  * Works for every kind of run — office, drivers, architects/engineers and project (site crew) runs. Nothing is
  * recalculated here: a payslip shows exactly what the approved register says.
@@ -40,13 +40,21 @@ export const GET = handleApi(async (req: NextRequest, { params }: { params: { id
     entries = entries.filter((e) => e.userId === only);
     if (entries.length === 0) throw new ApiError(404, "That person isn't on this payroll run");
   }
-  entries.sort((a, b) => a.name.localeCompare(b.name));
-
   const people = await prisma.user.findMany({
     where: { id: { in: entries.map((e) => e.userId) } },
     select: { id: true, employeeNo: true, position: true, department: true },
   });
   const byId = new Map(people.map((p) => [p.id, p]));
+  // Print order: by employee ID (VCDC-006, VCDC-015, VCDC-016…) so the same people stay together on a sheet;
+  // anyone without an ID follows, by name.
+  entries.sort((a, b) => {
+    const ia = byId.get(a.userId)?.employeeNo;
+    const ib = byId.get(b.userId)?.employeeNo;
+    if (ia && ib) return ia.localeCompare(ib, undefined, { numeric: true }) || a.name.localeCompare(b.name);
+    if (ia) return -1;
+    if (ib) return 1;
+    return a.name.localeCompare(b.name);
+  });
 
   // Older approved runs predate the stored approval details — fall back to the audit trail.
   let approvedByName = run.approvedByName;
@@ -65,7 +73,7 @@ export const GET = handleApi(async (req: NextRequest, { params }: { params: { id
 
   const single = !isPayrollAdmin || !!only;
   const scope = found.project?.name ?? run.department ?? "payroll";
-  const pdfBytes = await buildPayslipsPdf(slips, single ? "single" : "a4-two-up", `Payslips — ${scope} — ${slips[0]?.periodLabel ?? ""}`);
+  const pdfBytes = await buildPayslipsPdf(slips, single ? "single" : "a4-three-up", `Payslips — ${scope} — ${slips[0]?.periodLabel ?? ""}`);
 
   await audit({
     entityType: "PayrollRun",

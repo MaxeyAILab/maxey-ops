@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PDFDocument } from "pdf-lib";
 import type { PayrollEntry } from "./payroll";
 import { buildPayslip, nextSlipRefs, payslipDateLabel, payslipPeriodLabel, slipFileName, slipMoney, slipYear } from "./payslip";
-import { buildPayslipsPdf } from "./payslip-pdf";
+import { SLIP_H, SLIP_W, buildPayslipsPdf } from "./payslip-pdf";
 
 const manila = (day: string, time = "00:00") => new Date(`${day}T${time}:00+08:00`);
 
@@ -143,34 +143,37 @@ describe("what a payslip shows", () => {
 describe("payslip PDF", () => {
   const slip = (name: string, ref = "2026-001") => buildPayslip(entry({ name, slipRef: ref }), emp, run);
 
-  it("puts two payslips on each A4 sheet, a last odd one alone", async () => {
-    const bytes = await buildPayslipsPdf([slip("A"), slip("B"), slip("C")], "a4-two-up", "t");
-    const pdf = await PDFDocument.load(bytes);
-    expect(pdf.getPageCount()).toBe(2);
+  it("puts three payslips side by side on each landscape A4 sheet", async () => {
+    const pdf = await PDFDocument.load(await buildPayslipsPdf([slip("A"), slip("B"), slip("C"), slip("D")], "a4-three-up", "t"));
+    expect(pdf.getPageCount()).toBe(2); // 3 on the first sheet, 1 on the second
     for (const p of pdf.getPages()) {
-      expect(Math.round(p.getWidth())).toBe(595); // A4 portrait
-      expect(Math.round(p.getHeight())).toBe(842);
+      expect(Math.round(p.getWidth())).toBe(842); // A4 landscape
+      expect(Math.round(p.getHeight())).toBe(595);
     }
   });
 
-  it("fits exactly two per sheet for an even count", async () => {
-    const pdf = await PDFDocument.load(await buildPayslipsPdf([slip("A"), slip("B"), slip("C"), slip("D")], "a4-two-up", "t"));
-    expect(pdf.getPageCount()).toBe(2);
-    const one = await PDFDocument.load(await buildPayslipsPdf([slip("A"), slip("B")], "a4-two-up", "t"));
-    expect(one.getPageCount()).toBe(1);
+  it("fits exactly three per sheet for a multiple of three", async () => {
+    expect((await PDFDocument.load(await buildPayslipsPdf([slip("A"), slip("B"), slip("C")], "a4-three-up", "t"))).getPageCount()).toBe(1);
+    expect((await PDFDocument.load(await buildPayslipsPdf(["A", "B", "C", "D", "E", "F"].map((n) => slip(n)), "a4-three-up", "t"))).getPageCount()).toBe(2);
+    expect((await PDFDocument.load(await buildPayslipsPdf(["A", "B"].map((n) => slip(n)), "a4-three-up", "t"))).getPageCount()).toBe(1);
   });
 
-  it("makes a single copy on a half-A4 page", async () => {
+  it("draws each payslip 3 1/8 in x 5 1/2 in", () => {
+    expect(SLIP_W).toBe(225);
+    expect(SLIP_H).toBe(396);
+  });
+
+  it("makes a single copy on a page just bigger than one slip", async () => {
     const pdf = await PDFDocument.load(await buildPayslipsPdf([slip("A")], "single", "t"));
     expect(pdf.getPageCount()).toBe(1);
-    expect(Math.round(pdf.getPage(0).getWidth())).toBe(595);
-    expect(Math.round(pdf.getPage(0).getHeight())).toBe(421);
+    expect(Math.round(pdf.getPage(0).getWidth())).toBe(241); // 225 + 2 x 8 margin
+    expect(Math.round(pdf.getPage(0).getHeight())).toBe(412); // 396 + 2 x 8 margin
   });
 
   it("does not choke on awkward names, long text or no slips", async () => {
     const odd = ["Dela Peña, Ñoño", "Juan ₱ Cruz 😀 “quoted” – dash", "X".repeat(200), ""];
-    const pdf = await PDFDocument.load(await buildPayslipsPdf(odd.map((n) => slip(n)), "a4-two-up", "t"));
+    const pdf = await PDFDocument.load(await buildPayslipsPdf(odd.map((n) => slip(n)), "a4-three-up", "t"));
     expect(pdf.getPageCount()).toBe(2);
-    expect((await PDFDocument.load(await buildPayslipsPdf([], "a4-two-up", "t"))).getPageCount()).toBe(1);
+    expect((await PDFDocument.load(await buildPayslipsPdf([], "a4-three-up", "t"))).getPageCount()).toBe(1);
   });
 });

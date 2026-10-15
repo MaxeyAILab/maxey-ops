@@ -4,25 +4,27 @@ import { PAYSLIP_LOGO_PNG_BASE64 } from "@/lib/payslip-logo";
 import { slipMoney, type PayslipModel } from "@/lib/payslip";
 
 /**
- * Draws payslips in the company's own form: logo and company name, "PAYSLIP — for the period of…", name / date,
- * employee ID / designation, an EARNINGS table, a DEDUCTIONS table, approved-by, net pay and reference number.
+ * Draws payslips in the company's own form. Each payslip is portrait, 3 1/8 in x 5 1/2 in:
+ * logo and company name, "PAYSLIP — for the period of…", name / date, employee ID / designation, an EARNINGS
+ * table, a DEDUCTIONS table, approved-by, net pay and reference number.
  *
- *  - "a4-two-up": A4 portrait with two payslips per sheet (one above the other, a dashed cut line between) —
- *    the Owner's print copy. A last odd slip sits alone on its sheet.
- *  - "single": one payslip on a page the size of half an A4 (A5 landscape) — an employee's own copy; printed on
- *    A4 at 100% it takes the same space as one half of the Owner's sheet.
+ *  - "a4-three-up": A4 LANDSCAPE with three payslips side by side (a dashed cut line between them) — the Owner's
+ *    print copy. A last sheet may hold one or two.
+ *  - "single": one payslip on a page just bigger than the slip — an employee's own copy. Printed at actual size
+ *    it is the same 3 1/8 x 5 1/2 in as the Owner's copy.
  */
 
-export type PayslipLayout = "a4-two-up" | "single";
+export type PayslipLayout = "a4-three-up" | "single";
 
-const A4: [number, number] = [595.28, 841.89];
-const HALF_A4: [number, number] = [595.28, 420.94]; // A5 landscape
-const SLIP_W = 535;
-const SLIP_H = 384;
+const PT = 72; // points per inch
+export const SLIP_W = 3.125 * PT; // 225
+export const SLIP_H = 5.5 * PT; // 396
+const A4_LANDSCAPE: [number, number] = [841.89, 595.28];
+const SINGLE_MARGIN = 8;
 
 const INK = rgb(0.07, 0.08, 0.09);
 const RULE = rgb(0.25, 0.27, 0.27);
-const SOFT = rgb(0.45, 0.47, 0.47);
+const SOFT = rgb(0.4, 0.42, 0.42);
 const SHADE = rgb(0.85, 0.85, 0.85);
 
 /** Helvetica can't print characters outside Latin-1 (e.g. the peso sign); keep names and text safe. */
@@ -44,7 +46,7 @@ interface Fonts {
 /** Shrink a line to fit a width, then trim it with "..." if it still doesn't. */
 function fit(text: string, font: PDFFont, size: number, maxW: number): { text: string; size: number } {
   let s = size;
-  while (s > 6 && font.widthOfTextAtSize(text, s) > maxW) s -= 0.5;
+  while (s > 5 && font.widthOfTextAtSize(text, s) > maxW) s -= 0.25;
   if (font.widthOfTextAtSize(text, s) <= maxW) return { text, size: s };
   let t = text;
   while (t.length > 1 && font.widthOfTextAtSize(`${t}...`, s) > maxW) t = t.slice(0, -1);
@@ -57,22 +59,17 @@ function draw(page: PDFPage, text: string, x: number, y: number, size: number, f
   page.drawText(text, { x: px, y, size, font, color });
 }
 
-function hline(page: PDFPage, x1: number, x2: number, y: number, thickness = 0.6, color = RULE) {
-  page.drawLine({ start: { x: x1, y }, end: { x: x2, y }, thickness, color });
-}
-
-function vline(page: PDFPage, x: number, y1: number, y2: number, thickness = 0.6) {
-  page.drawLine({ start: { x, y: y1 }, end: { x, y: y2 }, thickness, color: RULE });
-}
+const hline = (page: PDFPage, x1: number, x2: number, y: number, t = 0.5) => page.drawLine({ start: { x: x1, y }, end: { x: x2, y }, thickness: t, color: RULE });
+const vline = (page: PDFPage, x: number, y1: number, y2: number, t = 0.5) => page.drawLine({ start: { x, y: y1 }, end: { x, y: y2 }, thickness: t, color: RULE });
 
 /** A labelled value on an underline, as in "Name: ____ Jonnel Magno ____". */
-function field(page: PDFPage, f: Fonts, label: string, value: string, x: number, y: number, endX: number) {
-  draw(page, label, x, y, 8, f.regular);
-  const startX = x + f.regular.widthOfTextAtSize(label, 8) + 5;
-  hline(page, startX, endX, y - 2.5, 0.5);
+function field(page: PDFPage, f: Fonts, label: string, value: string, x: number, y: number, endX: number, size = 6.5) {
+  draw(page, label, x, y, size, f.regular);
+  const startX = x + f.regular.widthOfTextAtSize(label, size) + 3;
+  hline(page, startX, endX, y - 2, 0.4);
   if (value) {
-    const t = fit(safe(value), f.regular, 8.5, endX - startX - 6);
-    draw(page, t.text, startX + 4, y, t.size, f.regular);
+    const t = fit(safe(value), f.regular, size + 0.5, endX - startX - 3);
+    draw(page, t.text, startX + 2, y, t.size, f.regular);
   }
 }
 
@@ -80,127 +77,136 @@ function drawSlip(page: PDFPage, x: number, top: number, slip: PayslipModel, f: 
   const W = SLIP_W;
   const left = x;
   const right = x + W;
-  const inner = { l: left + 8, r: right - 8 };
-  const tableW = inner.r - inner.l;
+  const il = left + 5;
+  const ir = right - 5;
+  const tw = ir - il;
 
-  page.drawRectangle({ x: left, y: top - SLIP_H, width: W, height: SLIP_H, borderColor: INK, borderWidth: 0.9 });
+  page.drawRectangle({ x: left, y: top - SLIP_H, width: W, height: SLIP_H, borderColor: INK, borderWidth: 0.8 });
 
   // ---- header: logo + company
-  const logoSize = 46;
-  page.drawImage(logo, { x: left + 14, y: top - 8 - logoSize, width: logoSize, height: logoSize });
-  const cx = left + 66 + (W - 76) / 2;
-  draw(page, COMPANY.nameLines[0], cx, top - 19, 11.5, f.bold, "center");
-  draw(page, COMPANY.nameLines[1], cx, top - 32, 11.5, f.bold, "center");
-  draw(page, COMPANY.addressLines[0], cx, top - 44, 8, f.regular, "center");
-  draw(page, COMPANY.addressLines[1], cx, top - 54, 8, f.regular, "center");
-  hline(page, left, right, top - 62);
+  const logoSize = 38;
+  page.drawImage(logo, { x: left + 6, y: top - 8 - logoSize, width: logoSize, height: logoSize });
+  const cx = left + 48 + (W - 52) / 2;
+  const n1 = fit(COMPANY.nameLines[0], f.bold, 8.2, W - 54);
+  draw(page, n1.text, cx, top - 16, n1.size, f.bold, "center");
+  draw(page, COMPANY.nameLines[1], cx, top - 26, n1.size, f.bold, "center");
+  draw(page, COMPANY.addressLines[0], cx, top - 37, 6.3, f.regular, "center");
+  draw(page, COMPANY.addressLines[1], cx, top - 45, 6.3, f.regular, "center");
+  hline(page, left, right, top - 54);
 
   // ---- PAYSLIP row
-  let y = top - 74;
-  draw(page, "P A Y S L I P", inner.l, y, 10, f.bold);
-  const forText = `For the period of ${slip.periodLabel}`;
-  draw(page, forText, inner.l + 82, y, 9, f.bold);
+  draw(page, "P A Y S L I P", il, top - 66, 7.5, f.bold);
+  const forText = fit(`For the period of ${slip.periodLabel}`, f.bold, 6.8, tw - 62);
+  draw(page, forText.text, il + 60, top - 66, forText.size, f.bold);
+  hline(page, left, right, top - 71);
   if (slip.projectName) {
-    const t = fit(safe(`Project: ${slip.projectName}`), f.regular, 8, 150);
-    draw(page, t.text, inner.r, y, t.size, f.regular, "right", SOFT);
+    const t = fit(safe(`Project: ${slip.projectName}`), f.regular, 6, tw);
+    draw(page, t.text, ir, top - 79, t.size, f.regular, "right", SOFT);
   }
-  hline(page, left, right, top - 80);
 
   // ---- name / date, employee ID / designation
-  y = top - 95;
-  const mid = left + W * 0.56;
-  field(page, f, "Name:", slip.name, inner.l, y, mid - 12);
-  field(page, f, "Date:", slip.dateLabel, mid, y, inner.r);
-  y -= 16;
-  field(page, f, "Employee ID:", slip.employeeNo, inner.l, y, mid - 12);
-  field(page, f, "Designation:", slip.designation, mid, y, inner.r);
-  hline(page, left, right, y - 8);
+  let y = top - 90;
+  field(page, f, "Name:", slip.name, il, y, left + W * 0.62);
+  field(page, f, "Date:", slip.dateLabel, left + W * 0.64, y, ir);
+  y -= 13;
+  field(page, f, "Employee ID:", slip.employeeNo, il, y, left + W * 0.45);
+  field(page, f, "Designation:", slip.designation, left + W * 0.47, y, ir);
+  hline(page, left, right, y - 6);
 
   // ---- earnings
-  y -= 20;
-  draw(page, "EARNINGS:", inner.l, y, 10, f.bold);
-  y -= 6;
-  const cols = [tableW * 0.29, tableW * 0.17, tableW * 0.29, tableW * 0.25];
-  const xs = [inner.l];
+  y -= 18;
+  draw(page, "EARNINGS:", il, y, 8, f.bold);
+  const cols = [tw * 0.24, tw * 0.17, tw * 0.27, tw * 0.32];
+  const xs = [il];
   for (const c of cols) xs.push(xs[xs.length - 1] + c);
+  const earnTop = y - 4;
+  const headH = 24;
+  page.drawRectangle({ x: il, y: earnTop - headH, width: tw, height: headH, color: SHADE });
+  draw(page, "HOURS/DAY", (xs[0] + xs[1]) / 2, earnTop - 14, 6.2, f.bold, "center");
+  draw(page, "RATE", (xs[1] + xs[2]) / 2, earnTop - 14, 6.2, f.bold, "center");
+  draw(page, "O.T. PAY/", (xs[2] + xs[3]) / 2, earnTop - 10, 6.2, f.bold, "center");
+  draw(page, "HOLIDAY PAY", (xs[2] + xs[3]) / 2, earnTop - 18, 6.2, f.bold, "center");
+  draw(page, "TOTAL", (xs[3] + xs[4]) / 2, earnTop - 15, 7.5, f.bold, "center");
+  y = earnTop - headH;
 
-  const headH = 22;
-  page.drawRectangle({ x: inner.l, y: y - headH, width: tableW, height: headH, color: SHADE });
-  draw(page, "HOURS/DAY", (xs[0] + xs[1]) / 2, y - 14, 8, f.bold, "center");
-  draw(page, "RATE", (xs[1] + xs[2]) / 2, y - 14, 8, f.bold, "center");
-  draw(page, "O.T. PAY/", (xs[2] + xs[3]) / 2, y - 9, 8, f.bold, "center");
-  draw(page, "HOLIDAY PAY", (xs[2] + xs[3]) / 2, y - 18, 8, f.bold, "center");
-  draw(page, "TOTAL", (xs[3] + xs[4]) / 2, y - 14, 9, f.bold, "center");
-  const earnTop = y;
-  y -= headH;
-
-  const rowH = 14;
   const e = slip.earnings;
-  const hoursText = `${e.regularHours} hrs / ${e.daysWorked} day${e.daysWorked === 1 ? "" : "s"}`;
-  draw(page, hoursText, xs[0] + 5, y - 10, 8.5, f.regular);
-  draw(page, `${slipMoney(e.hourlyRate)} /hr`, xs[2] - 5, y - 10, 8.5, f.regular, "right");
-  if (e.otHours > 0) draw(page, `${e.otHours} hrs  ${slipMoney(e.otPay)}`, xs[3] - 5, y - 10, 8.5, f.regular, "right");
-  draw(page, slipMoney(e.total), xs[4] - 5, y - 10, 8.5, f.regular, "right");
-  for (let i = 0; i < 3; i++) {
-    hline(page, inner.l, inner.r, y - rowH * (i + 1));
+  const dataH = 28;
+  draw(page, `${e.regularHours} hrs`, xs[0] + 3, y - 11, 6.8, f.regular);
+  draw(page, `${e.daysWorked} day${e.daysWorked === 1 ? "" : "s"}`, xs[0] + 3, y - 20, 6, f.regular, "left", SOFT);
+  draw(page, slipMoney(e.hourlyRate), xs[2] - 3, y - 11, 6.8, f.regular, "right");
+  draw(page, "per hr", xs[2] - 3, y - 20, 6, f.regular, "right", SOFT);
+  if (e.otHours > 0) {
+    draw(page, slipMoney(e.otPay), xs[3] - 3, y - 11, 6.8, f.regular, "right");
+    draw(page, `${e.otHours} hrs`, xs[3] - 3, y - 20, 6, f.regular, "right", SOFT);
   }
-  y -= rowH * 3;
-  // total earnings row
-  draw(page, "TOTAL EARNINGS", xs[3] - 6, y - 10, 8.5, f.bold, "right");
-  draw(page, slipMoney(slip.totalEarnings), xs[4] - 5, y - 10, 9, f.bold, "right");
-  hline(page, inner.l, inner.r, y - rowH);
-  y -= rowH;
-  // grid
-  page.drawRectangle({ x: inner.l, y, width: tableW, height: earnTop - y, borderColor: RULE, borderWidth: 0.6 });
-  for (let i = 1; i < 4; i++) vline(page, xs[i], earnTop, y + rowH);
-  vline(page, xs[3], y + rowH, y); // total row: label spans the first three columns
+  draw(page, slipMoney(e.total), xs[4] - 3, y - 11, 6.8, f.regular, "right");
+  y -= dataH;
+  const blankH = 13;
+  for (let i = 0; i < 2; i++) {
+    hline(page, il, ir, y);
+    y -= blankH;
+  }
+  hline(page, il, ir, y);
+  const totH = 15;
+  draw(page, "TOTAL EARNINGS", xs[3] - 4, y - 10, 6.8, f.bold, "right");
+  draw(page, slipMoney(slip.totalEarnings), xs[4] - 3, y - 10, 7.2, f.bold, "right");
+  y -= totH;
+  hline(page, il, ir, y);
+  page.drawRectangle({ x: il, y, width: tw, height: earnTop - y, borderColor: RULE, borderWidth: 0.5 });
+  for (let i = 1; i < 4; i++) vline(page, xs[i], earnTop, y + totH);
+  vline(page, xs[3], y + totH, y);
+  hline(page, il, ir, earnTop - headH);
 
   // ---- deductions
-  y -= 20;
-  draw(page, "DEDUCTIONS:", inner.l, y, 10, f.bold);
-  y -= 6;
-  const dcols = [tableW * 0.4, tableW * 0.35, tableW * 0.25];
-  const dx = [inner.l];
+  y -= 15;
+  draw(page, "DEDUCTIONS:", il, y, 8, f.bold);
+  const dcols = [tw * 0.4, tw * 0.28, tw * 0.32];
+  const dx = [il];
   for (const c of dcols) dx.push(dx[dx.length - 1] + c);
-  const dHead = 16;
-  const dedTop = y;
-  page.drawRectangle({ x: inner.l, y: y - dHead, width: tableW, height: dHead, color: SHADE });
-  draw(page, "DETAILS", (dx[0] + dx[1]) / 2, y - 11, 8, f.bold, "center");
-  draw(page, "PERIOD", (dx[1] + dx[2]) / 2, y - 11, 8, f.bold, "center");
-  draw(page, "TOTAL", (dx[2] + dx[3]) / 2, y - 11, 9, f.bold, "center");
-  y -= dHead;
-  const dRow = 13;
-  for (const d of slip.deductions) {
-    draw(page, d.label, dx[0] + 5, y - 9.5, 8.5, f.regular);
-    if (d.amount > 0 || d.showWhenZero) draw(page, slipMoney(d.amount), dx[3] - 5, y - 9.5, 8.5, f.regular, "right");
-    hline(page, inner.l, inner.r, y - dRow);
+  const dedTop = y - 4;
+  const dHead = 17;
+  page.drawRectangle({ x: il, y: dedTop - dHead, width: tw, height: dHead, color: SHADE });
+  draw(page, "DETAILS", (dx[0] + dx[1]) / 2, dedTop - 11, 6.2, f.bold, "center");
+  draw(page, "PERIOD", (dx[1] + dx[2]) / 2, dedTop - 11, 6.2, f.bold, "center");
+  draw(page, "TOTAL", (dx[2] + dx[3]) / 2, dedTop - 12, 7.5, f.bold, "center");
+  y = dedTop - dHead;
+  const dRow = 14;
+  // The form's first line, "Absent" (days and dates), is left for the team to note by hand; pay here is by hours worked,
+  // so an absence is already reflected in the hours. Then SSS, PhilHealth, Pag-IBIG and the "others" lines.
+  const rows: { label: string; amount: number | null }[] = [{ label: "Absent", amount: null }, ...slip.deductions.map((d) => ({ label: d.label, amount: d.amount > 0 || d.showWhenZero ? d.amount : null }))];
+  for (const r of rows) {
+    draw(page, r.label, dx[0] + 3, y - 10, 6.8, f.regular);
+    if (r.amount != null) draw(page, slipMoney(r.amount), dx[3] - 3, y - 10, 6.8, f.regular, "right");
+    hline(page, il, ir, y - dRow);
     y -= dRow;
   }
-  draw(page, "TOTAL DEDUCTIONS", dx[2] - 6, y - 10, 8.5, f.bold, "right");
-  draw(page, slipMoney(slip.totalDeductions), dx[3] - 5, y - 10, 9, f.bold, "right");
-  hline(page, inner.l, inner.r, y - 14);
-  y -= 14;
-  page.drawRectangle({ x: inner.l, y, width: tableW, height: dedTop - y, borderColor: RULE, borderWidth: 0.6 });
-  vline(page, dx[1], dedTop, y + 14);
+  draw(page, "TOTAL DEDUCTIONS", dx[2] - 4, y - 10, 6.8, f.bold, "right");
+  draw(page, slipMoney(slip.totalDeductions), dx[3] - 3, y - 10, 7.2, f.bold, "right");
+  y -= 15;
+  hline(page, il, ir, y);
+  page.drawRectangle({ x: il, y, width: tw, height: dedTop - y, borderColor: RULE, borderWidth: 0.5 });
+  vline(page, dx[1], dedTop, y + 15);
   vline(page, dx[2], dedTop, y);
+  hline(page, il, ir, dedTop - dHead);
 
   // ---- footer: approved by, net pay, reference
-  y -= 24;
-  draw(page, "Approved By:", inner.l, y, 8, f.regular);
-  const sigStart = inner.l + 58;
-  hline(page, sigStart, sigStart + 150, y - 2.5, 0.5);
+  y -= 17;
+  draw(page, "Approved By:", il, y, 6.5, f.regular);
+  const sigStart = il + 40;
+  const sigEnd = left + W * 0.5;
+  hline(page, sigStart, sigEnd, y - 2, 0.4);
   if (slip.approvedBy) {
-    const t = fit(safe(slip.approvedBy), f.regular, 8.5, 144);
-    draw(page, t.text, sigStart + 4, y, t.size, f.regular);
+    const t = fit(safe(slip.approvedBy), f.regular, 6.8, sigEnd - sigStart - 3);
+    draw(page, t.text, sigStart + 2, y, t.size, f.regular);
   }
-  draw(page, "NET PAY:", left + W * 0.56, y, 10, f.bold);
-  draw(page, "PHP", left + W * 0.7, y, 9, f.regular);
-  hline(page, left + W * 0.7 + 26, inner.r, y - 2.5, 0.5);
-  draw(page, slipMoney(slip.netPay), inner.r - 2, y, 11, f.bold, "right");
+  draw(page, "NET PAY:", left + W * 0.52, y, 7.5, f.bold);
+  draw(page, "PHP", left + W * 0.52 + 36, y, 6.5, f.regular);
+  hline(page, left + W * 0.52 + 52, ir, y - 2, 0.4);
+  draw(page, slipMoney(slip.netPay), ir - 2, y, 8, f.bold, "right");
 
-  y -= 20;
-  draw(page, "Reference No.:", left + W * 0.6, y, 7, f.regular, "left", SOFT);
-  if (slip.reference) draw(page, slip.reference, left + W * 0.6 + 52, y, 7.5, f.regular, "left", SOFT);
+  y -= 15;
+  draw(page, "Reference No.:", left + W * 0.5, y, 5.6, f.regular, "left", SOFT);
+  if (slip.reference) draw(page, slip.reference, left + W * 0.5 + 42, y, 6, f.regular, "left", SOFT);
 }
 
 export async function buildPayslipsPdf(slips: PayslipModel[], layout: PayslipLayout, title: string): Promise<Uint8Array> {
@@ -212,22 +218,26 @@ export async function buildPayslipsPdf(slips: PayslipModel[], layout: PayslipLay
 
   if (layout === "single") {
     for (const slip of slips) {
-      const page = doc.addPage(HALF_A4);
-      drawSlip(page, (HALF_A4[0] - SLIP_W) / 2, HALF_A4[1] - (HALF_A4[1] - SLIP_H) / 2, slip, f, logo);
+      const page = doc.addPage([SLIP_W + SINGLE_MARGIN * 2, SLIP_H + SINGLE_MARGIN * 2]);
+      drawSlip(page, SINGLE_MARGIN, SLIP_H + SINGLE_MARGIN, slip, f, logo);
     }
+    if (slips.length === 0) doc.addPage([SLIP_W + SINGLE_MARGIN * 2, SLIP_H + SINGLE_MARGIN * 2]);
   } else {
-    const margin = (A4[1] - SLIP_H * 2) / 2 - 17; // leaves a 34 pt strip in the middle for the cut line
-    for (let i = 0; i < slips.length; i += 2) {
-      const page = doc.addPage(A4);
-      const x = (A4[0] - SLIP_W) / 2;
-      drawSlip(page, x, A4[1] - margin, slips[i], f, logo);
-      if (slips[i + 1]) drawSlip(page, x, A4[1] - margin - SLIP_H - 34, slips[i + 1], f, logo);
-      // dashed cut line between the two slips
-      const cutY = A4[1] - margin - SLIP_H - 17;
-      page.drawLine({ start: { x: 24, y: cutY }, end: { x: A4[0] - 24, y: cutY }, thickness: 0.5, color: SOFT, dashArray: [4, 3] });
-      draw(page, "cut here", A4[0] / 2, cutY + 3, 5.5, f.regular, "center", SOFT);
+    const [pw, ph] = A4_LANDSCAPE;
+    const gap = (pw - SLIP_W * 3) / 4; // equal space at both edges and between the slips
+    const top = ph - (ph - SLIP_H) / 2; // vertically centred
+    for (let i = 0; i < slips.length; i += 3) {
+      const page = doc.addPage(A4_LANDSCAPE);
+      for (let k = 0; k < 3 && slips[i + k]; k++) {
+        drawSlip(page, gap + k * (SLIP_W + gap), top, slips[i + k], f, logo);
+      }
+      // dashed cut lines in the gaps between the three slips
+      for (const k of [1, 2]) {
+        const cutX = gap + k * (SLIP_W + gap) - gap / 2;
+        page.drawLine({ start: { x: cutX, y: 18 }, end: { x: cutX, y: ph - 18 }, thickness: 0.4, color: SOFT, dashArray: [3, 3] });
+      }
     }
-    if (slips.length === 0) doc.addPage(A4);
+    if (slips.length === 0) doc.addPage(A4_LANDSCAPE);
   }
   return doc.save();
 }
