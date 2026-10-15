@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PDFDocument } from "pdf-lib";
 import type { PayrollEntry } from "./payroll";
-import { buildPayslip, daysFromHours, nextSlipRefs, slipDays, payslipDateLabel, payslipPeriodLabel, slipFileName, slipMoney, slipYear } from "./payslip";
+import { buildPayslip, daysFromHours, nextPersonSlipRef, slipDays, payslipDateLabel, payslipPeriodLabel, slipFileName, slipMoney, slipYear } from "./payslip";
 import { SLIP_H, SLIP_W, buildPayslipsPdf } from "./payslip-pdf";
 
 const manila = (day: string, time = "00:00") => new Date(`${day}T${time}:00+08:00`);
@@ -83,25 +83,39 @@ describe("days on the payslip", () => {
   });
 });
 
-describe("payslip reference numbers", () => {
-  it("starts a year at 001 and counts up", () => {
-    expect(nextSlipRefs([], 2026, 3)).toEqual(["2026-001", "2026-002", "2026-003"]);
+describe("payslip reference numbers (each person's own count for the year)", () => {
+  it("is the person's next payslip of the year: one above their highest", () => {
+    expect(nextPersonSlipRef(["2026-019"], 0, 2026)).toBe("2026-020");
+    expect(nextPersonSlipRef(["2026-003", "2026-011", "2026-007"], 0, 2026)).toBe("2026-012");
   });
 
-  it("continues after the highest number already issued that year", () => {
-    expect(nextSlipRefs(["2026-001", "2026-009", "2026-004"], 2026, 2)).toEqual(["2026-010", "2026-011"]);
+  it("starts a person's first payslip at 001", () => {
+    expect(nextPersonSlipRef([], 0, 2026)).toBe("2026-001");
+  });
+
+  it("continues from the count they had before this system started numbering", () => {
+    // 18 payslips already received -> the next one is their 19th
+    expect(nextPersonSlipRef([], 18, 2026)).toBe("2026-019");
+    expect(nextPersonSlipRef([], 1, 2026)).toBe("2026-002");
+    expect(nextPersonSlipRef([], 0, 2026)).toBe("2026-001");
+  });
+
+  it("uses whichever is higher, the baseline or what they already hold", () => {
+    expect(nextPersonSlipRef(["2026-019"], 18, 2026)).toBe("2026-020");
+    expect(nextPersonSlipRef(["2026-005"], 18, 2026)).toBe("2026-019");
   });
 
   it("keeps each year separate and ignores blanks and junk", () => {
-    expect(nextSlipRefs(["2025-120", undefined, null, "", "garbage", "2026-x", "2026-"], 2026, 1)).toEqual(["2026-001"]);
-    expect(nextSlipRefs(["2026-007"], 2027, 1)).toEqual(["2027-001"]);
+    expect(nextPersonSlipRef(["2025-120", undefined, null, "", "garbage", "2026-x", "2026-"], 0, 2026)).toBe("2026-001");
+    expect(nextPersonSlipRef(["2026-020"], 0, 2027)).toBe("2027-001");
   });
 
-  it("never hands out a number that is already taken", () => {
-    const issued = ["2026-001", "2026-002", "2026-003"];
-    const next = nextSlipRefs(issued, 2026, 5);
-    for (const ref of next) expect(issued).not.toContain(ref);
-    expect(new Set(next).size).toBe(5);
+  it("never goes backwards or hands out a number the person already holds", () => {
+    const held = ["2026-004", "2026-005", "2026-006"];
+    const next = nextPersonSlipRef(held, 0, 2026);
+    expect(held).not.toContain(next);
+    expect(next).toBe("2026-007");
+    expect(nextPersonSlipRef([], -5, 2026)).toBe("2026-001");
   });
 
   it("runs the year of the day the period ends", () => {

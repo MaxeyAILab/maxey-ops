@@ -124,18 +124,19 @@ export function buildPayslip(entry: PayrollEntry & { slipRef?: string }, employe
 }
 
 /**
- * The next payslip reference numbers for a year: "2026-001", "2026-002"… continuing after the highest one already
- * issued that year, so a number is never reused and a reprint always carries the same number.
+ * A person's next payslip reference number: "2026-020" is their 20th payslip of 2026. It is one above the highest
+ * they already hold that year, or above the number of payslips they had before this system started counting
+ * (the baseline), whichever is higher — so numbers only ever go up for a person, one per payslip.
  */
-export function nextSlipRefs(existing: (string | undefined | null)[], year: number, count: number): string[] {
-  let max = 0;
+export function nextPersonSlipRef(existing: (string | undefined | null)[], baseline: number, year: number): string {
+  let max = Math.max(0, Math.floor(baseline));
   const prefix = `${year}-`;
   for (const ref of existing) {
     if (!ref || !ref.startsWith(prefix)) continue;
     const n = Number(ref.slice(prefix.length));
     if (Number.isInteger(n) && n > max) max = n;
   }
-  return Array.from({ length: count }, (_, i) => `${year}-${String(max + i + 1).padStart(3, "0")}`);
+  return `${year}-${String(max + 1).padStart(3, "0")}`;
 }
 
 /** Year the reference numbers run in — the year the pay period ends, as on the paper form. */

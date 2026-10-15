@@ -294,6 +294,7 @@ model User {
   department   Department?
   position     String? // trade/position: Foreman, Mason, Carpenter, Welder, Driver, Office Admin…
   employeeNo   String?     @unique // company employee ID printed on the payslip, e.g. VCDC-016
+  payslipBaselines PayslipBaseline[]
   dailyRate    Decimal?    @db.Decimal(12, 2)
   hourlyRate   Decimal?    @db.Decimal(12, 2)
   // Office/Architect/Engineer paid a fixed monthly salary instead of an
@@ -1316,4 +1317,16 @@ model AuthAttempt {
   @@index([email, ip, createdAt])
   @@index([ip, createdAt])
   @@index([email, createdAt])
+}
+
+// How many payslips a person had already received in a year before this system started numbering them — so their
+// next payslip continues their own count ("Reference No. 2026-020" = their 20th payslip of 2026).
+model PayslipBaseline {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  year   Int
+  count  Int
+
+  @@unique([userId, year])
 }
