@@ -14,6 +14,7 @@ const ASSIGNABLE_MENU_HREFS = new Set(ASSIGNABLE_MENUS.map((m) => m.href));
 const createSchema = z.object({
   name: z.string().min(1).max(200),
   position: z.string().min(1).max(100), // Foreman, Mason, Carpenter, Welder…
+  employeeNo: z.string().trim().max(24).regex(/^[A-Za-z0-9][A-Za-z0-9-]*$/, "Use letters, numbers and dashes only, e.g. VCDC-016").optional().or(z.literal("")),
   department: z.enum(["SITE", "OFFICE", "DRIVER", "ARCHITECT", "ENGINEER"]),
   dailyRate: z.coerce.number().positive().optional(),
   hourlyRate: z.coerce.number().positive().optional(),
@@ -67,6 +68,10 @@ export const POST = handleApi(async (req: NextRequest) => {
     if (!project) throw new ApiError(400, "Unknown project");
   }
 
+  const employeeNo = body.employeeNo ? body.employeeNo.toUpperCase() : null;
+  if (employeeNo && (await prisma.user.findUnique({ where: { employeeNo }, select: { id: true } }))) {
+    throw new ApiError(400, `The employee ID ${employeeNo} is already used by someone else`);
+  }
   if (body.password) {
     const problem = validatePassword(body.password, { email, name: body.name });
     if (problem) throw new ApiError(400, `Password: ${problem}`);
@@ -84,6 +89,7 @@ export const POST = handleApi(async (req: NextRequest) => {
         role,
         department: body.department,
         position: body.position,
+        employeeNo,
         dailyRate: body.dailyRate,
         hourlyRate: body.hourlyRate,
         useCustomMenus: body.useCustomMenus,

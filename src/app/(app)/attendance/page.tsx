@@ -150,6 +150,7 @@ export default async function AttendancePage() {
       userId: string;
       name: string;
       position: string;
+      employeeNo?: string | null;
       dailyRate: number | null;
       phone: string | null;
       email: string | null;
@@ -163,6 +164,7 @@ export default async function AttendancePage() {
     userId: string;
     name: string;
     position: string;
+    employeeNo?: string | null;
     department: string;
     dailyRate: number | null;
     monthlySalary: number | null;
@@ -194,6 +196,7 @@ export default async function AttendancePage() {
                   id: true,
                   name: true,
                   position: true,
+          employeeNo: true,
                   department: true,
                   dailyRate: true,
                   phone: true,
@@ -218,6 +221,7 @@ export default async function AttendancePage() {
           id: true,
           name: true,
           position: true,
+          employeeNo: true,
           department: true,
           dailyRate: true,
           monthlySalary: true,
@@ -239,6 +243,7 @@ export default async function AttendancePage() {
           id: true,
           name: true,
           position: true,
+          employeeNo: true,
           dailyRate: true,
           phone: true,
           email: true,
@@ -283,6 +288,7 @@ export default async function AttendancePage() {
         userId: a.user.id,
         name: a.user.name,
         position: a.user.position ?? "—",
+        employeeNo: a.user.employeeNo,
         department: a.user.department ?? "SITE",
         dailyRate: a.user.dailyRate ? Number(a.user.dailyRate) : null,
         phone: a.user.phone,
@@ -308,6 +314,7 @@ export default async function AttendancePage() {
       userId: u.id,
       name: u.name,
       position: u.position ?? "—",
+      employeeNo: u.employeeNo,
       department: u.department ?? "",
       dailyRate: u.dailyRate ? Number(u.dailyRate) : null,
       monthlySalary: u.monthlySalary ? Number(u.monthlySalary) : null,
@@ -333,6 +340,7 @@ export default async function AttendancePage() {
       userId: u.id,
       name: u.name,
       position: u.position ?? "—",
+      employeeNo: u.employeeNo,
       department: "SITE", // real value for the edit form; displayed as "TBA" since they have no roster yet
       dailyRate: u.dailyRate ? Number(u.dailyRate) : null,
       monthlySalary: null,
@@ -427,6 +435,7 @@ export default async function AttendancePage() {
       userId: string;
       name: string;
       position: string;
+      employeeNo?: string | null;
       dailyRate: number | null;
       monthlySalary?: number | null;
       phone: string | null;
@@ -486,6 +495,7 @@ export default async function AttendancePage() {
                   userId={r.userId}
                   name={r.name}
                   position={r.position}
+                  employeeNo={r.employeeNo}
                   department={r.department}
                   dailyRate={r.dailyRate}
                   monthlySalary={r.monthlySalary}

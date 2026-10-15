@@ -13,6 +13,7 @@ const ASSIGNABLE_DEPARTMENTS = ["SITE", "OFFICE", "DRIVER", "ARCHITECT", "ENGINE
 const updateSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   position: z.string().min(1).max(100).optional(),
+  employeeNo: z.string().trim().max(24).regex(/^[A-Za-z0-9][A-Za-z0-9-]*$/, "Use letters, numbers and dashes only, e.g. VCDC-016").optional().or(z.literal("")),
   department: z.enum(ASSIGNABLE_DEPARTMENTS).optional(),
   dailyRate: z.coerce.number().positive().optional(),
   hourlyRate: z.coerce.number().positive().optional(),
@@ -48,6 +49,15 @@ export const PATCH = handleApi(
       email = body.email;
     }
 
+    let employeeNo = target.employeeNo;
+    if (body.employeeNo !== undefined) {
+      employeeNo = body.employeeNo ? body.employeeNo.toUpperCase() : null;
+      if (employeeNo && employeeNo !== target.employeeNo) {
+        const taken = await prisma.user.findUnique({ where: { employeeNo }, select: { id: true } });
+        if (taken && taken.id !== target.id) throw new ApiError(400, `The employee ID ${employeeNo} is already used by someone else`);
+      }
+    }
+
     let dailyRate = target.dailyRate;
     let hourlyRate = target.hourlyRate;
     if (body.dailyRate !== undefined) {
@@ -68,6 +78,7 @@ export const PATCH = handleApi(
       data: {
         name: body.name ?? target.name,
         position: body.position ?? target.position,
+        employeeNo,
         department: body.department ?? target.department,
         phone: body.phone !== undefined ? body.phone || null : target.phone,
         email,
@@ -89,6 +100,7 @@ export const PATCH = handleApi(
       diff: {
         name: updated.name,
         position: updated.position,
+        employeeNo: updated.employeeNo,
         department: updated.department,
         dailyRate: updated.dailyRate ? Number(updated.dailyRate) : null,
         hourlyRate: updated.hourlyRate ? Number(updated.hourlyRate) : null,

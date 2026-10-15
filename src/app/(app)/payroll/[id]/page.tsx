@@ -25,7 +25,7 @@ export default async function PayrollRunPage({ params }: { params: { id: string 
 
   const entries = normalizeEntries(run.entries as unknown as PayrollEntry[]);
   const canEdit = ["OWNER", "PM"].includes(user.role) && ["DRAFT", "REVIEW"].includes(run.status);
-  const isOfficeOrDriverRun = run.department === "OFFICE" || run.department === "DRIVER";
+  const payslipsReady = run.status === "APPROVED" || run.status === "PAID";
   const totals = entries.reduce(
     (acc, e) => ({
       gross: acc.gross + e.gross,
@@ -59,13 +59,29 @@ export default async function PayrollRunPage({ params }: { params: { id: string 
         </div>
         <div className="flex items-center gap-2">
           <Badge value={run.status} />
-          {isOfficeOrDriverRun && (
-            <a
-              href={`/api/payroll/${run.id}/payslips`}
-              className="rounded-lg border border-ink-200 px-3 py-2 text-sm font-medium text-ink-700 hover:bg-ink-50"
-            >
-              ⬇ Download payslips
-            </a>
+          {payslipsReady ? (
+            <>
+              <a
+                href={`/api/payroll/${run.id}/payslips`}
+                title="One PDF, A4, two payslips per sheet"
+                className="rounded-lg border border-ink-200 px-3 py-2 text-sm font-medium text-ink-700 hover:bg-ink-50"
+              >
+                ⬇ Download payslips
+              </a>
+              <a
+                href={`/api/payroll/${run.id}/payslips?inline=1`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Opens the payslips so you can print them — A4, two per sheet"
+                className="rounded-lg border border-ink-200 px-3 py-2 text-sm font-medium text-ink-700 hover:bg-ink-50"
+              >
+                🖨 Print payslips
+              </a>
+            </>
+          ) : (
+            <span className="text-xs text-ink-400" title="Payslips are created from the approved payroll">
+              Payslips unlock once approved
+            </span>
           )}
           <a
             href={`/api/payroll/${run.id}/export`}

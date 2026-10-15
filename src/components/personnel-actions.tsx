@@ -131,6 +131,7 @@ export function AddPersonnelForm({
       body: JSON.stringify({
         name: fd.get("name"),
         position: fd.get("position"),
+        employeeNo: fd.get("employeeNo"),
         department,
         dailyRate: fd.get("dailyRate") || undefined,
         phone: fd.get("phone"),
@@ -172,6 +173,10 @@ export function AddPersonnelForm({
               <option key={p} value={p} />
             ))}
           </datalist>
+        </div>
+        <div>
+          <Label htmlFor="pEmpNo">Employee ID</Label>
+          <Input id="pEmpNo" name="employeeNo" maxLength={24} placeholder="e.g., VCDC-016 (printed on the payslip)" />
         </div>
       </div>
 
@@ -297,6 +302,7 @@ export function EditPersonnelButton({
   userId,
   name,
   position,
+  employeeNo,
   department: initialDepartment,
   dailyRate,
   monthlySalary,
@@ -309,6 +315,7 @@ export function EditPersonnelButton({
   userId: string;
   name: string;
   position: string;
+  employeeNo?: string | null;
   department?: string | null;
   dailyRate?: number | null;
   monthlySalary?: number | null;
@@ -349,6 +356,7 @@ export function EditPersonnelButton({
       body: JSON.stringify({
         name: fd.get("name"),
         position: fd.get("position"),
+        employeeNo: fd.get("employeeNo"),
         department,
         dailyRate: fd.get("dailyRate") || undefined,
         monthlySalary: isSalaried ? fd.get("monthlySalary") || "" : undefined,
@@ -415,6 +423,10 @@ export function EditPersonnelButton({
                         <option key={p} value={p} />
                       ))}
                     </datalist>
+                  </div>
+                  <div>
+                    <Label htmlFor={`eEmpNo-${userId}`}>Employee ID (on the payslip)</Label>
+                    <Input id={`eEmpNo-${userId}`} name="employeeNo" maxLength={24} defaultValue={employeeNo ?? ""} placeholder="e.g., VCDC-016" />
                   </div>
                   <div>
                     <Label htmlFor={`eDept-${userId}`}>Department</Label>

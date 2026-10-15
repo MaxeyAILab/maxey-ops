@@ -39,6 +39,8 @@ export interface PayrollEntry {
   meals: number; // ad-hoc deduction, editable by Owner/PM before approval — 0 at generation
   cashAdvance: number; // ditto
   net: number;
+  /** Payslip reference number ("2026-009"), assigned once when the run is approved and never changed. */
+  slipRef?: string;
 }
 
 /** meals/cashAdvance postdate some existing PayrollRun.entries JSON blobs —

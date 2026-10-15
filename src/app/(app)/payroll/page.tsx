@@ -68,7 +68,7 @@ export default async function PayrollPage() {
                   <Th className="text-right">Hours (reg / OT)</Th>
                   <Th className="text-right">Net pay</Th>
                   <Th>Status</Th>
-                  {(user.department === "OFFICE" || user.department === "DRIVER") && <Th />}
+                  <Th />
                 </tr>
               </thead>
               <tbody>
@@ -87,16 +87,18 @@ export default async function PayrollPage() {
                     <Td>
                       <Badge value={run.status} />
                     </Td>
-                    {(run.department === "OFFICE" || run.department === "DRIVER") && (
-                      <Td className="text-right">
+                    <Td className="text-right">
+                      {run.status === "APPROVED" || run.status === "PAID" ? (
                         <a
                           href={`/api/payroll/${run.id}/payslips`}
                           className="text-xs font-medium text-brand-600 hover:underline"
                         >
                           ⬇ Payslip
                         </a>
-                      </Td>
-                    )}
+                      ) : (
+                        <span className="text-xs text-ink-400">After approval</span>
+                      )}
+                    </Td>
                   </tr>
                 ))}
               </tbody>

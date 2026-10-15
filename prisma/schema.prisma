@@ -293,6 +293,7 @@ model User {
   role         Role
   department   Department?
   position     String? // trade/position: Foreman, Mason, Carpenter, Welder, Driver, Office Admin…
+  employeeNo   String?     @unique // company employee ID printed on the payslip, e.g. VCDC-016
   dailyRate    Decimal?    @db.Decimal(12, 2)
   hourlyRate   Decimal?    @db.Decimal(12, 2)
   // Office/Architect/Engineer paid a fixed monthly salary instead of an
@@ -1179,9 +1180,11 @@ model PayrollRun {
   department  Department?
   periodStart DateTime
   periodEnd   DateTime
-  entries     Json // [{ userId, hours, ot, gross, deductions, net }]
+  entries     Json // [{ userId, hours, ot, gross, deductions, net, slipRef }]
   status      PayrollStatus @default(DRAFT)
   createdAt   DateTime      @default(now())
+  approvedAt     DateTime? // when the Owner approved it — printed on payslips as the approval
+  approvedByName String?
 }
 
 model SiteInstruction {

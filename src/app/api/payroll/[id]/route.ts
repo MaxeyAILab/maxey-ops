@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { PAYROLL_CONFIG, normalizeEntries, type PayrollEntry } from "@/lib/payroll";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
+import { ensureSlipRefs } from "@/lib/payslip-refs";
 
 const entryEditSchema = z.object({
   userId: z.string().min(1),
@@ -68,6 +69,8 @@ export const PATCH = handleApi(
           meals: r2(edit.meals),
           cashAdvance: r2(edit.cashAdvance),
           net: r2(net),
+          // A reference number, once issued, stays with the person on this run.
+          ...(prior.slipRef ? { slipRef: prior.slipRef } : {}),
         };
       });
       // Keep any existing entry not present in the submitted edit list —
@@ -101,7 +104,9 @@ export const PATCH = handleApi(
       if (run.status !== "APPROVED") {
         throw new ApiError(400, run.status === "PAID" ? "A run that's already paid can't be reopened" : `Run is ${run.status}, not approved`);
       }
-      const updated = await prisma.payrollRun.update({ where: { id: params.id }, data: { status: "DRAFT" } });
+      // Back to draft: the approval details are cleared (they're set again at the next approval); any payslip reference
+      // numbers already issued are kept, so a reprint after re-approval carries the same number.
+      const updated = await prisma.payrollRun.update({ where: { id: params.id }, data: { status: "DRAFT", approvedAt: null, approvedByName: null } });
       await audit({
         entityType: "PayrollRun",
         entityId: run.id,
@@ -131,8 +136,14 @@ export const PATCH = handleApi(
 
     const updated = await prisma.payrollRun.update({
       where: { id: params.id },
-      data: { status: body.status },
+      data: {
+        status: body.status,
+        // Stamp who approved it and when — printed on the payslips as "Approved By".
+        ...(body.status === "APPROVED" ? { approvedAt: new Date(), approvedByName: user.name } : {}),
+      },
     });
+    // Payslips get their reference numbers the moment the payroll is approved.
+    if (body.status === "APPROVED") await ensureSlipRefs(updated.id);
 
     await audit({
       entityType: "PayrollRun",
