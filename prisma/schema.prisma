@@ -294,6 +294,7 @@ model User {
   department   Department?
   position     String? // trade/position: Foreman, Mason, Carpenter, Welder, Driver, Office Admin…
   employeeNo   String?     @unique // company employee ID printed on the payslip, e.g. VCDC-016
+  canRequisition Boolean    @default(false) // the Owner lets this person raise material requisitions even though their role doesn't already allow it
   payslipBaselines PayslipBaseline[]
   dailyRate    Decimal?    @db.Decimal(12, 2)
   hourlyRate   Decimal?    @db.Decimal(12, 2)

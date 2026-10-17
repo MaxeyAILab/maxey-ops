@@ -3,7 +3,8 @@ import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fmtDate } from "@/lib/format";
 import { Badge, Card, CardHeader, Table, Td, Th } from "@/components/ui";
-import { AccountToggleButton, ResetPasswordButton } from "@/components/portal-access";
+import { AccountToggleButton, RequisitionAccessToggle, ResetPasswordButton } from "@/components/portal-access";
+import { requisitionAllowedByRole } from "@/lib/requisitions";
 
 export const metadata = { title: "People" };
 export const dynamic = "force-dynamic";
@@ -57,6 +58,13 @@ export default async function PeoplePage() {
           : u.assignments.map((a) => a.project.name).join(", ") || (u.department ?? "—")}
       </Td>
       <Td>
+        {u.role === "CLIENT" || u.role === "OWNER" ? (
+          <span className="text-xs text-ink-300">{u.role === "OWNER" ? "Yes — owner" : "—"}</span>
+        ) : (
+          <RequisitionAccessToggle userId={u.id} name={u.name} byRole={requisitionAllowedByRole(u)} allowed={u.canRequisition} />
+        )}
+      </Td>
+      <Td>
         <Badge value={u.active ? "ACTIVE" : "NOT_ACTIVE"} label={u.active ? "Active" : "Deactivated"} />
       </Td>
       <Td className="text-xs text-ink-400">{fmtDate(u.createdAt)}</Td>
@@ -79,6 +87,7 @@ export default async function PeoplePage() {
       <Th>Position / Client</Th>
       <Th>Login email</Th>
       <Th>Assignment</Th>
+      <Th>Can raise requisitions</Th>
       <Th>Status</Th>
       <Th>Since</Th>
       <Th />

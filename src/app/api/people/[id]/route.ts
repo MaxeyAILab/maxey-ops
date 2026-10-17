@@ -7,7 +7,8 @@ import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 
 const actionSchema = z.object({
-  action: z.enum(["deactivate", "reactivate", "reset-password"]),
+  action: z.enum(["deactivate", "reactivate", "reset-password", "set-requisition-access"]),
+  allowed: z.boolean().optional(),
 });
 
 /**
@@ -24,6 +25,22 @@ export const PATCH = handleApi(
     if (!target) throw new ApiError(404, "Account not found");
     if (target.role === "OWNER") throw new ApiError(400, "The owner account cannot be modified here");
     if (target.id === user.id) throw new ApiError(400, "Use your own account settings instead");
+
+    if (body.action === "set-requisition-access") {
+      if (typeof body.allowed !== "boolean") throw new ApiError(400, "Say whether they may raise requisitions");
+      if (target.role === "CLIENT") throw new ApiError(400, "A client account can't raise requisitions");
+      if (target.canRequisition === body.allowed) return NextResponse.json({ ok: true, alreadyDone: true });
+      await prisma.user.update({ where: { id: target.id }, data: { canRequisition: body.allowed } });
+      await audit({
+        entityType: "User",
+        entityId: target.id,
+        actorId: user.id,
+        actorName: user.name,
+        action: body.allowed ? "REQUISITION_ACCESS_GRANTED" : "REQUISITION_ACCESS_REMOVED",
+        diff: { name: target.name, role: target.role },
+      });
+      return NextResponse.json({ ok: true });
+    }
 
     if (body.action === "deactivate") {
       if (!target.active) throw new ApiError(400, "Already deactivated");

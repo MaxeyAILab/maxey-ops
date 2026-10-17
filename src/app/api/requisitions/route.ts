@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { notifyOwner } from "@/lib/notify";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
-import { projectOrCategoryLabel } from "@/lib/requisitions";
+import { canRaiseRequisition, projectOrCategoryLabel } from "@/lib/requisitions";
 
 const itemSchema = z.object({
   name: z.string().min(1).max(200),
@@ -31,10 +31,7 @@ const createSchema = z.object({
  */
 export const POST = handleApi(async (req: NextRequest) => {
   const user = await requireUser();
-  const canCreate =
-    ["FOREMAN", "PM", "OWNER", "DRIVER"].includes(user.role) ||
-    ["ARCHITECT", "ENGINEER"].includes(user.department ?? "");
-  if (!canCreate) throw new ApiError(403, "Not authorized for this action");
+  if (!canRaiseRequisition(user)) throw new ApiError(403, "Not authorized for this action");
   const body = createSchema.parse(await req.json());
 
   const existing = await prisma.requisition.findUnique({

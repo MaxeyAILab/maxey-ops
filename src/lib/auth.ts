@@ -18,6 +18,8 @@ export interface SessionUser {
   mustChangePassword: boolean;
   useCustomMenus: boolean;
   customMenus: string[];
+  /** The Owner has allowed this person to raise requisitions (see canRaiseRequisition). */
+  canRequisition: boolean;
   /** Single-device login tag, set for every role including the Owner. */
   sessionId?: string;
 }
@@ -125,6 +127,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       name: true,
       useCustomMenus: true,
       customMenus: true,
+      canRequisition: true,
       currentSessionId: true,
     },
   });
@@ -141,5 +144,6 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     mustChangePassword: dbUser.mustChangePassword,
     useCustomMenus: dbUser.useCustomMenus,
     customMenus: dbUser.customMenus,
+    canRequisition: dbUser.canRequisition,
   };
 }

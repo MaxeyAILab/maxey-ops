@@ -1,3 +1,16 @@
+/**
+ * Who may raise a material requisition: Foremen, PMs, the Owner, drivers and anyone in the Architect/Engineer departments by
+ * their role, plus anyone the Owner has switched on individually (People page → "Can raise requisitions"). Never a client.
+ * One rule, used by the New requisition button, the form page and the API, so they can't disagree.
+ */
+export function canRaiseRequisition(u: { role: string; department?: string | null; canRequisition?: boolean | null }): boolean {
+  if (u.role === "CLIENT") return false;
+  return ["FOREMAN", "PM", "OWNER", "DRIVER"].includes(u.role) || ["ARCHITECT", "ENGINEER"].includes(u.department ?? "") || !!u.canRequisition;
+}
+
+/** Whether the role/department already allows it, so the Owner's switch isn't needed. */
+export const requisitionAllowedByRole = (u: { role: string; department?: string | null }) => canRaiseRequisition({ ...u, canRequisition: false });
+
 /** The "General & Administrative" section of the requisition dropdown: company purchases that aren't tied to a
  * project (office needs, warehouse stock, emergencies). Stored as the categories OFFICE_SUPPLY / WAREHOUSE_SUPPLY /
  * EMERGENCY — only the wording changed. */

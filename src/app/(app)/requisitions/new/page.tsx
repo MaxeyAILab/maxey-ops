@@ -3,17 +3,14 @@ import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { RequisitionForm } from "@/components/requisition-form";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
+import { canRaiseRequisition } from "@/lib/requisitions";
 
 export const metadata = { title: "New Requisition" };
 export const dynamic = "force-dynamic";
 
 export default async function NewRequisitionPage() {
   const user = await getSessionUser();
-  const canCreate =
-    !!user &&
-    (["FOREMAN", "PM", "OWNER", "DRIVER"].includes(user.role) ||
-      ["ARCHITECT", "ENGINEER"].includes(user.department ?? ""));
-  if (!canCreate) redirect("/requisitions");
+  if (!user || !canRaiseRequisition(user)) redirect("/requisitions");
 
   const projects = await prisma.project.findMany({
     where: { status: { in: CHARGEABLE_STATUSES } },

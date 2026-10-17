@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { fmtDateTime, php } from "@/lib/format";
 import { Badge, Button, Card, CardHeader, Table, Td, Th } from "@/components/ui";
 import { DeleteRequisitionButton } from "@/components/requisition-actions";
-import { projectOrCategoryLabel, requisitionAmount } from "@/lib/requisitions";
+import { canRaiseRequisition, projectOrCategoryLabel, requisitionAmount } from "@/lib/requisitions";
 import { canAccess } from "@/lib/access";
 
 export const metadata = { title: "Requisitions" };
@@ -111,7 +111,7 @@ export default async function RequisitionsPage() {
             </p>
           )}
         </div>
-        {["FOREMAN", "PM", "OWNER"].includes(user.role) && (
+        {canRaiseRequisition(user) && (
           <Link href="/requisitions/new">
             <Button>+ New requisition</Button>
           </Link>

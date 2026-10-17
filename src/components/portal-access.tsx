@@ -160,3 +160,37 @@ export function ResetPasswordButton({ userId, name }: { userId: string; name: st
     </button>
   );
 }
+
+/**
+ * People page: the Owner's per-person switch for raising material requisitions. People whose role or department already
+ * allows it (Foremen, PMs, drivers, architects and engineers) just show "by role"; for everyone else it can be turned on.
+ */
+export function RequisitionAccessToggle({ userId, name, byRole, allowed }: { userId: string; name: string; byRole: boolean; allowed: boolean }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  if (byRole) return <span className="text-xs text-ink-400">Yes — by role</span>;
+
+  async function change(next: boolean) {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    const res = await fetch(`/api/people/${userId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "set-requisition-access", allowed: next }),
+    });
+    setBusy(false);
+    if (res.ok) router.refresh();
+    else setError(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? "Failed");
+  }
+
+  return (
+    <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-ink-700">
+      <input type="checkbox" checked={allowed} disabled={busy} onChange={(e) => change(e.target.checked)} aria-label={`${name} can raise requisitions`} />
+      {allowed ? "Yes" : "No"}
+      {error && <span className="text-red-600">{error}</span>}
+    </label>
+  );
+}
