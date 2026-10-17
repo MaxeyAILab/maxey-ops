@@ -3,16 +3,16 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
-import { PAYROLL_CONFIG, type PayrollEntry } from "@/lib/payroll";
+import type { PayrollEntry } from "@/lib/payroll";
 import { php } from "@/lib/format";
 
 type EditableField = "regularHours" | "otHours" | "hourlyRate" | "sss" | "philhealth" | "pagibig" | "meals" | "cashAdvance";
 
-function computeGross(e: Pick<PayrollEntry, "regularHours" | "otHours" | "hourlyRate">): number {
-  return e.regularHours * e.hourlyRate + e.otHours * e.hourlyRate * PAYROLL_CONFIG.otMultiplier;
+function computeGross(e: Pick<PayrollEntry, "regularHours" | "otHours" | "hourlyRate">, otMultiplier: number): number {
+  return e.regularHours * e.hourlyRate + e.otHours * e.hourlyRate * otMultiplier;
 }
-function computeNet(e: PayrollEntry): number {
-  const gross = computeGross(e);
+function computeNet(e: PayrollEntry, otMultiplier: number): number {
+  const gross = computeGross(e, otMultiplier);
   return Math.max(0, gross - e.sss - e.philhealth - e.pagibig - e.meals - e.cashAdvance);
 }
 
@@ -23,7 +23,7 @@ function computeNet(e: PayrollEntry): number {
  * the run is DRAFT/REVIEW (the API enforces this too — this is just the UI
  * reflecting the same rule).
  */
-export function EditablePayrollTable({ runId, initialEntries }: { runId: string; initialEntries: PayrollEntry[] }) {
+export function EditablePayrollTable({ runId, initialEntries, otMultiplier }: { runId: string; initialEntries: PayrollEntry[]; otMultiplier: number }) {
   const router = useRouter();
   const [entries, setEntries] = useState<PayrollEntry[]>(initialEntries);
   const [busy, setBusy] = useState(false);
@@ -68,9 +68,9 @@ export function EditablePayrollTable({ runId, initialEntries }: { runId: string;
 
   const totals = entries.reduce(
     (acc, e) => ({
-      gross: acc.gross + computeGross(e),
+      gross: acc.gross + computeGross(e, otMultiplier),
       deductions: acc.deductions + e.sss + e.philhealth + e.pagibig + e.meals + e.cashAdvance,
-      net: acc.net + computeNet(e),
+      net: acc.net + computeNet(e, otMultiplier),
     }),
     { gross: 0, deductions: 0, net: 0 }
   );
@@ -117,7 +117,7 @@ export function EditablePayrollTable({ runId, initialEntries }: { runId: string;
                     />
                   </td>
                 ))}
-                <td className="px-2 py-1.5 text-right font-medium tabular-nums">{php(computeGross(e))}</td>
+                <td className="px-2 py-1.5 text-right font-medium tabular-nums">{php(computeGross(e, otMultiplier))}</td>
                 {(["sss", "philhealth", "pagibig", "meals", "cashAdvance"] as const).map((field) => (
                   <td key={field} className="px-2 py-1.5">
                     <input
@@ -131,7 +131,7 @@ export function EditablePayrollTable({ runId, initialEntries }: { runId: string;
                   </td>
                 ))}
                 <td className="px-2 py-1.5 text-right font-semibold tabular-nums text-emerald-700">
-                  {php(computeNet(e))}
+                  {php(computeNet(e, otMultiplier))}
                 </td>
               </tr>
             ))}

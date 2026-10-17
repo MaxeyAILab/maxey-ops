@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
-import { PAYROLL_CONFIG, hourlyRateForUser, normalizeEntries, pricedEntry, type PayrollEntry } from "@/lib/payroll";
+import { hourlyRateForUser, normalizeEntries, otMultiplierFor, pricedEntry, type PayrollEntry } from "@/lib/payroll";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { ensureSlipRefs } from "@/lib/payslip-refs";
 
@@ -60,7 +60,7 @@ export const PATCH = handleApi(
       const updatedEntries: PayrollEntry[] = body.entries.map((edit) => {
         const prior = byUser.get(edit.userId);
         if (!prior) throw new ApiError(400, `Unknown worker on this run: ${edit.userId}`);
-        const gross = edit.regularHours * edit.hourlyRate + edit.otHours * edit.hourlyRate * PAYROLL_CONFIG.otMultiplier;
+        const gross = edit.regularHours * edit.hourlyRate + edit.otHours * edit.hourlyRate * otMultiplierFor(run.department);
         const net = Math.max(0, gross - edit.sss - edit.philhealth - edit.pagibig - edit.meals - edit.cashAdvance);
         return {
           userId: edit.userId,
@@ -134,7 +134,7 @@ export const PATCH = handleApi(
 
         // Priced on the rate as the register shows it (to the centavo), so saving the register later can't move the gross.
         const shownRate = Math.round(rate * 100) / 100;
-        const entry: PayrollEntry = { ...pricedEntry({ id: person.id, name: person.name }, 0, body.regularHours, body.otHours, shownRate), manual: true };
+        const entry: PayrollEntry = { ...pricedEntry({ id: person.id, name: person.name }, 0, body.regularHours, body.otHours, shownRate, otMultiplierFor(run.department)), manual: true };
         const entries = [...existing, entry].sort((a, b) => a.name.localeCompare(b.name));
         await db.payrollRun.update({ where: { id: run.id }, data: { entries: entries as never } });
         return { run, entry, workers: entries.length };

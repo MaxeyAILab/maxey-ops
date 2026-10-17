@@ -14,6 +14,8 @@ export interface SlipRunInfo {
   periodEnd: Date;
   projectName: string | null;
   approvedByName: string | null;
+  /** The run's overtime multiplier (1.25 for office staff, 1 for drivers). */
+  otMultiplier?: number;
 }
 
 export interface SlipEmployeeInfo {
@@ -90,7 +92,7 @@ export function daysFromHours(regularHours: number): number {
 export const slipDays = (days: number) => String(Number(days.toFixed(2)));
 
 export function buildPayslip(entry: PayrollEntry & { slipRef?: string }, employee: SlipEmployeeInfo, run: SlipRunInfo): PayslipModel {
-  const otPay = r2(entry.otHours * entry.hourlyRate * PAYROLL_CONFIG.otMultiplier);
+  const otPay = r2(entry.otHours * entry.hourlyRate * (run.otMultiplier ?? PAYROLL_CONFIG.otMultiplier));
   const deductions: PayslipModel["deductions"] = [
     { label: "SSS", amount: entry.sss, showWhenZero: true },
     { label: "PHILHEALTH", amount: entry.philhealth, showWhenZero: true },

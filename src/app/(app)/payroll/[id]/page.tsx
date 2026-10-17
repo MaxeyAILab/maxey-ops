@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fmtDate, fmtDateTime, php } from "@/lib/format";
-import { hourlyRateForUser, normalizeEntries, workingDaysInPeriod, type PayrollEntry } from "@/lib/payroll";
+import { hourlyRateForUser, normalizeEntries, otMultiplierFor, workingDaysInPeriod, type PayrollEntry } from "@/lib/payroll";
 import { Badge, Card, CardBody, CardHeader, Table, Td, Th } from "@/components/ui";
 import { PayrollStatusButtons } from "@/components/payroll-actions";
 import { AddPersonToRun, EditablePayrollTable } from "@/components/payroll-entry-editor";
@@ -48,6 +48,8 @@ export default async function PayrollRunPage({ params }: { params: { id: string 
     }
   }
   const periodWorkingDays = workingDaysInPeriod(run.periodStart, run.periodEnd);
+  const otMultiplier = otMultiplierFor(run.department);
+  const otNote = otMultiplier === 1 ? "OT paid at the regular hourly rate (drivers)" : `OT at ${otMultiplier}×`;
 
   const auditTrail = await prisma.auditLog.findMany({
     where: { entityType: "PayrollRun", entityId: run.id },
@@ -112,15 +114,15 @@ export default async function PayrollRunPage({ params }: { params: { id: string 
           title="Payroll register"
           subtitle={
             canEdit
-              ? "Edit hours, rate, or any deduction below, then Save changes before approving — OT at 1.25×"
-              : "OT at 1.25×; SSS/PhilHealth/Pag-IBIG figures are configurable placeholders"
+              ? `Edit hours, rate, or any deduction below, then Save changes before approving — ${otNote}`
+              : `${otNote}; SSS/PhilHealth/Pag-IBIG figures are configurable placeholders`
           }
         />
         <CardBody>
           {canEdit ? (
             <div className="space-y-4">
               {/* keyed by who is on the run, so adding a person reloads the table with them in it */}
-              <EditablePayrollTable key={entries.map((e) => e.userId).join(",")} runId={run.id} initialEntries={entries} />
+              <EditablePayrollTable key={entries.map((e) => e.userId).join(",")} runId={run.id} initialEntries={entries} otMultiplier={otMultiplier} />
               <AddPersonToRun runId={run.id} candidates={candidates} defaultHours={periodWorkingDays * 8} workingDays={periodWorkingDays} />
             </div>
           ) : (

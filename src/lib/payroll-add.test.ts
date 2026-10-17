@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hourlyRateForUser, pricedEntry, workingDaysInPeriod } from "./payroll";
+import { hourlyRateForUser, otMultiplierFor, pricedEntry, workingDaysInPeriod } from "./payroll";
 
 const manila = (day: string, time = "00:00") => new Date(`${day}T${time}:00+08:00`);
 
@@ -67,5 +67,26 @@ describe("hourly rate from a profile", () => {
 
   it("is zero when no rate is set", () => {
     expect(hourlyRateForUser({ monthlySalary: null, hourlyRate: null, dailyRate: null }, oct)).toBe(0);
+  });
+});
+
+describe("overtime rate by department", () => {
+  const who = { id: "u1", name: "Test Person" };
+
+  it("pays drivers' overtime at the normal hourly rate and everyone else's at 1.25x", () => {
+    expect(otMultiplierFor("DRIVER")).toBe(1);
+    for (const dept of ["OFFICE", "ARCHITECT", "ENGINEER", "SITE", null, undefined]) expect(otMultiplierFor(dept)).toBe(1.25);
+  });
+
+  it("prices a driver's 48 regular + 4 overtime hours at 52 x the rate (the register's real case)", () => {
+    const driver = pricedEntry(who, 6, 48, 4, 91.25, otMultiplierFor("DRIVER"));
+    expect(driver.gross).toBe(4745); // 52 x 91.25
+    const office = pricedEntry(who, 6, 48, 4, 91.25, otMultiplierFor("OFFICE"));
+    expect(office.gross).toBe(4836.25); // 48 x 91.25 + 4 x 91.25 x 1.25
+  });
+
+  it("changes nothing for a person with no overtime", () => {
+    expect(pricedEntry(who, 6, 36, 0, 93.75, 1).gross).toBe(3375);
+    expect(pricedEntry(who, 6, 36, 0, 93.75, 1.25).gross).toBe(3375);
   });
 });

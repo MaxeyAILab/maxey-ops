@@ -19,11 +19,20 @@ import {
  */
 export const PAYROLL_CONFIG = {
   regularHoursPerDay: 8,
-  otMultiplier: 1.25, // ordinary-day overtime premium
+  otMultiplier: 1.25, // ordinary-day overtime premium (office staff, site crews) — see otMultiplierFor()
   sssRate: 0.045, // employee share, placeholder
   philhealthRate: 0.025, // employee share, placeholder
   pagibigFlat: 100, // monthly flat, applied per run as placeholder
 };
+
+/**
+ * The overtime multiplier for a run. Office-schedule staff (Office, Architect, Engineer) and site crews are paid
+ * overtime at 1.25x; drivers are paid their overtime hours at the normal hourly rate (1.0x). A project (site-crew)
+ * run has no department, so it keeps the standard 1.25x.
+ */
+export function otMultiplierFor(department: string | null | undefined): number {
+  return department === "DRIVER" ? 1 : PAYROLL_CONFIG.otMultiplier;
+}
 
 export interface PayrollEntry {
   userId: string;
@@ -104,7 +113,8 @@ function buildEntry(
   ruleset: TimeRuleset,
   approvalsByAttendanceId: Map<string, AdjustmentFlags>,
   overridesByUserDay: Map<string, number>,
-  adjustment = 0
+  adjustment = 0,
+  otMultiplier: number = PAYROLL_CONFIG.otMultiplier
 ): PayrollEntry | null {
   if (records.length === 0 && adjustment === 0) return null;
 
@@ -120,7 +130,7 @@ function buildEntry(
   // Owner's period-total correction (attendance page) — counted as regular hours.
   regularHours = Math.max(0, regularHours + adjustment);
 
-  return pricedEntry(user, byDay.size, regularHours, otHours, hourlyRate);
+  return pricedEntry(user, byDay.size, regularHours, otHours, hourlyRate, otMultiplier);
 }
 
 /**
@@ -133,10 +143,11 @@ export function pricedEntry(
   daysWorked: number,
   regularHours: number,
   otHours: number,
-  hourlyRate: number
+  hourlyRate: number,
+  otMultiplier: number = PAYROLL_CONFIG.otMultiplier
 ): PayrollEntry {
   const cfg = PAYROLL_CONFIG;
-  const gross = regularHours * hourlyRate + otHours * hourlyRate * cfg.otMultiplier;
+  const gross = regularHours * hourlyRate + otHours * hourlyRate * otMultiplier;
   const sss = gross * cfg.sssRate;
   const philhealth = gross * cfg.philhealthRate;
   const pagibig = gross > 0 ? cfg.pagibigFlat : 0;
@@ -394,7 +405,8 @@ export async function computePayroll(
       ruleset,
       approvals,
       overrides,
-      adjustments.get(u.id) ?? 0
+      adjustments.get(u.id) ?? 0,
+      otMultiplierFor(department)
     );
     if (entry) entries.push(entry);
   }

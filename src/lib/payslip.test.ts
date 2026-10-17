@@ -145,6 +145,14 @@ describe("what a payslip shows", () => {
     expect(buildPayslip(entry({ otHours: 0 }), emp, run).earnings.otPay).toBe(0);
   });
 
+  it("shows a driver's overtime at the normal rate, using the run's multiplier", () => {
+    const m = buildPayslip(entry({ otHours: 4, regularHours: 48, hourlyRate: 91.25, gross: 4745 }), emp, { ...run, otMultiplier: 1 });
+    expect(m.earnings.otPay).toBe(365); // 4 hrs x 91.25 x 1
+    expect(m.earnings.total).toBe(4745);
+    const office = buildPayslip(entry({ otHours: 4, regularHours: 48, hourlyRate: 91.25, gross: 4836.25 }), emp, { ...run, otMultiplier: 1.25 });
+    expect(office.earnings.otPay).toBe(456.25);
+  });
+
   it("totals the deductions it lists", () => {
     const m = buildPayslip(entry({ sss: 400, philhealth: 200, pagibig: 100, meals: 50, cashAdvance: 250 }), emp, run);
     expect(m.totalDeductions).toBe(1000);

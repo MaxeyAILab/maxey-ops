@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
-import { normalizeEntries, type PayrollEntry } from "@/lib/payroll";
+import { normalizeEntries, otMultiplierFor, type PayrollEntry } from "@/lib/payroll";
 import { buildPayslip, slipFileName } from "@/lib/payslip";
 import { buildPayslipsPdf } from "@/lib/payslip-pdf";
 import { ensureSlipRefs } from "@/lib/payslip-refs";
@@ -67,7 +67,7 @@ export const GET = handleApi(async (req: NextRequest, { params }: { params: { id
     buildPayslip(
       e,
       { employeeNo: byId.get(e.userId)?.employeeNo ?? null, position: byId.get(e.userId)?.position ?? null, department: byId.get(e.userId)?.department ?? null },
-      { periodStart: run.periodStart, periodEnd: run.periodEnd, projectName: found.project?.name ?? null, approvedByName }
+      { periodStart: run.periodStart, periodEnd: run.periodEnd, projectName: found.project?.name ?? null, approvedByName, otMultiplier: otMultiplierFor(run.department) }
     )
   );
 
