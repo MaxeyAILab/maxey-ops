@@ -16,6 +16,8 @@ export interface SlipRunInfo {
   approvedByName: string | null;
   /** The run's overtime multiplier (1.25 for office staff, 1 for drivers). */
   otMultiplier?: number;
+  /** The date printed as "Date:" — the day the payslip is handed out. Defaults to the last day of the period. */
+  payDate?: Date;
 }
 
 export interface SlipEmployeeInfo {
@@ -65,6 +67,14 @@ export function payslipPeriodLabel(start: Date, end: Date): string {
   return `${MONTH_LONG[a.m]} ${a.d}, ${a.y} - ${MONTH_LONG[b.m]} ${b.d}, ${b.y}`;
 }
 
+/**
+ * The date on a payslip. Office staff: the last day of the period. Drivers are handed their payslip the day after the
+ * Friday cut-off (Saturday), so theirs is dated one day later while the cut-off period itself stays as it is.
+ */
+export function payslipPayDate(department: string | null | undefined, periodEnd: Date): Date {
+  return department === "DRIVER" ? new Date(periodEnd.getTime() + 86_400_000) : periodEnd;
+}
+
 /** "30-Sep-26". */
 export function payslipDateLabel(day: Date): string {
   const p = parts(day);
@@ -104,7 +114,7 @@ export function buildPayslip(entry: PayrollEntry & { slipRef?: string }, employe
   return {
     name: entry.name,
     periodLabel: payslipPeriodLabel(run.periodStart, run.periodEnd),
-    dateLabel: payslipDateLabel(run.periodEnd),
+    dateLabel: payslipDateLabel(run.payDate ?? run.periodEnd),
     employeeNo: employee.employeeNo ?? "",
     designation: employee.position?.trim() || (employee.department ? DEPARTMENT_LABEL[employee.department] ?? "" : ""),
     projectName: run.projectName,

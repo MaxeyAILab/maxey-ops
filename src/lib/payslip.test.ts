@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PDFDocument } from "pdf-lib";
 import type { PayrollEntry } from "./payroll";
-import { buildPayslip, daysFromHours, nextPersonSlipRef, slipDays, payslipDateLabel, payslipPeriodLabel, slipFileName, slipMoney, slipYear } from "./payslip";
+import { buildPayslip, daysFromHours, nextPersonSlipRef, payslipPayDate, slipDays, payslipDateLabel, payslipPeriodLabel, slipFileName, slipMoney, slipYear } from "./payslip";
 import { SLIP_H, SLIP_W, buildPayslipsPdf } from "./payslip-pdf";
 
 const manila = (day: string, time = "00:00") => new Date(`${day}T${time}:00+08:00`);
@@ -43,6 +43,28 @@ describe("payslip wording", () => {
     // 16 Sept 00:00 in Manila is still 15 Sept in UTC — the slip must say the 16th
     expect(payslipPeriodLabel(new Date("2026-09-15T16:00:00Z"), new Date("2026-09-30T15:59:00Z"))).toBe("Sept. 16-30, 2026");
     expect(payslipDateLabel(new Date("2026-09-30T15:59:00Z"))).toBe("30-Sep-26");
+  });
+
+  it("dates a driver's payslip the day after the cut-off, but not an office person's", () => {
+    const cutoff = manila("2026-10-16", "17:00"); // drivers' Friday 5 PM cut-off
+    expect(payslipDateLabel(payslipPayDate("DRIVER", cutoff))).toBe("17-Oct-26");
+    expect(payslipDateLabel(payslipPayDate("OFFICE", manila("2026-10-15", "23:59")))).toBe("15-Oct-26");
+    expect(payslipDateLabel(payslipPayDate("ENGINEER", manila("2026-09-30", "23:59")))).toBe("30-Sep-26");
+    expect(payslipDateLabel(payslipPayDate(null, cutoff))).toBe("16-Oct-26"); // project crews unchanged
+  });
+
+  it("keeps the printed period the cut-off period while the date moves", () => {
+    const driverRun = { periodStart: manila("2026-10-09", "17:01"), periodEnd: manila("2026-10-16", "17:00"), projectName: null, approvedByName: null, payDate: payslipPayDate("DRIVER", manila("2026-10-16", "17:00")) };
+    const m = buildPayslip(entry(), emp, driverRun);
+    expect(m.periodLabel).toBe("Oct. 9-16, 2026");
+    expect(m.dateLabel).toBe("17-Oct-26");
+    expect(buildPayslip(entry(), emp, { ...driverRun, payDate: undefined }).dateLabel).toBe("16-Oct-26");
+  });
+
+  it("rolls a driver's date into the next month and year when the cut-off is the last day", () => {
+    expect(payslipDateLabel(payslipPayDate("DRIVER", manila("2026-10-30", "17:00")))).toBe("31-Oct-26");
+    expect(payslipDateLabel(payslipPayDate("DRIVER", manila("2026-10-31", "17:00")))).toBe("01-Nov-26");
+    expect(payslipDateLabel(payslipPayDate("DRIVER", manila("2026-12-31", "17:00")))).toBe("01-Jan-27");
   });
 
   it("formats the date and money like the form", () => {
@@ -103,6 +125,12 @@ describe("payslip reference numbers (each person's own count for the year)", () 
   it("uses whichever is higher, the baseline or what they already hold", () => {
     expect(nextPersonSlipRef(["2026-019"], 18, 2026)).toBe("2026-020");
     expect(nextPersonSlipRef(["2026-005"], 18, 2026)).toBe("2026-019");
+  });
+
+  it("counts a driver's weeks: 41st week held -> the 42nd, then the 43rd", () => {
+    expect(nextPersonSlipRef(["2026-041"], 40, 2026)).toBe("2026-042"); // Oct 9-16
+    expect(nextPersonSlipRef(["2026-041", "2026-042"], 40, 2026)).toBe("2026-043"); // the next cut-off
+    expect(nextPersonSlipRef([], 41, 2026)).toBe("2026-042");
   });
 
   it("keeps each year separate and ignores blanks and junk", () => {
