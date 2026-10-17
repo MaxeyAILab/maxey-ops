@@ -10,6 +10,7 @@ import {
 } from "@/lib/project-status";
 import { Badge, Table, Td, Th } from "@/components/ui";
 import {
+  AddNonCorporateJobSection,
   AddProjectSection,
   DeleteProjectButton,
   ProjectStatusSelect,
@@ -78,11 +79,14 @@ export default async function ProjectsPage() {
   const canManage = ["OWNER", "PM"].includes(user.role);
   const isOwner = user.role === "OWNER";
 
-  const ongoing = projects.filter((p) => (ONGOING_STATUSES as string[]).includes(p.status));
-  const prospective = projects.filter((p) =>
+  // Non-corporate jobs (the owner's properties, work for other organizations) live in their own section below.
+  const corporate = projects.filter((p) => !p.isNonCorporate);
+  const nonCorporate = projects.filter((p) => p.isNonCorporate);
+  const ongoing = corporate.filter((p) => (ONGOING_STATUSES as string[]).includes(p.status));
+  const prospective = corporate.filter((p) =>
     (PROSPECTIVE_STATUSES as string[]).includes(p.status)
   );
-  const completed = projects.filter((p) => (COMPLETED_STATUSES as string[]).includes(p.status));
+  const completed = corporate.filter((p) => (COMPLETED_STATUSES as string[]).includes(p.status));
 
   const renderTable = (rows: ProjectRow[], emptyText: string, tone: Tone) => (
     <Table>
@@ -158,12 +162,60 @@ export default async function ProjectsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <h1 className="text-xl font-bold text-ink-900">Projects</h1>
-        {canManage && <AddProjectSection />}
+        <div className="flex flex-wrap items-start gap-2">
+          {isOwner && <AddNonCorporateJobSection />}
+          {canManage && <AddProjectSection />}
+        </div>
       </div>
 
       {section("green", "On-going Projects", ongoing, "Mobilization · On-going Construction · Project On-hold · For Punchlist", "No on-going projects.")}
       {section("yellow", "Prospective Projects", prospective, "For Site Survey · Not Active — plus new leads converted from the CRM", "No prospective projects — convert a won lead or add one manually.")}
       {section("grey", "Completed / Turn-over Projects", completed, "Projects marked Turned-over move here automatically", "No turned-over projects yet.")}
+
+      <div className="overflow-hidden rounded-sm border border-violet-300 dark:border-violet-800">
+        <div className="bg-violet-700 px-4 py-3 text-white dark:bg-violet-800 sm:px-5">
+          <h3 className="text-sm font-semibold">Non-corporate Jobs ({nonCorporate.length})</h3>
+          <p className="mt-0.5 text-xs text-violet-100">The owner’s properties and work for other organizations — expenses only, kept separate from company operations</p>
+        </div>
+        <Table>
+          <thead>
+            <tr className="[&_th]:!bg-violet-100 [&_th]:!text-violet-950 [&_th]:!border-violet-300 dark:[&_th]:!bg-violet-950 dark:[&_th]:!text-violet-100 dark:[&_th]:!border-violet-800">
+              <Th>Job</Th>
+              <Th>Status</Th>
+              <Th className="text-right">Progress</Th>
+              <Th>Started</Th>
+              {isOwner && <Th />}
+            </tr>
+          </thead>
+          <tbody className="bg-violet-50/60 dark:bg-violet-950/30">
+            {nonCorporate.map((p) => (
+              <tr key={p.id} className="hover:bg-violet-100/60 dark:hover:bg-violet-900/30">
+                <Td>
+                  <Link href={`/projects/${p.id}`} className="font-medium text-brand-600 hover:underline">
+                    {p.name}
+                  </Link>
+                  <div className="text-xs text-ink-400">{p.address}</div>
+                </Td>
+                <Td>{canManage ? <ProjectStatusSelect projectId={p.id} current={p.status} /> : <Badge value={p.status} />}</Td>
+                <Td className="text-right tabular-nums">{weightedAccomplishment(computeWorkItemStatuses(p.progressEntries)).toFixed(0)}%</Td>
+                <Td>{fmtDate(p.startDate)}</Td>
+                {isOwner && (
+                  <Td className="text-right">
+                    <DeleteProjectButton projectId={p.id} name={p.name} />
+                  </Td>
+                )}
+              </tr>
+            ))}
+            {nonCorporate.length === 0 && (
+              <tr>
+                <Td colSpan={isOwner ? 5 : 4} className="py-8 text-center text-ink-400">
+                  No non-corporate jobs yet.{isOwner ? " Use “+ Add non-corporate job” above." : ""}
+                </Td>
+              </tr>
+            )}
+          </tbody>
+        </Table>
+      </div>
     </div>
   );
 }

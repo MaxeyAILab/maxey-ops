@@ -23,7 +23,7 @@ function computeNet(e: PayrollEntry, otMultiplier: number): number {
  * the run is DRAFT/REVIEW (the API enforces this too — this is just the UI
  * reflecting the same rule).
  */
-export function EditablePayrollTable({ runId, initialEntries, otMultiplier }: { runId: string; initialEntries: PayrollEntry[]; otMultiplier: number }) {
+export function EditablePayrollTable({ runId, initialEntries, otMultiplier, jobs }: { runId: string; initialEntries: PayrollEntry[]; otMultiplier: number; jobs?: { id: string; name: string }[] }) {
   const router = useRouter();
   const [entries, setEntries] = useState<PayrollEntry[]>(initialEntries);
   const [busy, setBusy] = useState(false);
@@ -34,6 +34,27 @@ export function EditablePayrollTable({ runId, initialEntries, otMultiplier }: { 
     setSaved(false);
     setEntries((prev) => prev.map((e) => (e.userId === userId ? { ...e, [field]: value } : e)));
   }
+
+  // Drivers only (the page passes `jobs` for a driver run): hours charged to a non-corporate job.
+  function setJob(userId: string, jobId: string) {
+    setSaved(false);
+    setEntries((prev) =>
+      prev.map((e) => {
+        if (e.userId !== userId) return e;
+        if (!jobId) {
+          const { nonCorporate: _drop, ...rest } = e;
+          return rest;
+        }
+        const job = jobs?.find((j) => j.id === jobId);
+        return { ...e, nonCorporate: { jobId, jobName: job?.name ?? "", hours: e.nonCorporate?.hours ?? Math.round((e.regularHours + e.otHours) * 100) / 100 } };
+      })
+    );
+  }
+  function setJobHours(userId: string, hours: number) {
+    setSaved(false);
+    setEntries((prev) => prev.map((e) => (e.userId === userId && e.nonCorporate ? { ...e, nonCorporate: { ...e.nonCorporate, hours } } : e)));
+  }
+  const chargedToJob = (e: PayrollEntry) => (e.nonCorporate ? Math.round(Math.min(e.nonCorporate.hours, e.regularHours + e.otHours) * e.hourlyRate * 100) / 100 : 0);
 
   async function onSave() {
     setBusy(true);
@@ -54,6 +75,7 @@ export function EditablePayrollTable({ runId, initialEntries, otMultiplier }: { 
           pagibig: e.pagibig,
           meals: e.meals,
           cashAdvance: e.cashAdvance,
+          ...(jobs ? { nonCorporateJobId: e.nonCorporate?.jobId ?? null, nonCorporateHours: e.nonCorporate?.hours ?? null } : {}),
         })),
       }),
     });
@@ -95,6 +117,8 @@ export function EditablePayrollTable({ runId, initialEntries, otMultiplier }: { 
               <th className="border-b border-ink-100 px-2 py-2 text-right">Meals</th>
               <th className="border-b border-ink-100 px-2 py-2 text-right">Cash adv.</th>
               <th className="border-b border-ink-100 px-2 py-2 text-right">Net pay</th>
+              {jobs && <th className="border-b border-ink-100 px-2 py-2">Non-corporate job</th>}
+              {jobs && <th className="border-b border-ink-100 px-2 py-2 text-right">Hrs there</th>}
             </tr>
           </thead>
           <tbody>
@@ -133,6 +157,41 @@ export function EditablePayrollTable({ runId, initialEntries, otMultiplier }: { 
                 <td className="px-2 py-1.5 text-right font-semibold tabular-nums text-emerald-700">
                   {php(computeNet(e, otMultiplier))}
                 </td>
+                {jobs && (
+                  <td className="px-2 py-1.5">
+                    <select
+                      aria-label={`Non-corporate job for ${e.name}`}
+                      value={e.nonCorporate?.jobId ?? ""}
+                      onChange={(ev) => setJob(e.userId, ev.target.value)}
+                      className="w-44 rounded border border-ink-200 bg-ink-50 px-1.5 py-1 text-xs focus:border-brand-500 focus:outline-none"
+                    >
+                      <option value="">— Corporate —</option>
+                      {jobs.map((j) => (
+                        <option key={j.id} value={j.id}>
+                          {j.name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                )}
+                {jobs && (
+                  <td className="px-2 py-1.5">
+                    {e.nonCorporate ? (
+                      <div className="text-right">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          aria-label={`Hours charged to the job for ${e.name}`}
+                          value={e.nonCorporate.hours}
+                          onChange={(ev) => setJobHours(e.userId, Number(ev.target.value))}
+                          className={cell}
+                        />
+                        <div className="mt-0.5 text-[10px] text-ink-500">{php(chargedToJob(e))} to the job</div>
+                      </div>
+                    ) : null}
+                  </td>
+                )}
               </tr>
             ))}
             <tr className="bg-ink-50 font-semibold">
@@ -144,6 +203,7 @@ export function EditablePayrollTable({ runId, initialEntries, otMultiplier }: { 
                 {php(totals.deductions)}
               </td>
               <td className="px-2 py-2 text-right tabular-nums text-emerald-700">{php(totals.net)}</td>
+              {jobs && <td className="px-2 py-2" colSpan={2} />}
             </tr>
           </tbody>
         </table>
@@ -155,6 +215,11 @@ export function EditablePayrollTable({ runId, initialEntries, otMultiplier }: { 
         {saved && <span className="text-sm text-emerald-600">Saved.</span>}
         {error && <span className="text-sm text-red-600">{error}</span>}
       </div>
+      {jobs && entries.some((e) => e.nonCorporate) && (
+        <p className="text-xs text-ink-500">
+          {php(entries.reduce((sum, e) => sum + chargedToJob(e), 0))} of this payroll is charged to non-corporate jobs: it is recorded under each job and left out of operations expense.
+        </p>
+      )}
     </div>
   );
 }

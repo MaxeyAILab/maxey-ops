@@ -1,18 +1,20 @@
-/** Non-project requisition categories — for emergencies and general company
- * purchases (broken tools, office supplies, warehouse stock) that shouldn't
- * be blocked on a project existing or being selected. */
+/** The "General & Administrative" section of the requisition dropdown: company purchases that aren't tied to a
+ * project (office needs, warehouse stock, emergencies). Stored as the categories OFFICE_SUPPLY / WAREHOUSE_SUPPLY /
+ * EMERGENCY — only the wording changed. */
+export const GA_LABEL = "General & Administrative";
+
 export const NON_PROJECT_CATEGORIES = [
-  { value: "EMERGENCY", label: "Emergency (no project)" },
-  { value: "OFFICE_SUPPLY", label: "Office Supply (no project)" },
-  { value: "WAREHOUSE_SUPPLY", label: "Warehouse Supply (no project)" },
+  { value: "OFFICE_SUPPLY", label: "Office" },
+  { value: "WAREHOUSE_SUPPLY", label: "Warehouse" },
+  { value: "EMERGENCY", label: "Emergency" },
 ] as const;
 
 export type NonProjectCategory = (typeof NON_PROJECT_CATEGORIES)[number]["value"];
 
 export const CATEGORY_LABELS: Record<string, string> = {
+  OFFICE_SUPPLY: "Office",
+  WAREHOUSE_SUPPLY: "Warehouse",
   EMERGENCY: "Emergency",
-  OFFICE_SUPPLY: "Office Supply",
-  WAREHOUSE_SUPPLY: "Warehouse Supply",
 };
 
 /** What to show wherever a requisition/PO/delivery's "project" is displayed. */
@@ -21,7 +23,7 @@ export function projectOrCategoryLabel(r: {
   category?: string | null;
 }): string {
   if (r.project) return r.project.name;
-  return CATEGORY_LABELS[r.category ?? "EMERGENCY"] ?? "No project";
+  return `G&A · ${CATEGORY_LABELS[r.category ?? "EMERGENCY"] ?? "General"}`;
 }
 
 /** Real committed cost if a live (non-cancelled) PO exists, else the

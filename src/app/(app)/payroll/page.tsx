@@ -153,7 +153,7 @@ export default async function PayrollPage() {
         return (
           <Card key={project.id}>
             <CardHeader
-              title={project.name}
+              title={project.isNonCorporate ? `${project.name} · Non-corporate` : project.name}
               subtitle={`${project.client.name} · labor committed to date: ${php(laborCommitted)}`}
               action={
                 <Link

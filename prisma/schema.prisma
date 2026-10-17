@@ -446,6 +446,7 @@ model Project {
   startDate     DateTime?
   targetEndDate DateTime?
   targetMarginPct Decimal?    @db.Decimal(5, 2) // margin bid at contract signing — Finance tab compares current forecast against this
+  isNonCorporate Boolean      @default(false) // a job for another organization or the owner's own property — expenses only, kept out of company operations
   createdAt     DateTime      @default(now())
 
   paymentTerms    PaymentTerm[]

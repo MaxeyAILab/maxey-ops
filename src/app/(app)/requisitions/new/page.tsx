@@ -17,7 +17,7 @@ export default async function NewRequisitionPage() {
 
   const projects = await prisma.project.findMany({
     where: { status: { in: CHARGEABLE_STATUSES } },
-    select: { id: true, name: true },
+    select: { id: true, name: true, isNonCorporate: true },
     orderBy: { name: "asc" },
   });
 
@@ -26,11 +26,11 @@ export default async function NewRequisitionPage() {
       <h1 className="text-xl font-bold text-ink-900">New Material Requisition</h1>
       {projects.length === 0 && (
         <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-700">
-          No active projects yet — that&apos;s fine, submit this as an emergency/general
+          No active projects yet — that&apos;s fine, submit this as a General &amp; Administrative
           requisition below and it can be linked to a project later.
         </p>
       )}
-      <RequisitionForm projects={projects} />
+      <RequisitionForm projects={projects.map((p) => ({ id: p.id, name: p.name, nonCorporate: p.isNonCorporate }))} />
     </div>
   );
 }

@@ -52,6 +52,24 @@ export interface PayrollEntry {
   slipRef?: string;
   /** Added to the run by hand (not built from clock records) — shown in the register so it is never a surprise. */
   manual?: boolean;
+  /**
+   * A driver's hours that went to a non-corporate job (the owner's house, another organization's work). That share of
+   * the pay is recorded under the job and left out of operations expense. Drivers only: office staff stay corporate and
+   * a site crew's payroll belongs to the job through its project.
+   */
+  nonCorporate?: { jobId: string; jobName: string; hours: number };
+}
+
+/** The pay charged to a non-corporate job for a driver's entry: the hours assigned there at their hourly rate. */
+export function nonCorporateCharge(e: Pick<PayrollEntry, "nonCorporate" | "hourlyRate" | "regularHours" | "otHours">): number {
+  if (!e.nonCorporate) return 0;
+  const hours = Math.min(Math.max(0, e.nonCorporate.hours), e.regularHours + e.otHours);
+  return Math.round(hours * e.hourlyRate * 100) / 100;
+}
+
+/** Total of a run's entries charged to non-corporate jobs. */
+export function runNonCorporateTotal(entries: unknown): number {
+  return Math.round((entries as PayrollEntry[]).reduce((s, e) => s + nonCorporateCharge(e), 0) * 100) / 100;
 }
 
 /** meals/cashAdvance postdate some existing PayrollRun.entries JSON blobs —

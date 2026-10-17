@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getNonProjectExpenses, runGross } from "@/lib/finance";
+import { corporateRunGross, getNonCorporateExpenses, getNonProjectExpenses } from "@/lib/finance";
 import { getBidPipeline, getCashRunway, type CashRunway } from "@/lib/finance-dashboard";
 import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
 import { fmtDate } from "@/lib/format";
@@ -205,6 +205,8 @@ export interface OwnerDashboardData {
   };
   nonProject: { label: string; total: number; count: number }[];
   nonProjectTotal: number;
+  /** Spending on non-corporate jobs — kept apart from operations expense. */
+  nonCorporate: { jobs: { id: string; name: string; materials: number; crewPayroll: number; driverPayroll: number; total: number }[]; total: number };
   freshness: Freshness[];
   /** How many in-construction projects have a basic record gap — counts only, no judgement. */
   dataGaps: { projects: number; noTargetDate: number; noManager: number; staleProgress: number; noCost: number };
@@ -238,7 +240,7 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
     latestPayroll,
   ] = await Promise.all([
     prisma.project.findMany({
-      where: { status: { not: "NOT_ACTIVE" }, ...clientWhere },
+      where: { status: { not: "NOT_ACTIVE" }, isNonCorporate: false, ...clientWhere },
       include: {
         client: { select: { id: true, name: true } },
         payments: { select: { amount: true, paymentTermId: true } },
@@ -282,6 +284,7 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
       where: {
         createdAt: { gte: range.start },
         status: { not: "CANCELLED" },
+        NOT: { requisition: { project: { isNonCorporate: true } } },
         ...(filters.clientId ? { requisition: { project: { clientId: filters.clientId } } } : {}),
       },
       select: { totalCost: true, createdAt: true },
@@ -290,6 +293,7 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
       where: {
         status: { in: ["APPROVED", "PAID"] },
         createdAt: { gte: range.start },
+        NOT: { project: { isNonCorporate: true } },
         ...(filters.clientId ? { project: { clientId: filters.clientId } } : {}),
       },
       select: { entries: true, createdAt: true },
@@ -306,11 +310,11 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
       },
     }),
     prisma.purchaseOrder.findMany({
-      where: { status: { in: ["OPEN", "PARTIALLY_DELIVERED"] } },
+      where: { status: { in: ["OPEN", "PARTIALLY_DELIVERED"] }, NOT: { requisition: { project: { isNonCorporate: true } } } },
       select: { totalCost: true, deliveryDate: true },
     }),
     prisma.requisition.findMany({
-      where: { status: "APPROVED", purchaseOrder: null },
+      where: { status: "APPROVED", purchaseOrder: null, NOT: { project: { isNonCorporate: true } } },
       select: { estimatedCost: true },
     }),
     prisma.siteInstruction.findMany({
@@ -333,6 +337,8 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
     }),
   ]);
 
+  const nonCorporate = await getNonCorporateExpenses();
+
   // ----- per-project rows -----
   const targets = await prisma.project.findMany({
     where: { id: { in: projects.map((p) => p.id) } },
@@ -344,7 +350,7 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
     const t = targetById.get(p.id);
     const contract = Number(p.contractValue);
     const received = p.payments.reduce((s, x) => s + Number(x.amount), 0);
-    const labor = p.payrollRuns.reduce((s, r) => s + runGross(r.entries), 0);
+    const labor = p.payrollRuns.reduce((s, r) => s + corporateRunGross(r.entries), 0);
     const committed = labor + p.requisitions.reduce((s, r) => s + requisitionAmount(r), 0);
     const pct = weightedAccomplishment(computeWorkItemStatuses(p.progressEntries));
     const lastProgressAt = p.progressEntries[0]?.createdAt ?? null;
@@ -567,7 +573,7 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
     if (i >= 0 && i < buckets.length) buckets[i].outflow += Number(po.totalCost);
   }
   for (const run of payrollInWindow) {
-    const amt = runGross(run.entries);
+    const amt = corporateRunGross(run.entries);
     committedOut += amt;
     const i = bucketOf(run.createdAt);
     if (i >= 0 && i < buckets.length) buckets[i].outflow += amt;
@@ -776,6 +782,7 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
     },
     nonProject: nonProject.byCategory.map((c) => ({ label: c.label, total: c.total, count: c.count })),
     nonProjectTotal: nonProject.total,
+    nonCorporate,
     dataGaps,
     freshness: [
       {

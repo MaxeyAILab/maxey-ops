@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fmtDate, fmtDateTime, php } from "@/lib/format";
-import { hourlyRateForUser, normalizeEntries, otMultiplierFor, workingDaysInPeriod, type PayrollEntry } from "@/lib/payroll";
+import { hourlyRateForUser, nonCorporateCharge, normalizeEntries, otMultiplierFor, workingDaysInPeriod, type PayrollEntry } from "@/lib/payroll";
 import { Badge, Card, CardBody, CardHeader, Table, Td, Th } from "@/components/ui";
 import { PayrollStatusButtons } from "@/components/payroll-actions";
 import { AddPersonToRun, EditablePayrollTable } from "@/components/payroll-entry-editor";
@@ -47,6 +47,11 @@ export default async function PayrollRunPage({ params }: { params: { id: string 
       candidates = staff.filter((u) => !onRun.has(u.id)).map((u) => ({ id: u.id, name: u.name, rate: hourlyRateForUser(u, run.periodStart) || null }));
     }
   }
+  // A driver's payroll can charge hours to a non-corporate job — offer the open ones (drivers only).
+  const nonCorporateJobs =
+    canEdit && run.department === "DRIVER"
+      ? await prisma.project.findMany({ where: { isNonCorporate: true, status: { not: "TURNED_OVER" } }, select: { id: true, name: true }, orderBy: { name: "asc" } })
+      : null;
   const periodWorkingDays = workingDaysInPeriod(run.periodStart, run.periodEnd);
   const otMultiplier = otMultiplierFor(run.department);
   const otNote = otMultiplier === 1 ? "OT paid at the regular hourly rate (drivers)" : `OT at ${otMultiplier}×`;
@@ -122,7 +127,7 @@ export default async function PayrollRunPage({ params }: { params: { id: string 
           {canEdit ? (
             <div className="space-y-4">
               {/* keyed by who is on the run, so adding a person reloads the table with them in it */}
-              <EditablePayrollTable key={entries.map((e) => e.userId).join(",")} runId={run.id} initialEntries={entries} otMultiplier={otMultiplier} />
+              <EditablePayrollTable key={entries.map((e) => e.userId).join(",")} runId={run.id} initialEntries={entries} otMultiplier={otMultiplier} jobs={nonCorporateJobs ?? undefined} />
               <AddPersonToRun runId={run.id} candidates={candidates} defaultHours={periodWorkingDays * 8} workingDays={periodWorkingDays} />
             </div>
           ) : (
@@ -149,6 +154,11 @@ export default async function PayrollRunPage({ params }: { params: { id: string 
                     <Td className="font-medium">
                       {e.name}
                       {e.manual && <span className="ml-1.5 rounded-sm bg-ink-200 px-1 py-0.5 text-[10px] font-semibold text-ink-600">added by hand</span>}
+                      {e.nonCorporate && (
+                        <div className="text-[11px] font-normal text-ink-500">
+                          Non-corporate: {e.nonCorporate.jobName} · {e.nonCorporate.hours} hrs ({php(nonCorporateCharge(e))})
+                        </div>
+                      )}
                     </Td>
                     <Td className="text-right tabular-nums">{e.daysWorked}</Td>
                     <Td className="text-right tabular-nums">{e.regularHours}</Td>

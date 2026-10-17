@@ -309,3 +309,71 @@ export function DeleteProjectButton({ projectId, name }: { projectId: string; na
     </button>
   );
 }
+
+/** Owner: "+ Add non-corporate job" — a job for another organization or the owner's own property. */
+export function AddNonCorporateJobSection() {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    const fd = new FormData(e.currentTarget);
+    const res = await fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nonCorporate: true, name: fd.get("name"), address: fd.get("address") }),
+    });
+    setBusy(false);
+    if (res.ok) {
+      setOpen(false);
+      router.refresh();
+    } else setError(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? "Could not add the job");
+  }
+
+  if (!open) {
+    return (
+      <Button variant="secondary" onClick={() => setOpen(true)}>
+        + Add non-corporate job
+      </Button>
+    );
+  }
+  return (
+    <Card className="w-full">
+      <CardHeader
+        title="Add a non-corporate job"
+        action={
+          <button onClick={() => setOpen(false)} className="text-sm text-ink-400 hover:text-ink-600">
+            ✕ Close
+          </button>
+        }
+      />
+      <CardBody>
+        <form onSubmit={onSubmit} className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="nc-name">Job name *</Label>
+              <Input id="nc-name" name="name" required maxLength={200} placeholder="e.g., Owner's house — Nueva Ecija" />
+            </div>
+            <div>
+              <Label htmlFor="nc-address">Where / for whom</Label>
+              <Input id="nc-address" name="address" maxLength={500} placeholder="e.g., for the Barangay, Malapit" />
+            </div>
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <p className="text-xs text-ink-500">
+            Expenses only: requisitions and the crew&apos;s payroll are recorded under this job, separate from company operations, projects and margins. It then appears in the
+            requisition dropdown under &ldquo;Non-corporate&rdquo;.
+          </p>
+          <Button type="submit" disabled={busy}>
+            {busy ? "Adding…" : "Add job"}
+          </Button>
+        </form>
+      </CardBody>
+    </Card>
+  );
+}

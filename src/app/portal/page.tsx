@@ -47,7 +47,8 @@ export default async function PortalPage() {
   if (user.mustChangePassword) redirect("/change-password"); // temp password issued
 
   const projects = await prisma.project.findMany({
-    where: { clientId: user.clientId },
+    // Non-corporate jobs are internal and never shown to any client.
+    where: { clientId: user.clientId, isNonCorporate: false },
     include: {
       paymentTerms: { orderBy: { sortOrder: "asc" }, include: { payments: true } },
       // Internal states (potential, withdrawn) are never shown to the client.

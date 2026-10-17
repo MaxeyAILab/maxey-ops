@@ -16,6 +16,9 @@ const entryEditSchema = z.object({
   pagibig: z.coerce.number().min(0),
   meals: z.coerce.number().min(0),
   cashAdvance: z.coerce.number().min(0),
+  // Drivers only: hours of this line that went to a non-corporate job (null/blank clears it, absent leaves it as is).
+  nonCorporateJobId: z.string().optional().nullable(),
+  nonCorporateHours: z.coerce.number().min(0).max(500).optional().nullable(),
 });
 
 const patchSchema = z.discriminatedUnion("action", [
@@ -57,11 +60,35 @@ export const PATCH = handleApi(
 
       const existing = normalizeEntries(run.entries as unknown as PayrollEntry[]);
       const byUser = new Map(existing.map((e) => [e.userId, e]));
+
+      // Charging hours to a non-corporate job: drivers' payroll only — office staff stay corporate, and a site crew's
+      // payroll belongs to its job through the project. The job must really be a non-corporate one.
+      const jobIds = Array.from(new Set(body.entries.map((e) => e.nonCorporateJobId).filter((id): id is string => !!id)));
+      if (jobIds.length > 0 && run.department !== "DRIVER") {
+        throw new ApiError(400, "Only a driver's payroll can be charged to a non-corporate job — office staff stay corporate, and a crew's payroll is charged by its project");
+      }
+      const jobs = jobIds.length ? await prisma.project.findMany({ where: { id: { in: jobIds }, isNonCorporate: true }, select: { id: true, name: true } }) : [];
+      const jobName = new Map(jobs.map((j) => [j.id, j.name]));
+
       const updatedEntries: PayrollEntry[] = body.entries.map((edit) => {
         const prior = byUser.get(edit.userId);
         if (!prior) throw new ApiError(400, `Unknown worker on this run: ${edit.userId}`);
         const gross = edit.regularHours * edit.hourlyRate + edit.otHours * edit.hourlyRate * otMultiplierFor(run.department);
         const net = Math.max(0, gross - edit.sss - edit.philhealth - edit.pagibig - edit.meals - edit.cashAdvance);
+
+        let nonCorporate = prior.nonCorporate;
+        if (edit.nonCorporateJobId !== undefined) {
+          if (!edit.nonCorporateJobId) nonCorporate = undefined;
+          else {
+            const name = jobName.get(edit.nonCorporateJobId);
+            if (!name) throw new ApiError(400, "That isn't a non-corporate job");
+            const worked = r2(edit.regularHours + edit.otHours);
+            const hours = r2(edit.nonCorporateHours ?? worked);
+            if (!(hours > 0)) throw new ApiError(400, `Enter how many of ${prior.name}'s hours went to ${name}`);
+            if (hours > worked + 0.005) throw new ApiError(400, `${prior.name} has only ${worked} hours on this run, so ${hours} can't be charged to ${name}`);
+            nonCorporate = { jobId: edit.nonCorporateJobId, jobName: name, hours };
+          }
+        }
         return {
           userId: edit.userId,
           name: prior.name,
@@ -79,6 +106,7 @@ export const PATCH = handleApi(
           // A reference number, once issued, stays with the person on this run.
           ...(prior.slipRef ? { slipRef: prior.slipRef } : {}),
           ...(prior.manual ? { manual: true } : {}),
+          ...(nonCorporate ? { nonCorporate } : {}),
         };
       });
       // Keep any existing entry not present in the submitted edit list —

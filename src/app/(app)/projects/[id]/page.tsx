@@ -637,6 +637,11 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
               ← All projects
             </Link>
             <h1 className="text-xl font-bold text-ink-900">{p.name}</h1>
+            {p.isNonCorporate && (
+              <p className="mt-1 inline-block rounded-sm bg-violet-100 px-2 py-1 text-xs font-medium text-violet-900 dark:bg-violet-950/60 dark:text-violet-200">
+                Non-corporate job — expenses only. Its requisitions and crew payroll are recorded here, separate from company operations, projects and margins.
+              </p>
+            )}
             <p className="text-xs text-ink-500">
               {p.client.name} · {p.address ?? "no address"} · {p.startDate ? `started ${fmtDate(p.startDate)}` : "not started"}
               {p.targetEndDate && <> · target finish {fmtDate(p.targetEndDate)}</>}

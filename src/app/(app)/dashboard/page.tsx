@@ -612,7 +612,7 @@ export default async function DashboardPage({
           )}
         </Panel>
 
-        <Panel title="Non-project expenses" subtitle="Emergency, office and warehouse purchases — not counted in any project’s cost or margin">
+        <Panel title="General & administrative expenses" subtitle="Office, warehouse and emergency purchases — not counted in any project’s cost or margin">
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {d.nonProject.map((c) => (
               <div key={c.label} className="rounded-sm bg-ink-100 px-3 py-2">
@@ -626,7 +626,7 @@ export default async function DashboardPage({
               </div>
             ))}
             <div className="rounded-sm bg-brand-50 px-3 py-2">
-              <div className="text-xs text-ink-500">Total non-project</div>
+              <div className="text-xs text-ink-500">Total general & administrative</div>
               <div className="text-base font-semibold tabular-nums text-ink-900">
                 <Fig>{phpCompact(d.nonProjectTotal)}</Fig>
               </div>
@@ -635,6 +635,47 @@ export default async function DashboardPage({
               </Link>
             </div>
           </div>
+        </Panel>
+
+        <Panel title="Non-corporate expenses" subtitle="Jobs for other organizations and the owner’s own properties — recorded separately and never part of operations expense">
+          {d.nonCorporate.jobs.length === 0 ? (
+            <p className="text-sm text-ink-500">No non-corporate jobs yet. The Owner adds them on the Projects tab (“+ Add non-corporate job”); they then appear in the requisition dropdown under “Non-corporate”.</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="-mx-4 overflow-x-auto">
+                <table className="w-full text-left text-[13px]">
+                  <thead>
+                    <tr className="text-xs uppercase tracking-wide text-ink-500">
+                      <th className="px-4 py-2 font-semibold">Job</th>
+                      <th className="px-3 py-2 text-right font-semibold">Materials</th>
+                      <th className="px-3 py-2 text-right font-semibold">Crew payroll</th>
+                      <th className="px-3 py-2 text-right font-semibold">Driver hours</th>
+                      <th className="px-4 py-2 text-right font-semibold">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {d.nonCorporate.jobs.map((j) => (
+                      <tr key={j.id} className="border-t border-ink-100">
+                        <td className="px-4 py-2 font-medium text-ink-900">
+                          <Link href={`/projects/${j.id}`} className="text-brand-600 hover:underline">
+                            {j.name}
+                          </Link>
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums"><Fig>{phpCompact(j.materials)}</Fig></td>
+                        <td className="px-3 py-2 text-right tabular-nums"><Fig>{phpCompact(j.crewPayroll)}</Fig></td>
+                        <td className="px-3 py-2 text-right tabular-nums"><Fig>{phpCompact(j.driverPayroll)}</Fig></td>
+                        <td className="px-4 py-2 text-right font-semibold tabular-nums"><Fig>{phpCompact(j.total)}</Fig></td>
+                      </tr>
+                    ))}
+                    <tr className="border-t border-ink-200 bg-ink-50 font-semibold">
+                      <td className="px-4 py-2" colSpan={4}>Total non-corporate</td>
+                      <td className="px-4 py-2 text-right tabular-nums"><Fig>{phpCompact(d.nonCorporate.total)}</Fig></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </Panel>
 
         <Panel title="Completed & turned-over projects" subtitle="Closeout results — final cost against contract">

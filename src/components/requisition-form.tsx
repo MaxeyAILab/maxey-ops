@@ -4,13 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { submitOrQueue } from "@/lib/outbox";
 import { Button, Card, CardBody, Input, Label, Select, Textarea } from "@/components/ui";
-import { NON_PROJECT_CATEGORIES } from "@/lib/requisitions";
+import { GA_LABEL, NON_PROJECT_CATEGORIES } from "@/lib/requisitions";
 
 const CATEGORY_PREFIX = "cat:";
 
 interface ProjectOption {
   id: string;
   name: string;
+  nonCorporate?: boolean;
 }
 
 interface Item {
@@ -100,22 +101,35 @@ export function RequisitionForm({ projects }: { projects: ProjectOption[] }) {
     <form onSubmit={onSubmit} className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-3">
         <div>
-          <Label htmlFor="projectId">Project</Label>
-          <Select id="projectId" name="projectId" defaultValue={`${CATEGORY_PREFIX}EMERGENCY`}>
-            <optgroup label="No project">
+          <Label htmlFor="projectId">Charge to</Label>
+          <Select id="projectId" name="projectId" defaultValue={`${CATEGORY_PREFIX}${NON_PROJECT_CATEGORIES[0].value}`}>
+            <optgroup label={GA_LABEL}>
               {NON_PROJECT_CATEGORIES.map((c) => (
                 <option key={c.value} value={`${CATEGORY_PREFIX}${c.value}`}>
                   {c.label}
                 </option>
               ))}
             </optgroup>
-            {projects.length > 0 && (
+            {projects.some((p) => !p.nonCorporate) && (
               <optgroup label="Projects">
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
+                {projects
+                  .filter((p) => !p.nonCorporate)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+              </optgroup>
+            )}
+            {projects.some((p) => p.nonCorporate) && (
+              <optgroup label="Non-corporate">
+                {projects
+                  .filter((p) => p.nonCorporate)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
               </optgroup>
             )}
           </Select>

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import type { PayrollEntry } from "@/lib/payroll";
+import { runNonCorporateTotal, nonCorporateCharge, type PayrollEntry } from "@/lib/payroll";
 import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
 import { CATEGORY_LABELS, NON_PROJECT_CATEGORIES, requisitionAmount } from "@/lib/requisitions";
 
@@ -30,12 +30,18 @@ export function runGross(entries: unknown): number {
   return (entries as PayrollEntry[]).reduce((s, e) => s + e.gross, 0);
 }
 
+/** A run's cost to the company's operations: its gross minus any driver hours charged to a non-corporate job. */
+export function corporateRunGross(entries: unknown): number {
+  return runGross(entries) - runNonCorporateTotal(entries);
+}
+
 export async function getProjectFinances(): Promise<ProjectFinance[]> {
   const projects = await prisma.project.findMany({
     // Active + completed/turned-over projects — everything except shelved
     // prospects. Callers split by status (see ONGOING_STATUSES/
     // COMPLETED_STATUSES) to report active vs. done separately.
-    where: { status: { not: "NOT_ACTIVE" } },
+    // Non-corporate jobs are expenses only and never part of company projects, margins or operating figures.
+    where: { status: { not: "NOT_ACTIVE" }, isNonCorporate: false },
     include: {
       client: { select: { name: true } },
       payments: true,
@@ -95,9 +101,12 @@ export async function getMonthlyCashflow(months = 6): Promise<MonthlyCashflow[]>
 
   const [payments, pos, payrollRuns] = await Promise.all([
     prisma.payment.findMany({ where: { dateReceived: { gte: since } } }),
-    prisma.purchaseOrder.findMany({ where: { createdAt: { gte: since }, status: { not: "CANCELLED" } } }),
+    // Cash out for non-corporate jobs is not operations cashflow.
+    prisma.purchaseOrder.findMany({
+      where: { createdAt: { gte: since }, status: { not: "CANCELLED" }, NOT: { requisition: { project: { isNonCorporate: true } } } },
+    }),
     prisma.payrollRun.findMany({
-      where: { status: { in: ["APPROVED", "PAID"] }, createdAt: { gte: since } },
+      where: { status: { in: ["APPROVED", "PAID"] }, createdAt: { gte: since }, NOT: { project: { isNonCorporate: true } } },
     }),
   ]);
 
@@ -125,7 +134,7 @@ export async function getMonthlyCashflow(months = 6): Promise<MonthlyCashflow[]>
   }
   for (const run of payrollRuns) {
     const i = idx(new Date(run.createdAt));
-    if (i >= 0) buckets[i].outflow += runGross(run.entries);
+    if (i >= 0) buckets[i].outflow += corporateRunGross(run.entries);
   }
   return buckets;
 }
@@ -165,4 +174,48 @@ export async function getNonProjectExpenses(): Promise<{
   });
 
   return { byCategory, total: byCategory.reduce((s, c) => s + c.total, 0) };
+}
+
+export interface NonCorporateJobExpense {
+  id: string;
+  name: string;
+  status: string;
+  materials: number; // approved requisitions / POs charged to the job
+  crewPayroll: number; // approved or paid payroll of the crew assigned to the job
+  driverPayroll: number; // drivers' hours charged to the job
+  total: number;
+}
+
+/**
+ * Everything spent on non-corporate jobs — the owner's own properties and work for other organizations: materials
+ * from requisitions, the job crew's payroll, and drivers' hours charged to the job. Recorded here on its own and never
+ * added to operations expense, project costs or margins.
+ */
+export async function getNonCorporateExpenses(): Promise<{ jobs: NonCorporateJobExpense[]; total: number }> {
+  const [jobs, driverRuns] = await Promise.all([
+    prisma.project.findMany({
+      where: { isNonCorporate: true },
+      include: {
+        requisitions: { where: { status: { in: ["APPROVED", "PO_ISSUED", "DELIVERED"] } }, include: { purchaseOrder: true } },
+        payrollRuns: { where: { status: { in: ["APPROVED", "PAID"] } }, select: { entries: true } },
+      },
+      orderBy: { name: "asc" },
+    }),
+    prisma.payrollRun.findMany({ where: { department: "DRIVER", status: { in: ["APPROVED", "PAID"] } }, select: { entries: true } }),
+  ]);
+
+  const driverByJob = new Map<string, number>();
+  for (const run of driverRuns) {
+    for (const e of run.entries as unknown as PayrollEntry[]) {
+      if (e.nonCorporate) driverByJob.set(e.nonCorporate.jobId, (driverByJob.get(e.nonCorporate.jobId) ?? 0) + nonCorporateCharge(e));
+    }
+  }
+
+  const rows = jobs.map((j) => {
+    const materials = j.requisitions.reduce((s, r) => s + requisitionAmount(r), 0);
+    const crewPayroll = j.payrollRuns.reduce((s, r) => s + runGross(r.entries), 0);
+    const driverPayroll = Math.round((driverByJob.get(j.id) ?? 0) * 100) / 100;
+    return { id: j.id, name: j.name, status: j.status, materials, crewPayroll, driverPayroll, total: materials + crewPayroll + driverPayroll };
+  });
+  return { jobs: rows, total: rows.reduce((s, r) => s + r.total, 0) };
 }
