@@ -182,7 +182,7 @@ export default async function PettyCashPage({ searchParams }: { searchParams: { 
                           </div>
                         )}
                         <div className="mt-2">
-                          <RequestActions id={r.id} status={r.status} canApprove={canApprove} custodian={custodian} own={own} />
+                          <RequestActions id={r.id} status={r.status} canApprove={canApprove} custodian={custodian} own={own} isRequester={r.requestedById === user.id} />
                         </div>
                       </td>
                       <td className="px-4 py-4 text-ink-700">{r.project?.name ?? NO_PROJECT_LABEL}</td>

@@ -6,6 +6,7 @@ import { canAccess } from "@/lib/access";
 import { fmtDate, fmtDateTime, php } from "@/lib/format";
 import { manilaDayKey } from "@/lib/time-rules";
 import {
+  canApproveCash,
   formatPettyCashNo,
   isCashCustodian,
   liquidationReturn,
@@ -15,7 +16,7 @@ import {
   postedExpense,
 } from "@/lib/cash-expense";
 import { CashExpenseHeader, CashIcons, CashStat, CashStatus, Panel } from "@/components/cash-expense-header";
-import { LiquidationForm, VerifyActions } from "@/components/cash-expense-actions";
+import { LiquidationForm, RequestActions, VerifyActions } from "@/components/cash-expense-actions";
 import { PrintButton } from "@/components/print-button";
 
 export const metadata = { title: "Petty Cash Report" };
@@ -40,7 +41,7 @@ function Receipts({ urls }: { urls: unknown }) {
 }
 
 /**
- * Petty Cash Report: released cash gets liquidated here (what was really spent, with receipts), Owner/Accounting
+ * Petty Cash Report: the person who received released cash reports here what it was really spent on (with receipts), Owner/Accounting
  * verify it, and the verified amount posts as an expense / committed cost of the request's project — or company
  * overhead when it had no project. The report below lists those posted expenses by project for any date range.
  */
@@ -48,6 +49,7 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
   const user = await getSessionUser();
   if (!user || !canAccess(user.role, user.department, "/cash-expense", user.customMenus, user.useCustomMenus)) redirect("/attendance");
   const custodian = isCashCustodian(user);
+  const canApprove = canApproveCash(user);
 
   const now = new Date();
   const today = manilaDayKey(now);
@@ -79,6 +81,9 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
   ]);
 
   const toLiquidate = open.filter((r) => r.status === "RELEASED");
+  // Only the person the cash went to reports what it was spent on; everyone else just sees who still owes a report.
+  const myToLiquidate = toLiquidate.filter((r) => r.requestedById === user.id);
+  const othersToLiquidate = toLiquidate.filter((r) => r.requestedById !== user.id);
   const toVerify = open.filter((r) => r.status === "FOR_LIQUIDATION");
   const totalSpent = posted.reduce((s, r) => s + postedExpense(r), 0);
   const totalReturned = posted.reduce((s, r) => s + liquidationReturn(r), 0);
@@ -99,7 +104,7 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
         <CashExpenseHeader
           tab="report"
           title="Petty Cash Report"
-          subtitle="Liquidate released petty cash and post what was spent as an expense of its project."
+          subtitle="Whoever received the cash reports what it was spent on; verified expenses post to their project."
           showAdvances={custodian}
         />
       </div>
@@ -111,10 +116,10 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
         <CashStat icon={CashIcons.cash} tone="green" label="Change Returned" value={php(totalReturned)} sub="Back in the petty cash fund" />
       </div>
 
-      {toLiquidate.length > 0 && (
-        <Panel title="Liquidate released cash" className="no-print">
+      {myToLiquidate.length > 0 && (
+        <Panel title="Report your expenses" className="no-print">
           <div className="space-y-4">
-            {toLiquidate.map((r) => (
+            {myToLiquidate.map((r) => (
               <div key={r.id} id={`liquidate-${r.id}`} className="scroll-mt-6 rounded-lg border border-ink-200 p-4">
                 <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
                   <div>
@@ -133,6 +138,30 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
                   </div>
                 </div>
                 <LiquidationForm id={r.id} released={Number(r.amount)} custodian={custodian} />
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
+
+      {othersToLiquidate.length > 0 && (
+        <Panel title="Waiting for expense reports" className="no-print">
+          <div className="space-y-2">
+            {othersToLiquidate.map((r) => (
+              <div key={r.id} id={`liquidate-${r.id}`} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-ink-200 px-4 py-3">
+                <div>
+                  <div className="font-medium text-ink-900">
+                    {formatPettyCashNo(r.number)} · {r.purpose}
+                  </div>
+                  <div className="text-xs text-ink-500">
+                    {r.project?.name ?? NO_PROJECT_LABEL} · released {fmtDateTime(r.releasedAt)} · waiting for <b>{r.requestedBy.name}</b> to report what it was spent on
+                  </div>
+                  {r.liquidationNote?.startsWith("Sent back") && <div className="mt-1 text-xs font-medium text-red-700 dark:text-red-300">{r.liquidationNote}</div>}
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="font-semibold tabular-nums text-ink-900">{php(r.amount)}</span>
+                  <RequestActions id={r.id} status={r.status} canApprove={canApprove} custodian={custodian} own={false} isRequester={false} />
+                </div>
               </div>
             ))}
           </div>
@@ -176,7 +205,10 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
                     <Receipts urls={r.liquidationReceipts} />
                   </div>
                   {r.liquidationNote && <p className="mt-1 text-xs text-ink-500">Note: {r.liquidationNote}</p>}
-                  <div className="mt-3">{custodian ? <VerifyActions id={r.id} /> : <p className="text-xs text-ink-500">Waiting for Accounting or the Owner to verify.</p>}</div>
+                  <div className="mt-3 flex flex-wrap items-start justify-between gap-2">
+                    {custodian ? <VerifyActions id={r.id} /> : <p className="text-xs text-ink-500">Waiting for Accounting or the Owner to verify.</p>}
+                    <RequestActions id={r.id} status={r.status} canApprove={canApprove} custodian={custodian} own={false} isRequester={false} />
+                  </div>
                 </div>
               );
             })}

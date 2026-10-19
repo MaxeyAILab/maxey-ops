@@ -24,6 +24,16 @@ async function send(url: string, method: "POST" | "PATCH", body: unknown): Promi
   }
 }
 
+async function remove(url: string): Promise<string | null> {
+  const res = await fetch(url, { method: "DELETE" });
+  if (res.ok) return null;
+  try {
+    return (await res.json()).error ?? "Something went wrong";
+  } catch {
+    return "Something went wrong";
+  }
+}
+
 /** Refreshes the page's figures every 20 seconds while it's open in front, so a release or approval elsewhere shows up. */
 export function LiveUpdates() {
   const router = useRouter();
@@ -265,29 +275,31 @@ export function ActivityFilters({ status, from, to, q }: { status: string; from:
   );
 }
 
-/** Approve / reject / release / cancel buttons on one petty cash request. */
+/** Approve / reject / release / cancel / delete buttons on one petty cash request. */
 export function RequestActions({
   id,
   status,
   canApprove,
   custodian,
   own,
+  isRequester,
 }: {
   id: string;
   status: string;
   canApprove: boolean;
   custodian: boolean;
-  own: boolean;
+  own: boolean; // filed it or is the requester
+  isRequester: boolean; // the cash is (or will be) theirs — they report what it was spent on
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  async function act(body: Record<string, unknown>, confirmText?: string) {
+  async function act(body: Record<string, unknown> | null, confirmText?: string) {
     if (confirmText && !window.confirm(confirmText)) return;
     setBusy(true);
     setError("");
-    const err = await send(`/api/petty-cash/${id}`, "PATCH", body);
+    const err = body ? await send(`/api/petty-cash/${id}`, "PATCH", body) : await remove(`/api/petty-cash/${id}`);
     setBusy(false);
     if (err) setError(err);
     else router.refresh();
@@ -321,18 +333,43 @@ export function RequestActions({
         </button>
       );
   }
-  if ((own || custodian) && (status === "PENDING" || status === "APPROVED")) {
+  if (status === "PENDING" && (own || custodian)) {
     buttons.push(
       <button key="c" className={smallBtn} disabled={busy} onClick={() => act({ action: "cancel" }, "Cancel this request?")}>
         Cancel
       </button>
     );
   }
-  if ((own || custodian) && status === "RELEASED") {
+  // Approved by mistake: the Owner can call it off before the cash goes out (the requester can too).
+  if (status === "APPROVED" && (isRequester || canApprove)) {
+    buttons.push(
+      <button
+        key="c"
+        className={smallBtn}
+        disabled={busy}
+        onClick={() => act({ action: "cancel" }, canApprove ? "Cancel this approved request? No cash will be released for it." : "Cancel this request?")}
+      >
+        {canApprove ? "Cancel approval" : "Cancel"}
+      </button>
+    );
+  }
+  if (isRequester && status === "RELEASED") {
     buttons.push(
       <a key="l" href={`/cash-expense/report#liquidate-${id}`} className={smallBtn}>
-        Liquidate
+        Report expenses
       </a>
+    );
+  }
+  if (canApprove && (status === "RELEASED" || status === "FOR_LIQUIDATION")) {
+    buttons.push(
+      <button
+        key="del"
+        className={`${smallBtn} text-red-700 dark:text-red-300`}
+        disabled={busy}
+        onClick={() => act(null, "Delete this released petty cash? Only do this if the cash was released by mistake and is back in the fund — its amount returns to the available balance.")}
+      >
+        Delete
+      </button>
     );
   }
   if (buttons.length === 0) return null;

@@ -29,10 +29,11 @@ const patchSchema = z.discriminatedUnion("action", [
 
 /**
  * PATCH /api/petty-cash/[id] — move a request through its life: approve / reject (Owner), release the cash
- * (Owner/Accounting, from the fund), cancel (the requester before release, or a custodian), liquidate (the requester
- * or a custodian turns in what was spent), verify or send back a liquidation (Owner/Accounting). Verifying posts the
- * spent amount as an expense of the request's project — or company overhead when it has none — and returns any change
- * to the fund.
+ * (Owner/Accounting, from the fund), cancel (the requester before release; a pending one also by whoever filed it or
+ * Accounting; an approved one also by the Owner, e.g. approved by mistake), liquidate (only the person the cash was
+ * released to reports what was spent), verify or send back a liquidation (Owner/Accounting). Verifying posts the spent
+ * amount as an expense of the request's project — or company overhead when it has none — and returns any change to
+ * the fund.
  */
 export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { id: string } }) => {
   const user = await requireCashExpenseUser();
@@ -41,6 +42,7 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
   if (!r) throw new ApiError(404, "Request not found");
   const custodian = isCashCustodian(user);
   const own = r.requestedById === user.id || r.createdById === user.id;
+  const isRequester = r.requestedById === user.id;
   if (!custodian && !own) throw new ApiError(404, "Request not found");
   const no = formatPettyCashNo(r.number);
   const expect = (...statuses: string[]) => {
@@ -83,11 +85,18 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
     }
     case "cancel":
       expect("PENDING", "APPROVED");
+      // Once approved, only the requester (no longer needed) or the Owner (approved by mistake) can call it off.
+      if (r.status === "APPROVED" && !isRequester && !canApproveCash(user)) {
+        throw new ApiError(403, "An approved request can only be cancelled by the Owner or the requester");
+      }
       data = { status: "CANCELLED" };
-      action = "PETTY_CASH_CANCELLED";
+      action = r.status === "APPROVED" ? "PETTY_CASH_APPROVAL_CANCELLED" : "PETTY_CASH_CANCELLED";
+      diff = { ...diff, from: r.status };
       break;
     case "liquidate": {
       expect("RELEASED", "FOR_LIQUIDATION");
+      // The person who received the cash reports what it was spent on — no one reports it for them.
+      if (!isRequester) throw new ApiError(403, `Only ${r.requestedBy.name}, who received the cash, can report what it was spent on`);
       if (body.verify && !custodian) throw new ApiError(403, "Only the Owner or Accounting verifies a liquidation");
       const spent = itemsTotal(body.items);
       const newReceipts = await savePhotos(body.receipts);
@@ -127,5 +136,46 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
   if (moved.count === 0) throw new ApiError(409, `${no} was just changed by someone else — refresh and try again`);
 
   await audit({ entityType: "PettyCashRequest", entityId: r.id, actorId: user.id, actorName: user.name, action, diff: diff as never });
+  return NextResponse.json({ ok: true });
+});
+
+/**
+ * DELETE /api/petty-cash/[id] — Owner only: remove a released request whose receipts haven't been verified (released
+ * by mistake, or the cash came back unused). Its cash counts as back in the fund. A liquidated request is a posted
+ * expense and can't be deleted. The audit log keeps a full copy of what was removed.
+ */
+export const DELETE = handleApi(async (_req: NextRequest, { params }: { params: { id: string } }) => {
+  const user = await requireCashExpenseUser();
+  if (!canApproveCash(user)) throw new ApiError(403, "Only the Owner deletes released petty cash");
+  const r = await prisma.pettyCashRequest.findUnique({
+    where: { id: params.id },
+    include: { requestedBy: { select: { name: true } }, project: { select: { name: true } } },
+  });
+  if (!r) throw new ApiError(404, "Request not found");
+  const no = formatPettyCashNo(r.number);
+  if (r.status !== "RELEASED" && r.status !== "FOR_LIQUIDATION") {
+    throw new ApiError(400, r.status === "LIQUIDATED" ? `${no} is already a posted expense and can't be deleted` : `${no} isn't released — cancel or reject it instead`);
+  }
+  const gone = await prisma.pettyCashRequest.deleteMany({ where: { id: r.id, status: r.status } });
+  if (gone.count === 0) throw new ApiError(409, `${no} was just changed by someone else — refresh and try again`);
+
+  await audit({
+    entityType: "PettyCashRequest",
+    entityId: r.id,
+    actorId: user.id,
+    actorName: user.name,
+    action: "PETTY_CASH_DELETED",
+    diff: {
+      no,
+      status: r.status,
+      amount: Number(r.amount),
+      spent: r.spentAmount == null ? null : Number(r.spentAmount),
+      project: r.project?.name ?? null,
+      requestedBy: r.requestedBy.name,
+      purpose: r.purpose,
+      releasedBy: r.releasedByName,
+      releasedAt: r.releasedAt,
+    },
+  });
   return NextResponse.json({ ok: true });
 });
