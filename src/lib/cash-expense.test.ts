@@ -112,12 +112,30 @@ describe("who handles petty cash", () => {
     expect(seesAllPettyCash({ role: "ACCOUNTING" })).toBe(true);
   });
 
-  it("an approver or releaser gets the Cash Expense tab even without it in their tab list", async () => {
+  it("full Cash Expense access makes a non-Accounting person a custodian, without approving", async () => {
+    const { isCashCustodian, canApprovePettyCash, seesAllPettyCash } = await import("@/lib/cash-expense");
     const { canUseCashExpense } = await import("@/lib/access");
-    const office = { role: "OFFICE" as const, department: "OFFICE" as const, customMenus: ["/attendance"], useCustomMenus: true };
-    expect(canUseCashExpense(office)).toBe(false);
-    expect(canUseCashExpense({ ...office, canApprovePettyCash: true })).toBe(true);
-    expect(canUseCashExpense({ ...office, canReleasePettyCash: true })).toBe(true);
-    expect(canUseCashExpense({ role: "CLIENT", department: null, canApprovePettyCash: true })).toBe(false);
+    const arlene = { role: "PURCHASING" as const, department: "OFFICE" as const, canManageCash: true };
+    expect(isCashCustodian(arlene)).toBe(true);
+    expect(seesAllPettyCash(arlene)).toBe(true);
+    expect(canApprovePettyCash(arlene)).toBe(false);
+    expect(canUseCashExpense(arlene)).toBe(true);
+    expect(isCashCustodian({ role: "PURCHASING" })).toBe(false);
+  });
+
+  it("every staff account has the Cash Expense tab; office staff see everyone's records, site and drivers their own", async () => {
+    const { canUseCashExpense } = await import("@/lib/access");
+    const { seesAllPettyCash, isCashCustodian } = await import("@/lib/cash-expense");
+    expect(canUseCashExpense({ role: "OFFICE" })).toBe(true);
+    expect(canUseCashExpense({ role: "DRIVER" })).toBe(true);
+    expect(canUseCashExpense({ role: "CLIENT" })).toBe(false);
+    expect(seesAllPettyCash({ role: "OFFICE", department: "OFFICE" })).toBe(true);
+    expect(seesAllPettyCash({ role: "OFFICE", department: "ENGINEER" })).toBe(true);
+    expect(seesAllPettyCash({ role: "OFFICE", department: "SITE" })).toBe(false);
+    expect(seesAllPettyCash({ role: "FOREMAN", department: "SITE" })).toBe(false);
+    expect(seesAllPettyCash({ role: "DRIVER", department: "DRIVER" })).toBe(false);
+    expect(seesAllPettyCash({ role: "DRIVER", department: "OFFICE" })).toBe(false);
+    // seeing everyone's records isn't managing them
+    expect(isCashCustodian({ role: "OFFICE" })).toBe(false);
   });
 });

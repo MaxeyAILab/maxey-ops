@@ -9,7 +9,7 @@ import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 const actionSchema = z.object({
   action: z.enum(["deactivate", "reactivate", "reset-password", "set-requisition-access", "set-petty-cash-access"]),
   allowed: z.boolean().optional(),
-  kind: z.enum(["approve", "release"]).optional(), // set-petty-cash-access: which switch
+  kind: z.enum(["approve", "release", "manage"]).optional(), // set-petty-cash-access: which switch
 });
 
 /**
@@ -46,7 +46,7 @@ export const PATCH = handleApi(
     if (body.action === "set-petty-cash-access") {
       if (typeof body.allowed !== "boolean" || !body.kind) throw new ApiError(400, "Say which petty cash permission and whether it's on");
       if (target.role === "CLIENT") throw new ApiError(400, "A client account can't handle petty cash");
-      const field = body.kind === "approve" ? "canApprovePettyCash" : "canReleasePettyCash";
+      const field = body.kind === "approve" ? "canApprovePettyCash" : body.kind === "release" ? "canReleasePettyCash" : "canManageCash";
       if (target[field] === body.allowed) return NextResponse.json({ ok: true, alreadyDone: true });
       await prisma.user.update({ where: { id: target.id }, data: { [field]: body.allowed } });
       await audit({

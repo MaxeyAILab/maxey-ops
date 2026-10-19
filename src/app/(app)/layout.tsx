@@ -7,7 +7,6 @@ import { SignOutButton } from "@/components/signout-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CashExpenseNav } from "@/components/cash-expense-nav";
 import { MobileNav, SidebarNav, type SidebarItem } from "@/components/sidebar-nav";
-import { isCashCustodian } from "@/lib/cash-expense";
 import { canUseCashExpense } from "@/lib/access";
 
 interface NavItem {
@@ -102,7 +101,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
           <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
             <SidebarNav items={sidebarItems} />
-            {showCashExpense && <CashExpenseNav showAdvances={isCashCustodian(user)} />}
+            {showCashExpense && <CashExpenseNav showAdvances />}
           </nav>
           <div className="border-t border-ink-100 px-4 py-3">
             <div className="text-xs font-semibold text-ink-900">{user.name}</div>

@@ -23,6 +23,8 @@ export interface SessionUser {
   /** The Owner has switched this person on to approve / to release petty cash (People page). */
   canApprovePettyCash: boolean;
   canReleasePettyCash: boolean;
+  /** Full Cash Expense access, as Accounting has it (People page switch). */
+  canManageCash: boolean;
   /** Single-device login tag, set for every role including the Owner. */
   sessionId?: string;
 }
@@ -133,6 +135,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       canRequisition: true,
       canApprovePettyCash: true,
       canReleasePettyCash: true,
+      canManageCash: true,
       currentSessionId: true,
     },
   });
@@ -152,5 +155,6 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     canRequisition: dbUser.canRequisition,
     canApprovePettyCash: dbUser.canApprovePettyCash,
     canReleasePettyCash: dbUser.canReleasePettyCash,
+    canManageCash: dbUser.canManageCash,
   };
 }

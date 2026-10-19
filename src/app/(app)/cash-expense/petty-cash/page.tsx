@@ -112,7 +112,7 @@ export default async function PettyCashPage({ searchParams }: { searchParams: { 
         tab="petty-cash"
         title="Petty Cash"
         subtitle="Submit requests, record disbursements, and track the running balance in real time."
-        showAdvances={custodian}
+        showAdvances
         action={
           <a href="#quick-record" className="inline-flex min-h-[44px] items-center gap-2 rounded-md bg-[#8a1a28] px-4 text-sm font-semibold text-white hover:bg-[#741522]">
             <span aria-hidden className="text-lg leading-none">+</span> New Petty Cash Request

@@ -47,9 +47,12 @@ export const NO_PROJECT = "__none";
 export const formatPettyCashNo = (n: number) => `PC-${String(n).padStart(4, "0")}`;
 export const formatCashAdvanceNo = (n: number) => `CA-${String(n).padStart(4, "0")}`;
 
-/** Owner and Accounting run the fund: they see every request, file for anyone, top up the fund and verify liquidations. */
-export function isCashCustodian(u: { role: string }): boolean {
-  return u.role === "OWNER" || u.role === "ACCOUNTING";
+/**
+ * Owner and Accounting run the fund — and anyone the Owner gave full Cash Expense access: they see every request, file
+ * for anyone, top up the fund, verify liquidations and handle cash advances.
+ */
+export function isCashCustodian(u: { role: string; canManageCash?: boolean | null }): boolean {
+  return u.role === "OWNER" || u.role === "ACCOUNTING" || !!u.canManageCash;
 }
 
 /** Owner-only: approving a cash advance, deleting released petty cash. */
@@ -57,7 +60,19 @@ export function canApproveCash(u: { role: string }): boolean {
   return u.role === "OWNER";
 }
 
-type CashPerson = { role: string; canApprovePettyCash?: boolean | null; canReleasePettyCash?: boolean | null };
+type CashPerson = {
+  role: string;
+  department?: string | null;
+  canApprovePettyCash?: boolean | null;
+  canReleasePettyCash?: boolean | null;
+  canManageCash?: boolean | null;
+};
+
+/** Office staff (Office, Architect, Engineer departments) — as opposed to site workers and drivers. */
+export function isOfficeStaff(u: { role: string; department?: string | null }): boolean {
+  if (u.role === "CLIENT" || u.role === "DRIVER") return false;
+  return u.department === "OFFICE" || u.department === "ARCHITECT" || u.department === "ENGINEER";
+}
 
 /** Approves (or rejects, or calls off an approval of) a petty cash request: the Owner and whoever the Owner switched on. */
 export function canApprovePettyCash(u: CashPerson): boolean {
@@ -69,9 +84,13 @@ export function canReleasePettyCash(u: CashPerson): boolean {
   return u.role === "OWNER" || !!u.canReleasePettyCash;
 }
 
-/** Sees every petty cash request, not just their own: the custodians, approvers and releasers. */
+/**
+ * Sees everyone's Cash Expense records (every petty cash request, every cash advance, the full report) rather than
+ * just their own: office staff, plus the custodians, approvers and releasers. Site workers and drivers see their own.
+ * Seeing isn't managing — the fund, verification and cash advances stay with the custodians.
+ */
 export function seesAllPettyCash(u: CashPerson): boolean {
-  return isCashCustodian(u) || canApprovePettyCash(u) || canReleasePettyCash(u);
+  return isOfficeStaff(u) || isCashCustodian(u) || canApprovePettyCash(u) || canReleasePettyCash(u);
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;

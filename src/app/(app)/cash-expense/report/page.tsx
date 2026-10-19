@@ -106,7 +106,7 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
           tab="report"
           title="Petty Cash Report"
           subtitle="Whoever received the cash reports what it was spent on; verified expenses post to their project."
-          showAdvances={custodian}
+          showAdvances
         />
       </div>
 

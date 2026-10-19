@@ -64,12 +64,14 @@ export default async function PeoplePage() {
           <RequisitionAccessToggle userId={u.id} name={u.name} byRole={requisitionAllowedByRole(u)} allowed={u.canRequisition} />
         )}
       </Td>
-      {(["approve", "release"] as const).map((kind) => (
+      {(["approve", "release", "manage"] as const).map((kind) => (
         <Td key={kind}>
           {u.role === "CLIENT" || u.role === "OWNER" ? (
             <span className="text-xs text-ink-300">{u.role === "OWNER" ? "Yes — owner" : "—"}</span>
+          ) : kind === "manage" && u.role === "ACCOUNTING" ? (
+            <span className="text-xs text-ink-400">Yes — by role</span>
           ) : (
-            <PettyCashAccessToggle userId={u.id} name={u.name} kind={kind} allowed={kind === "approve" ? u.canApprovePettyCash : u.canReleasePettyCash} />
+            <PettyCashAccessToggle userId={u.id} name={u.name} kind={kind} allowed={kind === "approve" ? u.canApprovePettyCash : kind === "release" ? u.canReleasePettyCash : u.canManageCash} />
           )}
         </Td>
       ))}
@@ -99,6 +101,7 @@ export default async function PeoplePage() {
       <Th>Can raise requisitions</Th>
       <Th>Approves petty cash</Th>
       <Th>Releases petty cash</Th>
+      <Th>Full cash expense access</Th>
       <Th>Status</Th>
       <Th>Since</Th>
       <Th />
@@ -132,7 +135,7 @@ export default async function PeoplePage() {
             {clients.map(renderRow)}
             {clients.length === 0 && (
               <tr>
-                <Td colSpan={9} className="py-6 text-center text-ink-400">
+                <Td colSpan={10} className="py-6 text-center text-ink-400">
                   No client accounts yet — create one from a project&apos;s Portal Access panel.
                 </Td>
               </tr>

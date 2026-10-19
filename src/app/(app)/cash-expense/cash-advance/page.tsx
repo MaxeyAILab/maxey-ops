@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { canUseCashExpense } from "@/lib/access";
 import { fmtDate, php } from "@/lib/format";
 import { manilaDayKey } from "@/lib/time-rules";
-import { advanceBalance, CASH_ADVANCE_STATUS_LABEL, canApproveCash, formatCashAdvanceNo, isCashCustodian } from "@/lib/cash-expense";
+import { advanceBalance, CASH_ADVANCE_STATUS_LABEL, canApproveCash, formatCashAdvanceNo, isCashCustodian, seesAllPettyCash } from "@/lib/cash-expense";
 import { CashExpenseHeader, CashIcons, CashStat, CashStatus, Panel } from "@/components/cash-expense-header";
 import { AdvanceActions, CashAdvanceForm } from "@/components/cash-expense-actions";
 
@@ -15,16 +15,19 @@ export const dynamic = "force-dynamic";
 /**
  * Cash Advance: emergency loans to workers. Owner/Accounting record one with the amount to take off each payroll
  * cut-off; once the Owner approves it, every new payroll run starts with that deduction filled in, and approving the
- * run posts it here, until the balance reaches zero.
+ * run posts it here, until the balance reaches zero. Every staff member can open it: office staff see everyone's
+ * advances, site workers and drivers their own; only the custodians record or change them.
  */
 export default async function CashAdvancePage() {
   const user = await getSessionUser();
   if (!user || !canUseCashExpense(user)) redirect("/attendance");
-  if (!isCashCustodian(user)) redirect("/cash-expense/petty-cash");
+  const manage = isCashCustodian(user);
+  const seesAll = seesAllPettyCash(user);
   const canApprove = canApproveCash(user);
 
   const [advances, people] = await Promise.all([
     prisma.cashAdvance.findMany({
+      where: seesAll ? {} : { userId: user.id },
       orderBy: { createdAt: "desc" },
       include: {
         user: { select: { name: true, employeeNo: true } },
@@ -34,7 +37,9 @@ export default async function CashAdvancePage() {
         },
       },
     }),
-    prisma.user.findMany({ where: { active: true, role: { not: "CLIENT" } }, select: { id: true, name: true, employeeNo: true }, orderBy: { name: "asc" } }),
+    manage
+      ? prisma.user.findMany({ where: { active: true, role: { not: "CLIENT" } }, select: { id: true, name: true, employeeNo: true }, orderBy: { name: "asc" } })
+      : Promise.resolve([]),
   ]);
 
   const monthStart = new Date(`${manilaDayKey(new Date()).slice(0, 7)}-01T00:00:00+08:00`);
@@ -52,18 +57,29 @@ export default async function CashAdvancePage() {
       <CashExpenseHeader tab="cash-advance" title="Cash Advance" subtitle="Emergency cash loans to workers, repaid through payroll deductions every cut-off." showAdvances />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <CashStat icon={CashIcons.cash} tone="green" label="Outstanding Balance" value={php(outstanding)} sub="Still to be deducted" />
-        <CashStat icon={CashIcons.people} tone="violet" label="Active Advances" value={active.length} sub={`${new Set(active.map((a) => a.userId)).size} worker(s)`} />
+        <CashStat icon={CashIcons.cash} tone="green" label={seesAll ? "Outstanding Balance" : "My Balance"} value={php(outstanding)} sub="Still to be deducted" />
+        <CashStat
+          icon={CashIcons.people}
+          tone="violet"
+          label={seesAll ? "Active Advances" : "My Active Advances"}
+          value={active.length}
+          sub={seesAll ? `${new Set(active.map((a) => a.userId)).size} worker(s)` : undefined}
+        />
         <CashStat icon={CashIcons.trend} tone="blue" label="Repaid This Month" value={php(repaidThisMonth)} />
         <CashStat icon={CashIcons.clock} tone="amber" label="Pending Approval" value={pending.length} sub={pending.length ? php(pending.reduce((s, a) => s + Number(a.amount), 0)) : undefined} />
       </div>
 
-      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.6fr)]">
-        <Panel title="Record Cash Advance">
-          <CashAdvanceForm people={people.map((p) => ({ value: p.id, label: p.employeeNo ? `${p.name} (${p.employeeNo})` : p.name }))} canApprove={canApprove} />
-        </Panel>
+      <div className={`grid grid-cols-1 items-start gap-6 ${manage ? "lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.6fr)]" : ""}`}>
+        {manage && (
+          <Panel title="Record Cash Advance">
+            <CashAdvanceForm people={people.map((p) => ({ value: p.id, label: p.employeeNo ? `${p.name} (${p.employeeNo})` : p.name }))} canApprove={canApprove} />
+          </Panel>
+        )}
 
-        <Panel title="Cash Advances">
+        <Panel title={seesAll ? "Cash Advances" : "My Cash Advances"}>
+          {!manage && (
+            <p className="mb-3 text-sm text-ink-500">Need a cash advance? Ask the office (Accounting) — they record it here and it&apos;s deducted from your payroll each cut-off.</p>
+          )}
           <div className="overflow-x-auto rounded-lg border border-ink-200">
             <table className="w-full min-w-[640px] text-left text-sm">
               <thead className="bg-ink-100/70 text-ink-700">
@@ -105,7 +121,7 @@ export default async function CashAdvancePage() {
                         </details>
                       )}
                       <div className="mt-2">
-                        <AdvanceActions id={a.id} status={a.status} canApprove={canApprove} repaid={a.repaid > 0} />
+                        {manage && <AdvanceActions id={a.id} status={a.status} canApprove={canApprove} repaid={a.repaid > 0} />}
                       </div>
                     </td>
                     <td className="whitespace-nowrap px-3 py-4 text-right tabular-nums">{php(a.amount)}</td>

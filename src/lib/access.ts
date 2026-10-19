@@ -14,7 +14,6 @@ export const ASSIGNABLE_MENUS: { href: string; label: string }[] = [
   { href: "/instructions", label: "Instructions" },
   { href: "/attendance", label: "Attendance" },
   { href: "/payroll", label: "Payroll" },
-  { href: "/cash-expense", label: "Cash Expense (petty cash)" },
 ];
 
 /**
@@ -29,9 +28,8 @@ export const ASSIGNABLE_MENUS: { href: string; label: string }[] = [
  * PM/Purchasing/Accounting keep their working menus minus Owner-only ones.
  * Instructions now doubles as the employee assignment tracker (2026-08-14)
  * — every non-Client role gets it so an assignee can reach their own task.
- * Cash Expense (2026-10-19): Owner and Accounting run the petty cash fund and
- * cash advances; PM, Foreman, Purchasing and Drivers get it to request petty
- * cash and liquidate their own.
+ * Cash Expense (2026-10-19) is open to every staff account — see
+ * canUseCashExpense — so it isn't part of this matrix's checklist.
  *
  * A per-account checklist can override this default (2026-09-15): when a
  * user has useCustomMenus set, their customMenus list is authoritative
@@ -125,17 +123,13 @@ export function allowedMenus(
   return extra.length ? Array.from(new Set([...base, ...extra])) : base;
 }
 
-/** Cash Expense tab: by role / tab checklist, or because the Owner made this person a petty cash approver or releaser. */
-export function canUseCashExpense(u: {
-  role: Role;
-  department: Department | null;
-  customMenus?: string[];
-  useCustomMenus?: boolean;
-  canApprovePettyCash?: boolean;
-  canReleasePettyCash?: boolean;
-}): boolean {
-  if (u.role === "CLIENT") return false;
-  return !!u.canApprovePettyCash || !!u.canReleasePettyCash || allowedMenus(u.role, u.department, u.customMenus, u.useCustomMenus).includes("/cash-expense");
+/**
+ * Cash Expense tab: every staff account has it (2026-10-19, Owner's rule) — what each person sees inside depends on
+ * them (see seesAllPettyCash in cash-expense.ts): office staff see everyone's records, site workers and drivers only
+ * their own. Independent of the per-account tab checklist.
+ */
+export function canUseCashExpense(u: { role: Role }): boolean {
+  return u.role !== "CLIENT";
 }
 
 export function canAccess(
