@@ -206,6 +206,7 @@ const RELATED_LABELS: Record<string, string> = {
   assignments: "project assignment(s)",
   payrollRuns: "payroll run(s)",
   materialStocks: "on-site material stock row(s)",
+  pettyCash: "petty cash request(s)",
 };
 
 /** Owner-only cleanup for a mistaken/duplicate project. Plain delete succeeds

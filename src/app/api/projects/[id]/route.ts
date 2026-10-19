@@ -120,6 +120,7 @@ export const DELETE = handleApi(
       assignments,
       payrollRuns,
       materialStocks,
+      pettyCash,
     ] = await Promise.all([
       prisma.delivery.count({ where: { OR: [{ projectId: project.id }, { poId: { in: poIds } }] } }),
       prisma.payment.count({ where: { projectId: project.id } }),
@@ -133,6 +134,7 @@ export const DELETE = handleApi(
       prisma.projectAssignment.count({ where: { projectId: project.id } }),
       prisma.payrollRun.count({ where: { projectId: project.id } }),
       prisma.projectMaterialStock.count({ where: { projectId: project.id } }),
+      prisma.pettyCashRequest.count({ where: { projectId: project.id } }),
     ]);
 
     const counts = {
@@ -150,6 +152,7 @@ export const DELETE = handleApi(
       assignments,
       payrollRuns,
       materialStocks,
+      pettyCash,
     };
     const totalRelated = Object.values(counts).reduce((a, b) => a + b, 0);
 
@@ -180,6 +183,8 @@ export const DELETE = handleApi(
         prisma.projectAssignment.deleteMany({ where: { projectId: project.id } }),
         prisma.payrollRun.deleteMany({ where: { projectId: project.id } }),
         prisma.projectMaterialStock.deleteMany({ where: { projectId: project.id } }),
+        // Its petty cash goes with it, like its requisitions — otherwise it would fall back to company overhead.
+        prisma.pettyCashRequest.deleteMany({ where: { projectId: project.id } }),
         // Equipment/inventory ledger history outlives the project — unlink, don't delete.
         prisma.toolAsset.updateMany({ where: { currentProjectId: project.id }, data: { currentProjectId: null } }),
         prisma.toolMovement.updateMany({ where: { fromProjectId: project.id }, data: { fromProjectId: null } }),
