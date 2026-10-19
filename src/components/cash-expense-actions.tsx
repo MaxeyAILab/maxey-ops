@@ -217,7 +217,7 @@ export function QuickRecordForm({
         {busy ? "Submitting…" : "Submit Request"}
       </button>
       {msg && <p className={`text-sm ${msg.ok ? "text-emerald-700 dark:text-emerald-300" : "text-red-700 dark:text-red-300"}`}>{msg.text}</p>}
-      <p className="text-xs text-ink-500">Requests route to the Owner for approval; Accounting releases the cash.</p>
+      <p className="text-xs text-ink-500">Requests go to the approvers; once released, the requester confirms receiving the cash here.</p>
     </form>
   );
 }
@@ -280,16 +280,22 @@ export function RequestActions({
   id,
   status,
   canApprove,
+  canRelease,
+  canDelete,
   custodian,
   own,
   isRequester,
+  received,
 }: {
   id: string;
   status: string;
-  canApprove: boolean;
+  canApprove: boolean; // Owner or an assigned approver
+  canRelease: boolean; // an assigned releaser (or the Owner)
+  canDelete: boolean; // Owner only
   custodian: boolean;
   own: boolean; // filed it or is the requester
-  isRequester: boolean; // the cash is (or will be) theirs — they report what it was spent on
+  isRequester: boolean; // the cash is (or will be) theirs — they confirm receipt and report what it was spent on
+  received: boolean; // the requester already confirmed receiving the released cash
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -320,7 +326,7 @@ export function RequestActions({
       </button>
     );
   }
-  if (custodian && status === "APPROVED") {
+  if (canRelease && status === "APPROVED") {
     buttons.push(
       <button key="rel" className={smallBtn} disabled={busy} onClick={() => act({ action: "release" }, "Release this cash from the petty cash fund?")}>
         Release cash
@@ -333,7 +339,7 @@ export function RequestActions({
         </button>
       );
   }
-  if (status === "PENDING" && (own || custodian)) {
+  if (status === "PENDING" && (own || custodian || canApprove)) {
     buttons.push(
       <button key="c" className={smallBtn} disabled={busy} onClick={() => act({ action: "cancel" }, "Cancel this request?")}>
         Cancel
@@ -353,14 +359,26 @@ export function RequestActions({
       </button>
     );
   }
-  if (isRequester && status === "RELEASED") {
+  if (isRequester && status === "RELEASED" && !received) {
+    buttons.push(
+      <button
+        key="rcv"
+        className={`${primaryBtn} min-h-[30px] px-3 text-xs`}
+        disabled={busy}
+        onClick={() => act({ action: "confirm_receipt" }, "Confirm that you have received this cash?")}
+      >
+        Confirm cash received
+      </button>
+    );
+  }
+  if (isRequester && status === "RELEASED" && received) {
     buttons.push(
       <a key="l" href={`/cash-expense/report#liquidate-${id}`} className={smallBtn}>
         Report expenses
       </a>
     );
   }
-  if (canApprove && (status === "RELEASED" || status === "FOR_LIQUIDATION")) {
+  if (canDelete && (status === "RELEASED" || status === "FOR_LIQUIDATION")) {
     buttons.push(
       <button
         key="del"

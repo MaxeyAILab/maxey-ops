@@ -295,6 +295,8 @@ model User {
   position     String? // trade/position: Foreman, Mason, Carpenter, Welder, Driver, Office Admin…
   employeeNo   String?     @unique // company employee ID printed on the payslip, e.g. VCDC-016
   canRequisition Boolean    @default(false) // the Owner lets this person raise material requisitions even though their role doesn't already allow it
+  canApprovePettyCash Boolean @default(false) // the Owner lets this person approve petty cash requests (the Owner always can)
+  canReleasePettyCash Boolean @default(false) // ...and/or confirm handing out approved petty cash
   payslipBaselines PayslipBaseline[]
   dailyRate    Decimal?    @db.Decimal(12, 2)
   hourlyRate   Decimal?    @db.Decimal(12, 2)
@@ -1339,7 +1341,8 @@ model PayslipBaseline {
 
 // ---------- Cash Expense: petty cash and cash advances (2026-10-19) ----------
 
-// PENDING (filed) -> APPROVED (Owner) -> RELEASED (cash handed out by the custodian) -> FOR_LIQUIDATION (the
+// PENDING (filed) -> APPROVED (Owner or an assigned approver) -> RELEASED (cash handed out by an assigned releaser;
+// the requester then confirms receipt in the app) -> FOR_LIQUIDATION (the
 // requester turned in receipts and what was really spent) -> LIQUIDATED (verified; the spent amount is posted as a
 // cost of its project, or as company overhead when there's no project). REJECTED / CANCELLED end it early.
 enum PettyCashStatus {
@@ -1384,6 +1387,7 @@ model PettyCashRequest {
   rejectedReason         String?
   releasedByName         String?
   releasedAt             DateTime?
+  receivedAt             DateTime? // the requester confirmed in the app that they got the released cash
   // Liquidation (Petty Cash Report)
   spentAmount            Decimal?          @db.Decimal(12, 2) // what was really spent, from the receipts
   liquidationItems       Json? // [{ description, amount }]

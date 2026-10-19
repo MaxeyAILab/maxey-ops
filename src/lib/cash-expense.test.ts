@@ -96,3 +96,28 @@ describe("cash advances", () => {
     expect(allocateDeduction(0, [adv("a", 1000, 500, 0, 1)])).toEqual([]);
   });
 });
+
+describe("who handles petty cash", () => {
+  it("the Owner approves and releases; others only when switched on", async () => {
+    const { canApprovePettyCash, canReleasePettyCash, seesAllPettyCash } = await import("@/lib/cash-expense");
+    expect(canApprovePettyCash({ role: "OWNER" })).toBe(true);
+    expect(canApprovePettyCash({ role: "OFFICE" })).toBe(false);
+    expect(canApprovePettyCash({ role: "OFFICE", canApprovePettyCash: true })).toBe(true);
+    expect(canApprovePettyCash({ role: "ACCOUNTING" })).toBe(false);
+    expect(canReleasePettyCash({ role: "ACCOUNTING" })).toBe(false);
+    expect(canReleasePettyCash({ role: "OFFICE", canReleasePettyCash: true })).toBe(true);
+    expect(canReleasePettyCash({ role: "OWNER" })).toBe(true);
+    expect(seesAllPettyCash({ role: "PM" })).toBe(false);
+    expect(seesAllPettyCash({ role: "OFFICE", canReleasePettyCash: true })).toBe(true);
+    expect(seesAllPettyCash({ role: "ACCOUNTING" })).toBe(true);
+  });
+
+  it("an approver or releaser gets the Cash Expense tab even without it in their tab list", async () => {
+    const { canUseCashExpense } = await import("@/lib/access");
+    const office = { role: "OFFICE" as const, department: "OFFICE" as const, customMenus: ["/attendance"], useCustomMenus: true };
+    expect(canUseCashExpense(office)).toBe(false);
+    expect(canUseCashExpense({ ...office, canApprovePettyCash: true })).toBe(true);
+    expect(canUseCashExpense({ ...office, canReleasePettyCash: true })).toBe(true);
+    expect(canUseCashExpense({ role: "CLIENT", department: null, canApprovePettyCash: true })).toBe(false);
+  });
+});

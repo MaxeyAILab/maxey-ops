@@ -3,7 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fmtDate } from "@/lib/format";
 import { Badge, Card, CardHeader, Table, Td, Th } from "@/components/ui";
-import { AccountToggleButton, RequisitionAccessToggle, ResetPasswordButton } from "@/components/portal-access";
+import { AccountToggleButton, PettyCashAccessToggle, RequisitionAccessToggle, ResetPasswordButton } from "@/components/portal-access";
 import { requisitionAllowedByRole } from "@/lib/requisitions";
 
 export const metadata = { title: "People" };
@@ -64,6 +64,15 @@ export default async function PeoplePage() {
           <RequisitionAccessToggle userId={u.id} name={u.name} byRole={requisitionAllowedByRole(u)} allowed={u.canRequisition} />
         )}
       </Td>
+      {(["approve", "release"] as const).map((kind) => (
+        <Td key={kind}>
+          {u.role === "CLIENT" || u.role === "OWNER" ? (
+            <span className="text-xs text-ink-300">{u.role === "OWNER" ? "Yes — owner" : "—"}</span>
+          ) : (
+            <PettyCashAccessToggle userId={u.id} name={u.name} kind={kind} allowed={kind === "approve" ? u.canApprovePettyCash : u.canReleasePettyCash} />
+          )}
+        </Td>
+      ))}
       <Td>
         <Badge value={u.active ? "ACTIVE" : "NOT_ACTIVE"} label={u.active ? "Active" : "Deactivated"} />
       </Td>
@@ -88,6 +97,8 @@ export default async function PeoplePage() {
       <Th>Login email</Th>
       <Th>Assignment</Th>
       <Th>Can raise requisitions</Th>
+      <Th>Approves petty cash</Th>
+      <Th>Releases petty cash</Th>
       <Th>Status</Th>
       <Th>Since</Th>
       <Th />
@@ -121,7 +132,7 @@ export default async function PeoplePage() {
             {clients.map(renderRow)}
             {clients.length === 0 && (
               <tr>
-                <Td colSpan={7} className="py-6 text-center text-ink-400">
+                <Td colSpan={9} className="py-6 text-center text-ink-400">
                   No client accounts yet — create one from a project&apos;s Portal Access panel.
                 </Td>
               </tr>

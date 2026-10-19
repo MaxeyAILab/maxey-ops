@@ -5,7 +5,7 @@ import { audit } from "@/lib/audit";
 import { savePhotos } from "@/lib/storage";
 import { php } from "@/lib/format";
 import { ApiError, handleApi } from "@/lib/rbac";
-import { canApproveCash, formatPettyCashNo, fundBalance, isCashCustodian, itemsTotal } from "@/lib/cash-expense";
+import { canApproveCash, canApprovePettyCash, canReleasePettyCash, formatPettyCashNo, fundBalance, isCashCustodian, itemsTotal, seesAllPettyCash } from "@/lib/cash-expense";
 import { requireCashExpenseUser } from "@/lib/cash-expense-db";
 
 const itemSchema = z.object({ description: z.string().trim().min(1).max(200), amount: z.coerce.number().min(0).max(1_000_000) });
@@ -14,6 +14,7 @@ const patchSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("approve") }),
   z.object({ action: z.literal("reject"), reason: z.string().trim().min(3).max(300) }),
   z.object({ action: z.literal("release") }),
+  z.object({ action: z.literal("confirm_receipt") }),
   z.object({ action: z.literal("cancel") }),
   z.object({
     action: z.literal("liquidate"),
@@ -28,10 +29,11 @@ const patchSchema = z.discriminatedUnion("action", [
 ]);
 
 /**
- * PATCH /api/petty-cash/[id] — move a request through its life: approve / reject (Owner), release the cash
- * (Owner/Accounting, from the fund), cancel (the requester before release; a pending one also by whoever filed it or
- * Accounting; an approved one also by the Owner, e.g. approved by mistake), liquidate (only the person the cash was
- * released to reports what was spent), verify or send back a liquidation (Owner/Accounting). Verifying posts the spent
+ * PATCH /api/petty-cash/[id] — move a request through its life: approve / reject (the Owner and assigned approvers),
+ * release the cash from the fund (assigned releasers, or the Owner), confirm receipt (the requester, in the app, once
+ * they have the cash), cancel (the requester before release; a pending one also by whoever filed it or Accounting; an
+ * approved one also by an approver, e.g. approved by mistake), liquidate (only the requester, after confirming
+ * receipt, reports what was spent), verify or send back a liquidation (Owner/Accounting). Verifying posts the spent
  * amount as an expense of the request's project — or company overhead when it has none — and returns any change to
  * the fund.
  */
@@ -43,7 +45,7 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
   const custodian = isCashCustodian(user);
   const own = r.requestedById === user.id || r.createdById === user.id;
   const isRequester = r.requestedById === user.id;
-  if (!custodian && !own) throw new ApiError(404, "Request not found");
+  if (!seesAllPettyCash(user) && !own) throw new ApiError(404, "Request not found");
   const no = formatPettyCashNo(r.number);
   const expect = (...statuses: string[]) => {
     if (!statuses.includes(r.status)) throw new ApiError(400, `${no} is ${r.status.toLowerCase().replace("_", " ")} — that can't be done now`);
@@ -55,20 +57,20 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
 
   switch (body.action) {
     case "approve":
-      if (!canApproveCash(user)) throw new ApiError(403, "Only the Owner approves petty cash");
+      if (!canApprovePettyCash(user)) throw new ApiError(403, "You aren't set up to approve petty cash");
       expect("PENDING");
       data = { status: "APPROVED", approvedByName: user.name, approvedAt: new Date() };
       action = "PETTY_CASH_APPROVED";
       break;
     case "reject":
-      if (!canApproveCash(user)) throw new ApiError(403, "Only the Owner rejects petty cash");
+      if (!canApprovePettyCash(user)) throw new ApiError(403, "You aren't set up to approve or reject petty cash");
       expect("PENDING", "APPROVED");
       data = { status: "REJECTED", rejectedReason: body.reason };
       action = "PETTY_CASH_REJECTED";
       diff = { ...diff, reason: body.reason };
       break;
     case "release": {
-      if (!custodian) throw new ApiError(403, "Only the Owner or Accounting releases petty cash");
+      if (!canReleasePettyCash(user)) throw new ApiError(403, "You aren't set up to release petty cash");
       expect("APPROVED");
       const [fund, requests] = await Promise.all([
         prisma.pettyCashFundEntry.findMany({ select: { amount: true } }),
@@ -83,11 +85,23 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
       diff = { ...diff, amount: Number(r.amount), fundBefore: balance };
       break;
     }
+    case "confirm_receipt":
+      // The requester's own word, in the app, that the released cash reached them.
+      if (!isRequester) throw new ApiError(403, `Only ${r.requestedBy.name} can confirm receiving this cash`);
+      expect("RELEASED");
+      if (r.receivedAt) throw new ApiError(400, `${no}: you already confirmed receiving this cash`);
+      data = { receivedAt: new Date() };
+      action = "PETTY_CASH_RECEIPT_CONFIRMED";
+      diff = { ...diff, amount: Number(r.amount), releasedBy: r.releasedByName };
+      break;
     case "cancel":
       expect("PENDING", "APPROVED");
       // Once approved, only the requester (no longer needed) or the Owner (approved by mistake) can call it off.
-      if (r.status === "APPROVED" && !isRequester && !canApproveCash(user)) {
-        throw new ApiError(403, "An approved request can only be cancelled by the Owner or the requester");
+      if (r.status === "PENDING" && !own && !custodian && !canApprovePettyCash(user)) {
+        throw new ApiError(403, "Only the requester, whoever filed it, Accounting or an approver can cancel this request");
+      }
+      if (r.status === "APPROVED" && !isRequester && !canApprovePettyCash(user)) {
+        throw new ApiError(403, "An approved request can only be cancelled by an approver or the requester");
       }
       data = { status: "CANCELLED" };
       action = r.status === "APPROVED" ? "PETTY_CASH_APPROVAL_CANCELLED" : "PETTY_CASH_CANCELLED";
@@ -97,6 +111,7 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
       expect("RELEASED", "FOR_LIQUIDATION");
       // The person who received the cash reports what it was spent on — no one reports it for them.
       if (!isRequester) throw new ApiError(403, `Only ${r.requestedBy.name}, who received the cash, can report what it was spent on`);
+      if (!r.receivedAt) throw new ApiError(400, `Confirm that you received the cash for ${no} first`);
       if (body.verify && !custodian) throw new ApiError(403, "Only the Owner or Accounting verifies a liquidation");
       const spent = itemsTotal(body.items);
       const newReceipts = await savePhotos(body.receipts);

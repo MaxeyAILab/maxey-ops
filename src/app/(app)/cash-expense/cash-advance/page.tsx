@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canAccess } from "@/lib/access";
+import { canUseCashExpense } from "@/lib/access";
 import { fmtDate, php } from "@/lib/format";
 import { manilaDayKey } from "@/lib/time-rules";
 import { advanceBalance, CASH_ADVANCE_STATUS_LABEL, canApproveCash, formatCashAdvanceNo, isCashCustodian } from "@/lib/cash-expense";
@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function CashAdvancePage() {
   const user = await getSessionUser();
-  if (!user || !canAccess(user.role, user.department, "/cash-expense", user.customMenus, user.useCustomMenus)) redirect("/attendance");
+  if (!user || !canUseCashExpense(user)) redirect("/attendance");
   if (!isCashCustodian(user)) redirect("/cash-expense/petty-cash");
   const canApprove = canApproveCash(user);
 

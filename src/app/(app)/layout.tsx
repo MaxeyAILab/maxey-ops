@@ -8,6 +8,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { CashExpenseNav } from "@/components/cash-expense-nav";
 import { MobileNav, SidebarNav, type SidebarItem } from "@/components/sidebar-nav";
 import { isCashCustodian } from "@/lib/cash-expense";
+import { canUseCashExpense } from "@/lib/access";
 
 interface NavItem {
   href: string;
@@ -73,6 +74,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     });
   }
 
+  // Cash Expense also opens for anyone the Owner made a petty cash approver or releaser.
+  const showCashExpense = canUseCashExpense(user);
   const sidebarItems: SidebarItem[] = items.map((n) => ({
     href: n.href,
     label: n.label,
@@ -99,7 +102,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
           <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
             <SidebarNav items={sidebarItems} />
-            {menus.includes("/cash-expense") && <CashExpenseNav showAdvances={isCashCustodian(user)} />}
+            {showCashExpense && <CashExpenseNav showAdvances={isCashCustodian(user)} />}
           </nav>
           <div className="border-t border-ink-100 px-4 py-3">
             <div className="text-xs font-semibold text-ink-900">{user.name}</div>
@@ -123,7 +126,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               M
             </span>
             <nav className="flex items-center gap-1 overflow-x-auto text-sm">
-              <MobileNav items={sidebarItems} showCashExpense={menus.includes("/cash-expense")} />
+              <MobileNav items={sidebarItems} showCashExpense={showCashExpense} />
             </nav>
             <div className="flex shrink-0 items-center gap-2">
               <SyncStatus />

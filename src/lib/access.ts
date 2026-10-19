@@ -125,6 +125,19 @@ export function allowedMenus(
   return extra.length ? Array.from(new Set([...base, ...extra])) : base;
 }
 
+/** Cash Expense tab: by role / tab checklist, or because the Owner made this person a petty cash approver or releaser. */
+export function canUseCashExpense(u: {
+  role: Role;
+  department: Department | null;
+  customMenus?: string[];
+  useCustomMenus?: boolean;
+  canApprovePettyCash?: boolean;
+  canReleasePettyCash?: boolean;
+}): boolean {
+  if (u.role === "CLIENT") return false;
+  return !!u.canApprovePettyCash || !!u.canReleasePettyCash || allowedMenus(u.role, u.department, u.customMenus, u.useCustomMenus).includes("/cash-expense");
+}
+
 export function canAccess(
   role: Role,
   department: Department | null,

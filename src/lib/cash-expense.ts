@@ -47,14 +47,31 @@ export const NO_PROJECT = "__none";
 export const formatPettyCashNo = (n: number) => `PC-${String(n).padStart(4, "0")}`;
 export const formatCashAdvanceNo = (n: number) => `CA-${String(n).padStart(4, "0")}`;
 
-/** Owner and Accounting run the fund: they see every request, file for anyone, release cash and verify liquidations. */
+/** Owner and Accounting run the fund: they see every request, file for anyone, top up the fund and verify liquidations. */
 export function isCashCustodian(u: { role: string }): boolean {
   return u.role === "OWNER" || u.role === "ACCOUNTING";
 }
 
-/** Only the Owner approves a petty cash request or a cash advance. */
+/** Owner-only: approving a cash advance, deleting released petty cash. */
 export function canApproveCash(u: { role: string }): boolean {
   return u.role === "OWNER";
+}
+
+type CashPerson = { role: string; canApprovePettyCash?: boolean | null; canReleasePettyCash?: boolean | null };
+
+/** Approves (or rejects, or calls off an approval of) a petty cash request: the Owner and whoever the Owner switched on. */
+export function canApprovePettyCash(u: CashPerson): boolean {
+  return u.role === "OWNER" || !!u.canApprovePettyCash;
+}
+
+/** Confirms handing out approved petty cash: whoever the Owner switched on (the Owner always can). */
+export function canReleasePettyCash(u: CashPerson): boolean {
+  return u.role === "OWNER" || !!u.canReleasePettyCash;
+}
+
+/** Sees every petty cash request, not just their own: the custodians, approvers and releasers. */
+export function seesAllPettyCash(u: CashPerson): boolean {
+  return isCashCustodian(u) || canApprovePettyCash(u) || canReleasePettyCash(u);
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;

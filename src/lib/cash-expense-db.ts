@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { canAccess } from "@/lib/access";
+import { canUseCashExpense } from "@/lib/access";
 import { ApiError, requireUser } from "@/lib/rbac";
 import { allocateDeduction, plannedDeduction, type AdvanceLike } from "@/lib/cash-expense";
 import { normalizeEntries, type PayrollEntry } from "@/lib/payroll";
@@ -8,7 +8,7 @@ import { normalizeEntries, type PayrollEntry } from "@/lib/payroll";
 /** Signed-in staff with the Cash Expense tab (API side of the same menu rule the pages use). */
 export async function requireCashExpenseUser() {
   const user = await requireUser();
-  if (!canAccess(user.role, user.department, "/cash-expense", user.customMenus, user.useCustomMenus)) {
+  if (!canUseCashExpense(user)) {
     throw new ApiError(403, "Not authorized for Cash Expense");
   }
   return user;

@@ -2,11 +2,13 @@ import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canAccess } from "@/lib/access";
+import { canUseCashExpense } from "@/lib/access";
 import { php } from "@/lib/format";
 import { manilaDayKey } from "@/lib/time-rules";
 import {
   canApproveCash,
+  canApprovePettyCash,
+  canReleasePettyCash,
   formatPettyCashNo,
   fundBalance,
   isCashCustodian,
@@ -14,6 +16,7 @@ import {
   NO_PROJECT_LABEL,
   PETTY_CASH_CATEGORY_LABEL,
   PETTY_CASH_STATUS_LABEL,
+  seesAllPettyCash,
   unliquidated,
 } from "@/lib/cash-expense";
 import { CashExpenseHeader, CashIcons, CashStat, CashStatus, Panel } from "@/components/cash-expense-header";
@@ -33,9 +36,12 @@ const isDay = (s: string | undefined) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
 export default async function PettyCashPage({ searchParams }: { searchParams: { status?: string; from?: string; to?: string; q?: string } }) {
   const user = await getSessionUser();
-  if (!user || !canAccess(user.role, user.department, "/cash-expense", user.customMenus, user.useCustomMenus)) redirect("/attendance");
+  if (!user || !canUseCashExpense(user)) redirect("/attendance");
   const custodian = isCashCustodian(user);
-  const canApprove = canApproveCash(user);
+  const canApprove = canApprovePettyCash(user);
+  const canRelease = canReleasePettyCash(user);
+  const canDelete = canApproveCash(user); // Owner only
+  const seesAll = seesAllPettyCash(user);
 
   // Default view: the last 7 days, like the Owner's mock-up.
   const now = new Date();
@@ -45,8 +51,8 @@ export default async function PettyCashPage({ searchParams }: { searchParams: { 
   const status = searchParams.status && PETTY_CASH_STATUS_LABEL[searchParams.status] ? searchParams.status : "";
   const q = (searchParams.q ?? "").trim().slice(0, 80);
 
-  // Everyone but the custodians only ever sees requests they filed or that are theirs.
-  const mine: Prisma.PettyCashRequestWhereInput = custodian ? {} : { OR: [{ requestedById: user.id }, { createdById: user.id }] };
+  // Everyone but the custodians, approvers and releasers only ever sees requests they filed or that are theirs.
+  const mine: Prisma.PettyCashRequestWhereInput = seesAll ? {} : { OR: [{ requestedById: user.id }, { createdById: user.id }] };
   const numberMatch = /^(?:pc-?)?0*(\d{1,6})$/i.exec(q);
   const where: Prisma.PettyCashRequestWhereInput = {
     AND: [
@@ -75,10 +81,10 @@ export default async function PettyCashPage({ searchParams }: { searchParams: { 
       include: { project: { select: { name: true } }, requestedBy: { select: { name: true } } },
     }),
     prisma.pettyCashRequest.findMany({
-      where: custodian ? {} : mine,
+      where: seesAll ? {} : mine,
       select: { status: true, amount: true, spentAmount: true, releasedAt: true },
     }),
-    custodian ? prisma.pettyCashFundEntry.findMany({ select: { amount: true } }) : Promise.resolve([]),
+    seesAll ? prisma.pettyCashFundEntry.findMany({ select: { amount: true } }) : Promise.resolve([]),
     prisma.project.findMany({
       where: { status: { not: "NOT_ACTIVE" } },
       select: { id: true, name: true, isNonCorporate: true },
@@ -89,7 +95,7 @@ export default async function PettyCashPage({ searchParams }: { searchParams: { 
       : Promise.resolve([]),
   ]);
 
-  const balance = custodian ? fundBalance(fund, all) : 0;
+  const balance = seesAll ? fundBalance(fund, all) : 0;
   const pending = all.filter((r) => r.status === "PENDING").length;
   const releasedThisMonth = all.filter((r) => r.releasedAt && r.releasedAt >= monthStart).reduce((s, r) => s + Number(r.amount), 0);
   const outstanding = all.reduce((s, r) => s + unliquidated(r), 0);
@@ -115,12 +121,12 @@ export default async function PettyCashPage({ searchParams }: { searchParams: { 
       />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {custodian ? (
-          <CashStat icon={CashIcons.cash} tone="green" label="Available Petty Cash" value={php(balance)} sub={<FundForm />} />
+        {seesAll ? (
+          <CashStat icon={CashIcons.cash} tone="green" label="Available Petty Cash" value={php(balance)} sub={custodian ? <FundForm /> : undefined} />
         ) : (
           <CashStat icon={CashIcons.cash} tone="green" label="My requests (all time)" value={all.length} />
         )}
-        <CashStat icon={CashIcons.clock} tone="amber" label={custodian ? "Pending Requests" : "My Pending Requests"} value={pending} />
+        <CashStat icon={CashIcons.clock} tone="amber" label={seesAll ? "Pending Requests" : "My Pending Requests"} value={pending} />
         <CashStat icon={CashIcons.trend} tone="blue" label="Released This Month" value={php(releasedThisMonth)} />
         <CashStat icon={CashIcons.people} tone="violet" label="Unliquidated Advances" value={php(outstanding)} sub="Released, receipts not yet verified" />
       </div>
@@ -138,7 +144,7 @@ export default async function PettyCashPage({ searchParams }: { searchParams: { 
         <Panel
           title="Recent Petty Cash Activity"
           action={
-            custodian ? (
+            seesAll ? (
               <span className="inline-flex items-center gap-2 text-sm text-ink-600">
                 <span aria-hidden className="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
                   ▤
@@ -171,6 +177,11 @@ export default async function PettyCashPage({ searchParams }: { searchParams: { 
                         <div className="mt-0.5 text-xs text-ink-500">
                           {formatPettyCashNo(r.number)} · {PETTY_CASH_CATEGORY_LABEL[r.category]} · {r.requestedBy.name}
                         </div>
+                        {r.status === "RELEASED" && (
+                          <div className="mt-1 text-xs text-ink-500">
+                            Released by {r.releasedByName ?? "—"} · {r.receivedAt ? `received by ${r.requestedBy.name} ${TIME_FMT.format(r.receivedAt)}` : `waiting for ${r.requestedBy.name} to confirm receipt`}
+                          </div>
+                        )}
                         {r.status === "REJECTED" && r.rejectedReason && <div className="mt-1 text-xs text-red-700 dark:text-red-300">Rejected: {r.rejectedReason}</div>}
                         {Array.isArray(r.receipts) && (r.receipts as string[]).length > 0 && (
                           <div className="mt-1 flex gap-2 text-xs">
@@ -182,13 +193,23 @@ export default async function PettyCashPage({ searchParams }: { searchParams: { 
                           </div>
                         )}
                         <div className="mt-2">
-                          <RequestActions id={r.id} status={r.status} canApprove={canApprove} custodian={custodian} own={own} isRequester={r.requestedById === user.id} />
+                          <RequestActions
+                            id={r.id}
+                            status={r.status}
+                            canApprove={canApprove}
+                            canRelease={canRelease}
+                            canDelete={canDelete}
+                            custodian={custodian}
+                            own={own}
+                            isRequester={r.requestedById === user.id}
+                            received={!!r.receivedAt}
+                          />
                         </div>
                       </td>
                       <td className="px-4 py-4 text-ink-700">{r.project?.name ?? NO_PROJECT_LABEL}</td>
                       <td className="whitespace-nowrap px-4 py-4 text-right tabular-nums text-ink-900">{php(r.amount)}</td>
                       <td className="px-4 py-4">
-                        <CashStatus status={r.status} label={PETTY_CASH_STATUS_LABEL[r.status]} />
+                        <CashStatus status={r.status} label={r.status === "RELEASED" && r.receivedAt ? "Received" : PETTY_CASH_STATUS_LABEL[r.status]} />
                       </td>
                     </tr>
                   );

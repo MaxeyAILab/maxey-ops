@@ -20,6 +20,9 @@ export interface SessionUser {
   customMenus: string[];
   /** The Owner has allowed this person to raise requisitions (see canRaiseRequisition). */
   canRequisition: boolean;
+  /** The Owner has switched this person on to approve / to release petty cash (People page). */
+  canApprovePettyCash: boolean;
+  canReleasePettyCash: boolean;
   /** Single-device login tag, set for every role including the Owner. */
   sessionId?: string;
 }
@@ -128,6 +131,8 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       useCustomMenus: true,
       customMenus: true,
       canRequisition: true,
+      canApprovePettyCash: true,
+      canReleasePettyCash: true,
       currentSessionId: true,
     },
   });
@@ -145,5 +150,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     useCustomMenus: dbUser.useCustomMenus,
     customMenus: dbUser.customMenus,
     canRequisition: dbUser.canRequisition,
+    canApprovePettyCash: dbUser.canApprovePettyCash,
+    canReleasePettyCash: dbUser.canReleasePettyCash,
   };
 }

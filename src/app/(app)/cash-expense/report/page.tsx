@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canAccess } from "@/lib/access";
+import { canUseCashExpense } from "@/lib/access";
 import { fmtDate, fmtDateTime, php } from "@/lib/format";
 import { manilaDayKey } from "@/lib/time-rules";
 import {
@@ -14,6 +14,7 @@ import {
   NO_PROJECT_LABEL,
   PETTY_CASH_CATEGORY_LABEL,
   postedExpense,
+  seesAllPettyCash,
 } from "@/lib/cash-expense";
 import { CashExpenseHeader, CashIcons, CashStat, CashStatus, Panel } from "@/components/cash-expense-header";
 import { LiquidationForm, RequestActions, VerifyActions } from "@/components/cash-expense-actions";
@@ -47,9 +48,9 @@ function Receipts({ urls }: { urls: unknown }) {
  */
 export default async function PettyCashReportPage({ searchParams }: { searchParams: { from?: string; to?: string; project?: string } }) {
   const user = await getSessionUser();
-  if (!user || !canAccess(user.role, user.department, "/cash-expense", user.customMenus, user.useCustomMenus)) redirect("/attendance");
+  if (!user || !canUseCashExpense(user)) redirect("/attendance");
   const custodian = isCashCustodian(user);
-  const canApprove = canApproveCash(user);
+  const canDelete = canApproveCash(user); // Owner only
 
   const now = new Date();
   const today = manilaDayKey(now);
@@ -57,7 +58,7 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
   const to = isDay(searchParams.to) ? searchParams.to! : today;
   const projectFilter = searchParams.project ?? "";
 
-  const mine: Prisma.PettyCashRequestWhereInput = custodian ? {} : { OR: [{ requestedById: user.id }, { createdById: user.id }] };
+  const mine: Prisma.PettyCashRequestWhereInput = seesAllPettyCash(user) ? {} : { OR: [{ requestedById: user.id }, { createdById: user.id }] };
   const include = { project: { select: { name: true } }, requestedBy: { select: { name: true } } } as const;
 
   const [open, posted, projects] = await Promise.all([
@@ -137,7 +138,14 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
                     <CashStatus status={r.status} label="Released" />
                   </div>
                 </div>
-                <LiquidationForm id={r.id} released={Number(r.amount)} custodian={custodian} />
+                {r.receivedAt ? (
+                  <LiquidationForm id={r.id} released={Number(r.amount)} custodian={custodian} />
+                ) : (
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
+                    <span>First confirm that you received this cash — then you can report what it was spent on.</span>
+                    <RequestActions id={r.id} status={r.status} canApprove={false} canRelease={false} canDelete={false} custodian={false} own isRequester received={false} />
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -154,13 +162,13 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
                     {formatPettyCashNo(r.number)} · {r.purpose}
                   </div>
                   <div className="text-xs text-ink-500">
-                    {r.project?.name ?? NO_PROJECT_LABEL} · released {fmtDateTime(r.releasedAt)} · waiting for <b>{r.requestedBy.name}</b> to report what it was spent on
+                    {r.project?.name ?? NO_PROJECT_LABEL} · released {fmtDateTime(r.releasedAt)} · waiting for <b>{r.requestedBy.name}</b> to {r.receivedAt ? "report what it was spent on" : "confirm receiving the cash"}
                   </div>
                   {r.liquidationNote?.startsWith("Sent back") && <div className="mt-1 text-xs font-medium text-red-700 dark:text-red-300">{r.liquidationNote}</div>}
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="font-semibold tabular-nums text-ink-900">{php(r.amount)}</span>
-                  <RequestActions id={r.id} status={r.status} canApprove={canApprove} custodian={custodian} own={false} isRequester={false} />
+                  <RequestActions id={r.id} status={r.status} canApprove={false} canRelease={false} canDelete={canDelete} custodian={custodian} own={false} isRequester={false} received={!!r.receivedAt} />
                 </div>
               </div>
             ))}
@@ -207,7 +215,7 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
                   {r.liquidationNote && <p className="mt-1 text-xs text-ink-500">Note: {r.liquidationNote}</p>}
                   <div className="mt-3 flex flex-wrap items-start justify-between gap-2">
                     {custodian ? <VerifyActions id={r.id} /> : <p className="text-xs text-ink-500">Waiting for Accounting or the Owner to verify.</p>}
-                    <RequestActions id={r.id} status={r.status} canApprove={canApprove} custodian={custodian} own={false} isRequester={false} />
+                    <RequestActions id={r.id} status={r.status} canApprove={false} canRelease={false} canDelete={canDelete} custodian={custodian} own={false} isRequester={false} received={!!r.receivedAt} />
                   </div>
                 </div>
               );
