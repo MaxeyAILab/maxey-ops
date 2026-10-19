@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
@@ -170,20 +170,74 @@ export function ActivityFeed({ rows }: { rows: ActivityRow[] }) {
 
 // ---------- section navigation ----------
 
+/** Section tabs across the project page; the section you're scrolled to is highlighted in orange. */
 export function ProjectSectionNav({ sections }: { sections: { id: string; label: string }[] }) {
+  const [active, setActive] = useState(sections[0]?.id ?? "");
+  const navRef = useRef<HTMLElement>(null);
+
+  // Scroll-spy: the active section is the last one whose top has passed just below the sticky bar. At the very
+  // bottom of the page the last section wins, since a short final section may never reach the bar.
+  useEffect(() => {
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const line = (navRef.current?.getBoundingClientRect().bottom ?? 0) + 24;
+      const atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4;
+      let current = sections[0]?.id ?? "";
+      let best = -Infinity;
+      for (const s of sections) {
+        const top = document.getElementById(s.id)?.getBoundingClientRect().top;
+        if (top != null && top <= line && top > best) {
+          best = top;
+          current = s.id;
+        }
+      }
+      if (atBottom && sections.length) current = sections[sections.length - 1].id;
+      setActive(current);
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [sections]);
+
+  // Keep the highlighted tab visible when the bar scrolls sideways (phones, narrow windows).
+  useEffect(() => {
+    const el = navRef.current?.querySelector<HTMLElement>(`[data-section="${active}"]`);
+    const nav = navRef.current;
+    if (!el || !nav) return;
+    const left = el.offsetLeft - nav.clientWidth / 2 + el.clientWidth / 2;
+    nav.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
+  }, [active]);
+
   return (
-    <nav aria-label="Project sections" className="sticky top-[3.6rem] z-10 -mx-4 overflow-x-auto border-b border-ink-200 bg-ink-100/95 px-4 backdrop-blur md:top-0">
+    <nav ref={navRef} aria-label="Project sections" className="sticky top-[3.6rem] z-10 -mx-4 overflow-x-auto border-b border-ink-200 bg-ink-100/95 px-4 backdrop-blur md:top-0">
       <ul className="flex gap-1 whitespace-nowrap py-1.5 text-sm">
-        {sections.map((s) => (
-          <li key={s.id}>
-            <a
-              href={`#${s.id}`}
-              className="inline-flex min-h-[36px] items-center rounded-sm px-3 font-medium text-ink-600 hover:bg-ink-200 hover:text-ink-900"
-            >
-              {s.label}
-            </a>
-          </li>
-        ))}
+        {sections.map((s) => {
+          const on = s.id === active;
+          return (
+            <li key={s.id}>
+              <a
+                href={`#${s.id}`}
+                data-section={s.id}
+                aria-current={on ? "location" : undefined}
+                onClick={() => setActive(s.id)}
+                className={`inline-flex min-h-[36px] items-center rounded-sm px-3 font-medium ${
+                  on ? "bg-orange-500 text-white shadow-sm hover:bg-orange-600" : "text-ink-600 hover:bg-ink-200 hover:text-ink-900"
+                }`}
+              >
+                {s.label}
+              </a>
+            </li>
+          );
+        })}
       </ul>
     </nav>
   );
