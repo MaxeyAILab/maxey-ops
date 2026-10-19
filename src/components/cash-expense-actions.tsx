@@ -378,6 +378,18 @@ export function RequestActions({
       </a>
     );
   }
+  if (canDelete && (status === "CANCELLED" || status === "REJECTED")) {
+    buttons.push(
+      <button
+        key="del"
+        className={`${smallBtn} text-red-700 dark:text-red-300`}
+        disabled={busy}
+        onClick={() => act(null, "Delete this request? It's removed from the list; the audit log keeps a copy.")}
+      >
+        Delete
+      </button>
+    );
+  }
   if (canDelete && (status === "RELEASED" || status === "FOR_LIQUIDATION")) {
     buttons.push(
       <button

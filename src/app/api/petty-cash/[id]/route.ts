@@ -156,20 +156,21 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
 
 /**
  * DELETE /api/petty-cash/[id] — Owner only: remove a released request whose receipts haven't been verified (released
- * by mistake, or the cash came back unused). Its cash counts as back in the fund. A liquidated request is a posted
- * expense and can't be deleted. The audit log keeps a full copy of what was removed.
+ * by mistake, or the cash came back unused) — its cash counts as back in the fund — or clear away a cancelled or
+ * rejected one so the list stays tidy. A liquidated request is a posted expense and can't be deleted; pending and
+ * approved ones are cancelled or rejected first. The audit log keeps a full copy of what was removed.
  */
 export const DELETE = handleApi(async (_req: NextRequest, { params }: { params: { id: string } }) => {
   const user = await requireCashExpenseUser();
-  if (!canApproveCash(user)) throw new ApiError(403, "Only the Owner deletes released petty cash");
+  if (!canApproveCash(user)) throw new ApiError(403, "Only the Owner deletes petty cash requests");
   const r = await prisma.pettyCashRequest.findUnique({
     where: { id: params.id },
     include: { requestedBy: { select: { name: true } }, project: { select: { name: true } } },
   });
   if (!r) throw new ApiError(404, "Request not found");
   const no = formatPettyCashNo(r.number);
-  if (r.status !== "RELEASED" && r.status !== "FOR_LIQUIDATION") {
-    throw new ApiError(400, r.status === "LIQUIDATED" ? `${no} is already a posted expense and can't be deleted` : `${no} isn't released — cancel or reject it instead`);
+  if (!["RELEASED", "FOR_LIQUIDATION", "CANCELLED", "REJECTED"].includes(r.status)) {
+    throw new ApiError(400, r.status === "LIQUIDATED" ? `${no} is already a posted expense and can't be deleted` : `${no} is still open — cancel or reject it first`);
   }
   const gone = await prisma.pettyCashRequest.deleteMany({ where: { id: r.id, status: r.status } });
   if (gone.count === 0) throw new ApiError(409, `${no} was just changed by someone else — refresh and try again`);
