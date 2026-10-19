@@ -347,6 +347,8 @@ model User {
   workRequests             WorkRequest[]           @relation("WorkRequester")
   findingsRaised           Finding[]               @relation("FindingRaiser")
   findingsOwned            Finding[]               @relation("FindingOwner")
+  pettyCashRequests        PettyCashRequest[]      @relation("PettyCashRequester")
+  cashAdvances             CashAdvance[]           @relation("CashAdvanceBorrower")
 }
 
 // Self-service "forgot password" (Spec §8-adjacent hardening). Only the
@@ -477,6 +479,7 @@ model Project {
   materialMovesTo   InventoryMovement[] @relation("MaterialMoveTo")
   toolMovesFrom     ToolMovement[]      @relation("ToolMoveFrom")
   toolMovesTo       ToolMovement[]      @relation("ToolMoveTo")
+  pettyCash         PettyCashRequest[]
 }
 
 model PaymentTerm {
@@ -1188,6 +1191,7 @@ model PayrollRun {
   createdAt   DateTime      @default(now())
   approvedAt     DateTime? // when the Owner approved it — printed on payslips as the approval
   approvedByName String?
+  cashAdvanceDeductions CashAdvanceDeduction[]
 }
 
 model SiteInstruction {
@@ -1331,4 +1335,120 @@ model PayslipBaseline {
   count  Int
 
   @@unique([userId, year])
+}
+
+// ---------- Cash Expense: petty cash and cash advances (2026-10-19) ----------
+
+// PENDING (filed) -> APPROVED (Owner) -> RELEASED (cash handed out by the custodian) -> FOR_LIQUIDATION (the
+// requester turned in receipts and what was really spent) -> LIQUIDATED (verified; the spent amount is posted as a
+// cost of its project, or as company overhead when there's no project). REJECTED / CANCELLED end it early.
+enum PettyCashStatus {
+  PENDING
+  APPROVED
+  RELEASED
+  FOR_LIQUIDATION
+  LIQUIDATED
+  REJECTED
+  CANCELLED
+}
+
+enum PettyCashCategory {
+  SITE_SUPPLIES
+  FUEL
+  MEALS
+  TRANSPORTATION
+  TOOLS_EQUIPMENT
+  REPAIRS_MAINTENANCE
+  OFFICE_SUPPLIES
+  PERMITS_FEES
+  UTILITIES
+  OTHER
+}
+
+model PettyCashRequest {
+  id                     String            @id @default(cuid())
+  number                 Int               @unique // PC-0001…
+  projectId              String? // null = not for a project (company overhead)
+  project                Project?          @relation(fields: [projectId], references: [id])
+  category               PettyCashCategory
+  amount                 Decimal           @db.Decimal(12, 2) // cash requested / released
+  purpose                String
+  receipts               Json? // optional receipt/quote photos attached when filing
+  requestedById          String
+  requestedBy            User              @relation("PettyCashRequester", fields: [requestedById], references: [id])
+  createdById            String // who typed it in (can differ from the requester)
+  status                 PettyCashStatus   @default(PENDING)
+  createdAt              DateTime          @default(now())
+  approvedByName         String?
+  approvedAt             DateTime?
+  rejectedReason         String?
+  releasedByName         String?
+  releasedAt             DateTime?
+  // Liquidation (Petty Cash Report)
+  spentAmount            Decimal?          @db.Decimal(12, 2) // what was really spent, from the receipts
+  liquidationItems       Json? // [{ description, amount }]
+  liquidationReceipts    Json? // receipt photos
+  liquidationNote        String?
+  liquidationSubmittedAt DateTime?
+  liquidatedByName       String?
+  liquidatedAt           DateTime? // the day it was verified — the expense's posting date
+
+  @@index([status])
+  @@index([projectId, status])
+}
+
+// Money put into (or taken out of) the petty cash fund itself: replenishments and corrections.
+model PettyCashFundEntry {
+  id             String   @id @default(cuid())
+  amount         Decimal  @db.Decimal(12, 2) // + into the fund, - out of it
+  note           String?
+  recordedById   String
+  recordedByName String
+  createdAt      DateTime @default(now())
+}
+
+// PENDING (filed) -> ACTIVE (approved and handed out; deducted from payroll every cut-off) -> PAID (fully deducted).
+enum CashAdvanceStatus {
+  PENDING
+  ACTIVE
+  PAID
+  REJECTED
+  CANCELLED
+}
+
+model CashAdvance {
+  id                 String                 @id @default(cuid())
+  number             Int                    @unique // CA-0001…
+  userId             String
+  user               User                   @relation("CashAdvanceBorrower", fields: [userId], references: [id])
+  amount             Decimal                @db.Decimal(12, 2)
+  deductionPerCutoff Decimal                @db.Decimal(12, 2) // taken from each payroll cut-off until paid
+  reason             String
+  status             CashAdvanceStatus      @default(PENDING)
+  createdById        String
+  createdByName      String
+  createdAt          DateTime               @default(now())
+  approvedByName     String?
+  approvedAt         DateTime? // approved and released
+  rejectedReason     String?
+  deductions         CashAdvanceDeduction[]
+
+  @@index([userId, status])
+}
+
+// One repayment: a payroll deduction (posted when the run is approved, removed if the approval is cancelled), or a
+// cash payment the Owner recorded by hand (payrollRunId null).
+model CashAdvanceDeduction {
+  id             String      @id @default(cuid())
+  advanceId      String
+  advance        CashAdvance @relation(fields: [advanceId], references: [id], onDelete: Cascade)
+  payrollRunId   String?
+  payrollRun     PayrollRun? @relation(fields: [payrollRunId], references: [id], onDelete: SetNull)
+  amount         Decimal     @db.Decimal(12, 2)
+  note           String?
+  recordedByName String
+  createdAt      DateTime    @default(now())
+
+  @@unique([advanceId, payrollRunId])
+  @@index([payrollRunId])
 }

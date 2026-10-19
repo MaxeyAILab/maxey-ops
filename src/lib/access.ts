@@ -14,6 +14,7 @@ export const ASSIGNABLE_MENUS: { href: string; label: string }[] = [
   { href: "/instructions", label: "Instructions" },
   { href: "/attendance", label: "Attendance" },
   { href: "/payroll", label: "Payroll" },
+  { href: "/cash-expense", label: "Cash Expense (petty cash)" },
 ];
 
 /**
@@ -28,6 +29,9 @@ export const ASSIGNABLE_MENUS: { href: string; label: string }[] = [
  * PM/Purchasing/Accounting keep their working menus minus Owner-only ones.
  * Instructions now doubles as the employee assignment tracker (2026-08-14)
  * — every non-Client role gets it so an assignee can reach their own task.
+ * Cash Expense (2026-10-19): Owner and Accounting run the petty cash fund and
+ * cash advances; PM, Foreman, Purchasing and Drivers get it to request petty
+ * cash and liquidate their own.
  *
  * A per-account checklist can override this default (2026-09-15): when a
  * user has useCustomMenus set, their customMenus list is authoritative
@@ -49,6 +53,7 @@ function roleDefaultMenus(role: Role): string[] {
         "/instructions",
         "/attendance",
         "/payroll",
+        "/cash-expense",
         "/people",
       ];
     case "FOREMAN":
@@ -61,9 +66,10 @@ function roleDefaultMenus(role: Role): string[] {
         "/instructions",
         "/attendance",
         "/payroll",
+        "/cash-expense",
       ];
     case "DRIVER":
-      return ["/requisitions", "/purchasing", "/deliveries", "/instructions", "/attendance", "/payroll"];
+      return ["/requisitions", "/purchasing", "/deliveries", "/instructions", "/attendance", "/payroll", "/cash-expense"];
     case "PM":
       return [
         "/projects",
@@ -73,6 +79,7 @@ function roleDefaultMenus(role: Role): string[] {
         "/instructions",
         "/attendance",
         "/payroll",
+        "/cash-expense",
       ];
     case "ACCOUNTING":
     case "PURCHASING":
@@ -85,6 +92,7 @@ function roleDefaultMenus(role: Role): string[] {
         "/instructions",
         "/attendance",
         "/payroll",
+        "/cash-expense",
       ];
     case "OFFICE": // site workers and office staff
       return ["/instructions", "/attendance", "/payroll"];

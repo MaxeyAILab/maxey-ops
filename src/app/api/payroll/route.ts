@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { computePayroll, computeProjectPayroll } from "@/lib/payroll";
+import { prefillCashAdvances } from "@/lib/cash-expense-db";
 import { manilaSemiMonthlyPeriod, manilaWeeklySitePeriod } from "@/lib/time-rules";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 
@@ -69,6 +70,9 @@ export const POST = handleApi(async (req: NextRequest) => {
       throw new ApiError(400, "No completed attendance records in that period for this department");
     }
   }
+
+  // Active cash advances start the run with this cut-off's deduction filled in (still editable before approval).
+  entries = await prefillCashAdvances(entries);
 
   const run = await prisma.payrollRun.create({
     data: {

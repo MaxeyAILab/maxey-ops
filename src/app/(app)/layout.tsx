@@ -6,6 +6,8 @@ import { allowedMenus } from "@/lib/access";
 import { SyncStatus } from "@/components/sync-status";
 import { SignOutButton } from "@/components/signout-button";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { CashExpenseNav } from "@/components/cash-expense-nav";
+import { isCashCustodian } from "@/lib/cash-expense";
 
 interface NavItem {
   href: string;
@@ -115,6 +117,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                 </Link>
               );
             })}
+            {menus.includes("/cash-expense") && <CashExpenseNav showAdvances={isCashCustodian(user)} />}
           </nav>
           <div className="border-t border-ink-100 px-4 py-3">
             <div className="text-xs font-semibold text-ink-900">{user.name}</div>
@@ -157,6 +160,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                   </Link>
                 );
               })}
+              {menus.includes("/cash-expense") && (
+                <Link href="/cash-expense/petty-cash" className="whitespace-nowrap rounded-lg px-3 py-2 font-medium text-ink-900 hover:bg-ink-100">
+                  Cash Expense
+                </Link>
+              )}
             </nav>
             <div className="flex shrink-0 items-center gap-2">
               <SyncStatus />

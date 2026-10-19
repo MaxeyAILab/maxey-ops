@@ -18,7 +18,7 @@ import { AccomplishmentRadial, WorkItemWeightBars } from "@/components/charts";
 import { DailyReportCard, DailyReportForm, type DailyReportDisplay } from "@/components/daily-report-actions";
 import { DAILY_REPORT_LIFETIME_DAYS } from "@/lib/daily-reports";
 import { PhotoThumbnails } from "@/components/photo-viewer";
-import { runGross } from "@/lib/finance";
+import { LIQUIDATED_PETTY_CASH, pettyCashCost, runGross } from "@/lib/finance";
 import { canAccess } from "@/lib/access";
 import { computeWorkItemStatuses, summarizeProgress, weightTotal } from "@/lib/progress";
 import { computeForecast } from "@/lib/forecast";
@@ -128,6 +128,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
         include: { purchaseOrder: true, submittedBy: { select: { name: true } } },
       },
       payrollRuns: { where: { status: { in: ["APPROVED", "PAID"] } } },
+      pettyCash: LIQUIDATED_PETTY_CASH,
       changeOrders: { orderBy: { createdAt: "desc" }, include: { workRequest: { select: { number: true } } } },
       progressEntries: {
         orderBy: { createdAt: "desc" },
@@ -187,8 +188,10 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
   const received = p.payments.reduce((s, x) => s + Number(x.amount), 0);
   const laborCost = p.payrollRuns.reduce((s, r) => s + runGross(r.entries), 0);
   // Same rule as finance and the dashboard (requisitionAmount): a cancelled PO commits nothing.
+  const pettyCash = pettyCashCost(p.pettyCash);
   const committed =
     laborCost +
+    pettyCash +
     p.requisitions
       .filter((r) => ["APPROVED", "PO_ISSUED", "DELIVERED"].includes(r.status))
       .reduce((s, r) => s + requisitionAmount(r), 0);
@@ -1634,16 +1637,20 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                     <span className="text-ink-700">+ Payroll (approved / paid runs)</span>
                     <span className="tabular-nums"><Fig>{php(laborCost)}</Fig></span>
                   </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-ink-700">+ Petty cash (liquidated, {p.pettyCash.length})</span>
+                    <span className="tabular-nums"><Fig>{php(pettyCash)}</Fig></span>
+                  </div>
                   <div className="flex justify-between gap-3 border-t border-ink-100 pt-2 font-semibold text-ink-900">
                     <span>= Committed cost</span>
-                    <span className="tabular-nums"><Fig>{php(commitments.committedTotal + laborCost)}</Fig></span>
+                    <span className="tabular-nums"><Fig>{php(commitments.committedTotal + laborCost + pettyCash)}</Fig></span>
                   </div>
                   {commitments.approved.withoutEstimate > 0 && (
                     <p className="text-xs text-amber-800 dark:text-amber-300">
                       ● {commitments.approved.withoutEstimate} approved requisition{commitments.approved.withoutEstimate === 1 ? " has" : "s have"} no estimate, so it counts as ₱0 until a PO or estimate is entered.
                     </p>
                   )}
-                  {Math.abs(commitments.committedTotal + laborCost - committed) > 0.5 && (
+                  {Math.abs(commitments.committedTotal + laborCost + pettyCash - committed) > 0.5 && (
                     <p className="text-xs text-red-700 dark:text-red-300">▲ This doesn’t match the Committed cost figure above — please report it.</p>
                   )}
                 </CardBody>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { advanceBalance, formatCashAdvanceNo } from "@/lib/cash-expense";
 import { notFound, redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -55,6 +56,13 @@ export default async function PayrollRunPage({ params }: { params: { id: string 
   const periodWorkingDays = workingDaysInPeriod(run.periodStart, run.periodEnd);
   const otMultiplier = otMultiplierFor(run.department);
   const otNote = otMultiplier === 1 ? "OT paid at the regular hourly rate (drivers)" : `OT at ${otMultiplier}×`;
+
+  // Cash advances of the people on this run: what's left on each, and what this run posted (once approved).
+  const advances = await prisma.cashAdvance.findMany({
+    where: { userId: { in: entries.map((e) => e.userId) }, OR: [{ status: "ACTIVE" }, { deductions: { some: { payrollRunId: run.id } } }] },
+    include: { user: { select: { name: true } }, deductions: { select: { amount: true, payrollRunId: true } } },
+    orderBy: { createdAt: "asc" },
+  });
 
   const auditTrail = await prisma.auditLog.findMany({
     where: { entityType: "PayrollRun", entityId: run.id },
@@ -191,6 +199,52 @@ export default async function PayrollRunPage({ params }: { params: { id: string 
           <PayrollStatusButtons runId={run.id} status={run.status} />
         </CardBody>
       </Card>
+
+      {advances.length > 0 && (
+        <Card className="no-print">
+          <CardHeader
+            title="Cash advances"
+            subtitle={
+              payslipsReady
+                ? "This run's cash-advance deductions were posted to these advances when it was approved"
+                : "The Cash adv. column was filled in from Cash Expense → Cash Advance; it's posted to the advances when the run is approved"
+            }
+          />
+          <CardBody>
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Worker</Th>
+                  <Th>Advance</Th>
+                  <Th className="text-right">Per cut-off</Th>
+                  <Th className="text-right">Balance</Th>
+                  <Th className="text-right">Posted by this run</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {advances.map((a) => {
+                  const repaid = a.deductions.reduce((s, d) => s + Number(d.amount), 0);
+                  const thisRun = a.deductions.filter((d) => d.payrollRunId === run.id).reduce((s, d) => s + Number(d.amount), 0);
+                  return (
+                    <tr key={a.id}>
+                      <Td className="font-medium">{a.user.name}</Td>
+                      <Td>
+                        <Link href="/cash-expense/cash-advance" className="text-brand-600 hover:underline">
+                          {formatCashAdvanceNo(a.number)}
+                        </Link>{" "}
+                        <span className="text-ink-500">· {php(a.amount)}</span>
+                      </Td>
+                      <Td className="text-right tabular-nums">{php(a.deductionPerCutoff)}</Td>
+                      <Td className="text-right tabular-nums">{php(advanceBalance({ amount: a.amount, deducted: repaid }))}</Td>
+                      <Td className="text-right tabular-nums">{payslipsReady ? php(thisRun) : "—"}</Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </CardBody>
+        </Card>
+      )}
 
       <Card className="no-print">
         <CardHeader title="Audit trail" />

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { corporateRunGross, getNonCorporateExpenses, getNonProjectExpenses } from "@/lib/finance";
+import { corporateRunGross, getNonCorporateExpenses, getNonProjectExpenses, LIQUIDATED_PETTY_CASH, pettyCashCost } from "@/lib/finance";
 import { getBidPipeline, getCashRunway, type CashRunway } from "@/lib/finance-dashboard";
 import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
 import { fmtDate } from "@/lib/format";
@@ -250,6 +250,7 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
           include: { purchaseOrder: true },
         },
         payrollRuns: { where: { status: { in: ["APPROVED", "PAID"] } }, select: { entries: true } },
+        pettyCash: LIQUIDATED_PETTY_CASH,
         progressEntries: {
           orderBy: { createdAt: "desc" },
           select: {
@@ -351,7 +352,7 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
     const contract = Number(p.contractValue);
     const received = p.payments.reduce((s, x) => s + Number(x.amount), 0);
     const labor = p.payrollRuns.reduce((s, r) => s + corporateRunGross(r.entries), 0);
-    const committed = labor + p.requisitions.reduce((s, r) => s + requisitionAmount(r), 0);
+    const committed = labor + pettyCashCost(p.pettyCash) + p.requisitions.reduce((s, r) => s + requisitionAmount(r), 0);
     const pct = weightedAccomplishment(computeWorkItemStatuses(p.progressEntries));
     const lastProgressAt = p.progressEntries[0]?.createdAt ?? null;
     const isCompleted = (COMPLETED_STATUSES as string[]).includes(p.status);

@@ -5,6 +5,7 @@ import { audit } from "@/lib/audit";
 import { hourlyRateForUser, normalizeEntries, otMultiplierFor, pricedEntry, type PayrollEntry } from "@/lib/payroll";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { ensureSlipRefs } from "@/lib/payslip-refs";
+import { postCashAdvanceDeductions, reverseCashAdvanceDeductions } from "@/lib/cash-expense-db";
 
 const entryEditSchema = z.object({
   userId: z.string().min(1),
@@ -188,7 +189,11 @@ export const PATCH = handleApi(
       }
       // Back to draft: the approval details are cleared (they're set again at the next approval); any payslip reference
       // numbers already issued are kept, so a reprint after re-approval carries the same number.
-      const updated = await prisma.payrollRun.update({ where: { id: params.id }, data: { status: "DRAFT", approvedAt: null, approvedByName: null } });
+      // Cash-advance deductions posted at approval come off the advances again until the run is re-approved.
+      const updated = await prisma.$transaction(async (db) => {
+        await reverseCashAdvanceDeductions(db, params.id);
+        return db.payrollRun.update({ where: { id: params.id }, data: { status: "DRAFT", approvedAt: null, approvedByName: null } });
+      });
       await audit({
         entityType: "PayrollRun",
         entityId: run.id,
@@ -216,13 +221,18 @@ export const PATCH = handleApi(
       throw new ApiError(400, "Run must be approved before marking paid");
     }
 
-    const updated = await prisma.payrollRun.update({
-      where: { id: params.id },
-      data: {
-        status: body.status,
-        // Stamp who approved it and when — printed on the payslips as "Approved By".
-        ...(body.status === "APPROVED" ? { approvedAt: new Date(), approvedByName: user.name } : {}),
-      },
+    const updated = await prisma.$transaction(async (db) => {
+      const u = await db.payrollRun.update({
+        where: { id: params.id },
+        data: {
+          status: body.status,
+          // Stamp who approved it and when — printed on the payslips as "Approved By".
+          ...(body.status === "APPROVED" ? { approvedAt: new Date(), approvedByName: user.name } : {}),
+        },
+      });
+      // Approval posts each payslip's cash-advance deduction against the person's advances.
+      if (body.status === "APPROVED") await postCashAdvanceDeductions(db, u.id, user.name);
+      return u;
     });
     // Payslips get their reference numbers the moment the payroll is approved.
     if (body.status === "APPROVED") await ensureSlipRefs(updated.id);
@@ -256,7 +266,10 @@ export const DELETE = handleApi(async (_req: NextRequest, { params }: { params: 
   if (run.status === "PAID") throw new ApiError(400, "A run that's already paid can't be deleted");
 
   const entries = normalizeEntries(run.entries as unknown as PayrollEntry[]);
-  await prisma.payrollRun.delete({ where: { id: run.id } });
+  await prisma.$transaction(async (db) => {
+    await reverseCashAdvanceDeductions(db, run.id);
+    await db.payrollRun.delete({ where: { id: run.id } });
+  });
 
   await audit({
     entityType: "PayrollRun",

@@ -647,7 +647,7 @@ export default async function DashboardPage({
                   <thead>
                     <tr className="text-xs uppercase tracking-wide text-ink-500">
                       <th className="px-4 py-2 font-semibold">Job</th>
-                      <th className="px-3 py-2 text-right font-semibold">Materials</th>
+                      <th className="px-3 py-2 text-right font-semibold">Materials &amp; petty cash</th>
                       <th className="px-3 py-2 text-right font-semibold">Crew payroll</th>
                       <th className="px-3 py-2 text-right font-semibold">Driver hours</th>
                       <th className="px-4 py-2 text-right font-semibold">Total</th>
