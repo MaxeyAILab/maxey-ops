@@ -1,8 +1,9 @@
-/* Maxey Ops service worker v2: offline shell + background outbox sync (Spec §4).
+/* Maxey Ops service worker v3: adds phone notifications (push) on top of v2.
+ * v2: offline shell + background outbox sync (Spec §4).
  * v2 fixes the stale-chunk crash: everything is network-first (cache is only
  * an offline fallback), and activation wipes old caches and reloads open tabs
  * so browsers holding the old v1 worker recover automatically. */
-const CACHE = "maxey-v2";
+const CACHE = "maxey-v2"; // the offline cache name is unchanged so nothing is re-downloaded for the push update
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -103,3 +104,45 @@ async function flushOutbox() {
     }
   }
 }
+
+// ---- Phone notifications (Web Push) ----
+// The server sends a small JSON message { title, body, url, tag }. It never carries amounts or other sensitive detail —
+// only that something needs attention; the app itself decides who may see the details when it is opened.
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { title: "Maxey Ops", body: event.data ? event.data.text() : "" };
+  }
+  const title = data.title || "Maxey Ops";
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: data.body || "Tap to open",
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      tag: data.tag || undefined, // a newer notification about the same record replaces the older one
+      renotify: !!data.tag,
+      data: { url: data.url || "/dashboard" },
+    })
+  );
+});
+
+// Tapping a notification opens (or focuses) the app on the page it is about.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = new URL((event.notification.data && event.notification.data.url) || "/dashboard", self.location.origin).href;
+  event.waitUntil(
+    (async () => {
+      const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const w of windows) {
+        if (new URL(w.url).origin === self.location.origin) {
+          await w.focus();
+          if ("navigate" in w) await w.navigate(target).catch(() => {});
+          return;
+        }
+      }
+      await self.clients.openWindow(target);
+    })()
+  );
+});

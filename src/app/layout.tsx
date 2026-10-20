@@ -17,6 +17,9 @@ export const metadata: Metadata = {
   description:
     "Maxey Construction — PCAB-registered contractor in San Isidro, Nueva Ecija. Residential, commercial, industrial, and infrastructure projects.",
   manifest: "/manifest.json",
+  // The picture iPhones use when the app is added to the Home Screen (also lets notifications work there).
+  icons: { apple: "/icons/icon-192.png" },
+  appleWebApp: { capable: true, title: "Maxey Ops", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { dispatchAuditEvent } from "@/lib/notifications";
 import type { Prisma } from "@prisma/client";
 
 /**
@@ -23,4 +24,6 @@ export async function audit(params: {
       diff: params.diff,
     },
   });
+  // Tell the people involved (their bell, and their phone if they turned notifications on). Never throws or blocks for long.
+  await dispatchAuditEvent(params);
 }

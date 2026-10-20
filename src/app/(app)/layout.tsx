@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -8,6 +9,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { CashExpenseNav } from "@/components/cash-expense-nav";
 import { MobileNav, SidebarNav, type SidebarItem } from "@/components/sidebar-nav";
 import { canUseCashExpense } from "@/lib/access";
+import { PushAutoSubscribe } from "@/components/push-auto-subscribe";
 
 interface NavItem {
   href: string;
@@ -73,6 +75,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     });
   }
 
+  // The bell: how many things you have been told about and haven't opened yet.
+  const unreadNotifications = await prisma.appNotification.count({ where: { userId: user.id, readAt: null } });
+
   // Cash Expense also opens for anyone the Owner made a petty cash approver or releaser.
   const showCashExpense = canUseCashExpense(user);
   const sidebarItems: SidebarItem[] = items.map((n) => ({
@@ -109,6 +114,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <div className="mt-2 flex items-center justify-between gap-2">
               <SyncStatus />
               <div className="flex items-center gap-1">
+                <Link href="/notifications" aria-label={unreadNotifications > 0 ? `Notifications, ${unreadNotifications} unread` : "Notifications"} className="relative rounded-lg border border-ink-200 px-2 py-1.5 text-xs text-ink-600 hover:bg-ink-50">
+                  <span aria-hidden>🔔</span>
+                  {unreadNotifications > 0 && (
+                    <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#8a1a28] px-1 text-[10px] font-bold text-white">{unreadNotifications > 99 ? "99+" : unreadNotifications}</span>
+                  )}
+                </Link>
                 <ThemeToggle />
                 <SignOutButton />
               </div>
@@ -129,11 +140,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </nav>
             <div className="flex shrink-0 items-center gap-2">
               <SyncStatus />
+              <Link href="/notifications" aria-label={unreadNotifications > 0 ? `Notifications, ${unreadNotifications} unread` : "Notifications"} className="relative rounded-lg border border-ink-200 px-2 py-1.5 text-xs text-ink-600 hover:bg-ink-50">
+                <span aria-hidden>🔔</span>
+                {unreadNotifications > 0 && (
+                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#8a1a28] px-1 text-[10px] font-bold text-white">{unreadNotifications > 99 ? "99+" : unreadNotifications}</span>
+                )}
+              </Link>
               <ThemeToggle />
               <SignOutButton />
             </div>
           </div>
         </header>
+        <PushAutoSubscribe />
         <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
       </div>
     </div>

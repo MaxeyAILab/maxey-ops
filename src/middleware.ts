@@ -43,6 +43,7 @@ export const config = {
     "/attendance/:path*",
     "/payroll/:path*",
     "/people/:path*",
+    "/notifications/:path*",
     "/cash-expense/:path*",
     "/change-password",
     "/portal/:path*",
