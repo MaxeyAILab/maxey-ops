@@ -7,6 +7,8 @@ import { CASH_TAB, defaultTabs, resolveTabs } from "@/lib/mobile-tabs";
 import { fmtDateTime } from "@/lib/format";
 import { getT } from "@/lib/i18n-server";
 import { MySettings } from "@/components/my-settings";
+import { eligibleQuick, resolveQuick } from "@/lib/quick-actions";
+import { quickAccessFor } from "@/lib/quick-access";
 
 export const metadata = { title: "My settings" };
 export const dynamic = "force-dynamic";
@@ -21,7 +23,7 @@ export default async function SettingsPage() {
   const menus = allowedMenus(user.role, user.department, user.customMenus, user.useCustomMenus);
   const available = [...NAV.filter((n) => menus.includes(n.href)).map((n) => n.href), ...(canUseCashExpense(user) ? [CASH_TAB] : [])];
   const [pref, passkeys] = await Promise.all([
-    prisma.userPref.findUnique({ where: { userId: user.id }, select: { mobileTabs: true } }),
+    prisma.userPref.findUnique({ where: { userId: user.id }, select: { mobileTabs: true, quickActions: true } }),
     prisma.passkey.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" }, select: { id: true, label: true, createdAt: true, lastUsedAt: true } }),
   ]);
 
@@ -32,6 +34,15 @@ export default async function SettingsPage() {
   const defaults = defaultTabs(user.role, available);
   const usingDefault = !pref?.mobileTabs?.length;
   const chosen = resolveTabs(pref?.mobileTabs, user.role, available);
+
+  // the + button
+  const eligible = eligibleQuick((await quickAccessFor(user)).access);
+  const quick = {
+    options: eligible.map((q) => ({ key: q.key, label: t(q.labelKey), icon: q.icon })),
+    chosen: resolveQuick(pref?.quickActions, eligible).map((q) => q.key),
+    defaults: resolveQuick([], eligible).map((q) => q.key),
+    usingDefault: !pref?.quickActions?.length,
+  };
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -46,6 +57,7 @@ export default async function SettingsPage() {
         chosen={chosen}
         defaults={defaults}
         usingDefault={usingDefault}
+        quick={quick}
         passkeys={passkeys.map((p) => ({ id: p.id, label: p.label, added: fmtDateTime(p.createdAt), lastUsed: p.lastUsedAt ? fmtDateTime(p.lastUsedAt) : null }))}
       />
     </div>

@@ -1517,11 +1517,13 @@ model NotificationPref {
 /// Per-person phone/app preferences: which tabs sit on the bottom bar of the phone view (empty = the default for their role)
 /// and the language of the app (en or fil).
 model UserPref {
-  userId     String   @id
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  mobileTabs String[] @default([])
-  language   String   @default("en")
-  updatedAt  DateTime @updatedAt
+  userId       String   @id
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mobileTabs   String[] @default([])
+  /// what the floating + button offers, in order (empty = the default for their role)
+  quickActions String[] @default([])
+  language     String   @default("en")
+  updatedAt    DateTime @updatedAt
 }
 
 /// A fingerprint / Face ID sign-in (WebAuthn passkey) a person set up on a phone or computer. Only the public half is kept.

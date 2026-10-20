@@ -52,6 +52,10 @@ const D = {
   "quick.delivery": ["Check a delivery", "Mag-check ng delivery"],
   "quick.pickProject": ["Which project?", "Aling proyekto?"],
   "quick.back": ["‹ Back", "‹ Bumalik"],
+  "quick.instructions": ["My tasks", "Aking mga gawain"],
+  "quick.payslip": ["My payslips", "Aking mga payslip"],
+  "quick.notifications": ["Notifications", "Mga abiso"],
+  "quick.search": ["Search", "Maghanap"],
   "quick.noProjects": ["No active projects.", "Walang aktibong proyekto."],
 
   // ----- search -----
@@ -100,6 +104,12 @@ const D = {
   "settings.isDefault": ["This is the default for your role.", "Ito ang default para sa role mo."],
   "settings.useDefault": ["Use the default for my role", "Gamitin ang default para sa role ko"],
   "settings.save": ["Save", "I-save"],
+  "settings.quickTitle": ["The + button", "Ang + button"],
+  "settings.quickHelp": [
+    "Pick what the floating + button offers, up to 8. The order you tick them is the order they show.",
+    "Piliin kung ano ang ibibigay ng + button, hanggang 8. Ang pagkakasunod ng pagpili mo ang pagkakasunod nila.",
+  ],
+  "settings.quickDefault": ["This is the default for you.", "Ito ang default para sa iyo."],
   "settings.language": ["Language", "Wika"],
   "settings.vibration": ["Vibrate when something is saved", "Mag-vibrate kapag may na-save"],
   "settings.notifications": ["Phone notifications", "Mga abiso sa phone"],

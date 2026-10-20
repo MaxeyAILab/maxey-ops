@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { allowedMenus, canUseCashExpense, canVerifyDelivery } from "@/lib/access";
+import { allowedMenus, canUseCashExpense } from "@/lib/access";
 import { SyncStatus } from "@/components/sync-status";
 import { SignOutButton } from "@/components/signout-button";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -20,8 +20,9 @@ import { getLang } from "@/lib/i18n-server";
 import { isLang, makeT } from "@/lib/i18n";
 import { CASH_BAR_LABEL, NAV, tabInfo, type ChipTone } from "@/lib/nav-items";
 import { CASH_TAB, resolveTabs, tabTarget } from "@/lib/mobile-tabs";
-import { canRaiseRequisition } from "@/lib/requisitions";
-import { CHARGEABLE_STATUSES } from "@/lib/project-status";
+import { eligibleQuick, resolveQuick } from "@/lib/quick-actions";
+import { quickAccessFor } from "@/lib/quick-access";
+import { unreadElsewhere } from "@/lib/tab-activity";
 
 // Full literal class strings (never built via string interpolation) so
 // Tailwind's JIT scanner picks them up.
@@ -50,7 +51,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const items = NAV.filter((n) => menus.includes(n.href));
 
   // The person's own choices (language, bottom-bar tabs) follow them to every phone they sign in on.
-  const pref = await prisma.userPref.findUnique({ where: { userId: user.id }, select: { language: true, mobileTabs: true } });
+  const pref = await prisma.userPref.findUnique({ where: { userId: user.id }, select: { language: true, mobileTabs: true, quickActions: true } });
   const cookieLang = getLang();
   const lang = pref && isLang(pref.language) ? pref.language : cookieLang;
   const t = makeT(lang);
@@ -71,8 +72,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     });
   }
 
-  // The bell: how many things you have been told about and haven't opened yet.
-  const unreadNotifications = await prisma.appNotification.count({ where: { userId: user.id, readAt: null } });
+  // The bell: how many things you have been told about and haven't opened yet — in total, and per kind (the numbers on the
+  // bottom-bar tabs).
+  const unreadRows = await prisma.appNotification.groupBy({ by: ["category"], where: { userId: user.id, readAt: null }, _count: { _all: true } });
+  const unreadByCategory = Object.fromEntries(unreadRows.map((r) => [r.category, r._count._all]));
+  const unreadNotifications = unreadRows.reduce((sum, r) => sum + r._count._all, 0);
 
   // Cash Expense also opens for anyone the Owner made a petty cash approver or releaser.
   const showCashExpense = canUseCashExpense(user);
@@ -88,26 +92,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const available = [...items.map((n) => n.href), ...(showCashExpense ? [CASH_TAB] : [])];
   const barTabs: BarTab[] = resolveTabs(pref?.mobileTabs, user.role, available).flatMap((href) => {
     const info = tabInfo(href);
-    return info ? [{ href, target: tabTarget(href), labelKey: href === CASH_TAB ? CASH_BAR_LABEL : info.labelKey, icon: info.icon, badge: href === "/instructions" ? instructionsBadge : 0 }] : [];
+    return info ? [{ href, target: tabTarget(href), labelKey: href === CASH_TAB ? CASH_BAR_LABEL : info.labelKey, icon: info.icon }] : [];
   });
+  // New activity in a section that isn't on the bar still flags the menu button.
+  const activityElsewhere = unreadElsewhere(barTabs.map((b) => b.href), unreadByCategory);
 
-  // The floating "+": only the jobs this person may actually do.
-  const canProgress = ["OWNER", "PM", "FOREMAN"].includes(user.role) && menus.includes("/projects");
-  const progressProjects = canProgress
-    ? await prisma.project.findMany({
-        where: { status: { in: CHARGEABLE_STATUSES }, ...(user.role === "FOREMAN" ? { assignments: { some: { userId: user.id, active: true } } } : {}) },
-        select: { id: true, name: true },
-        orderBy: { name: "asc" },
-        take: 15,
-      })
-    : [];
-  const quickActions: QuickAction[] = [
-    ...(canRaiseRequisition(user) ? [{ key: "requisition" as const, labelKey: "quick.requisition" as const, icon: "📝", href: "/requisitions/new" }] : []),
-    ...(canProgress && progressProjects.length > 0 ? [{ key: "progress" as const, labelKey: "quick.progress" as const, icon: "🏗️" }] : []),
-    ...(showCashExpense ? [{ key: "pettyCash" as const, labelKey: "quick.pettyCash" as const, icon: "💵", href: "/cash-expense/petty-cash#quick-record" }] : []),
-    ...(menus.includes("/attendance") ? [{ key: "clock" as const, labelKey: "quick.clock" as const, icon: "⏱️", href: "/attendance" }] : []),
-    ...(menus.includes("/deliveries") && canVerifyDelivery(user.role, user.department) ? [{ key: "delivery" as const, labelKey: "quick.delivery" as const, icon: "🚚", href: "/deliveries" }] : []),
-  ];
+  // The floating "+": the person's own pick of actions (or the main jobs), limited to what they may actually do.
+  const { access, progressProjects } = await quickAccessFor(user);
+  const quickActions = resolveQuick(pref?.quickActions, eligibleQuick(access));
 
   const bell = (
     <Link href="/notifications" aria-label={unreadNotifications > 0 ? `${t("nav.notifications")}, ${unreadNotifications}` : t("nav.notifications")} className="relative rounded-lg border border-ink-200 px-2 py-1.5 text-xs text-ink-600 hover:bg-ink-50">
@@ -174,7 +166,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <header data-menu-swipe className="no-print sticky top-0 z-20 border-b border-ink-200 bg-ink-50 md:hidden" style={{ paddingTop: "env(safe-area-inset-top)" }}>
               <div className="flex items-center justify-between gap-2 px-3 py-2">
                 <div className="flex min-w-0 items-center gap-2">
-                  <MobileDrawer alert={instructionsBadge > 0}>{panel}</MobileDrawer>
+                  <MobileDrawer alert={instructionsBadge > 0 || activityElsewhere > 0}>{panel}</MobileDrawer>
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#8a1a28] text-sm font-black text-white">M</span>
                   <CurrentSection items={sidebarItems} />
                 </div>
@@ -190,7 +182,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <main className="mx-auto max-w-6xl px-4 py-6 pb-28 md:pb-6">{children}</main>
           </div>
 
-          <MobileBottomBar tabs={barTabs} actions={quickActions} progressProjects={progressProjects} />
+          <MobileBottomBar tabs={barTabs} unread={unreadByCategory} actions={quickActions} progressProjects={progressProjects} />
           <PullToRefresh />
           <SearchHost />
         </div>

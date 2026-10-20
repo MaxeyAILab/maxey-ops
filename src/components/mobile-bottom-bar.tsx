@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useT } from "@/components/lang-provider";
 import { haptic } from "@/components/feedback-provider";
+import { openSearch } from "@/components/global-search";
+import { badgeText, categoriesForTab, tabUnread, type UnreadByCategory } from "@/lib/tab-activity";
+import type { QuickDef } from "@/lib/quick-actions";
 import type { I18nKey } from "@/lib/i18n";
 
 export interface BarTab {
@@ -14,15 +17,9 @@ export interface BarTab {
   target: string;
   labelKey: I18nKey;
   icon: string;
-  badge: number;
 }
 
-export interface QuickAction {
-  key: "requisition" | "progress" | "pettyCash" | "clock" | "delivery";
-  labelKey: I18nKey;
-  icon: string;
-  href?: string;
-}
+export type QuickAction = QuickDef;
 
 const ACTIVE = "text-[#8a1a28] dark:text-red-300";
 /** Pages that live under another tab: a quotation is opened from Leads / CRM. */
@@ -46,12 +43,69 @@ function useTyping() {
 }
 
 /** The tabs a person uses most, along the bottom of the phone screen, within thumb's reach. */
-export function MobileBottomBar({ tabs, actions, progressProjects }: { tabs: BarTab[]; actions: QuickAction[]; progressProjects: { id: string; name: string }[] }) {
+export function MobileBottomBar({
+  tabs,
+  unread,
+  actions,
+  progressProjects,
+}: {
+  tabs: BarTab[];
+  /** how many new things there are in each kind of notification right now */
+  unread: UnreadByCategory;
+  actions: QuickAction[];
+  progressProjects: { id: string; name: string }[];
+}) {
   const t = useT();
+  const router = useRouter();
   const path = usePathname() ?? "";
   const typing = useTyping();
   const first = "/" + (path.split("/")[1] ?? "");
   const current = PARENT_TAB[first] ?? first;
+
+  // The numbers on the tabs. They follow what the server last told this page, and are topped up by asking again every
+  // minute and whenever the app comes back to the front.
+  const [counts, setCounts] = useState<UnreadByCategory>(unread);
+  const unreadKey = JSON.stringify(unread);
+  useEffect(() => setCounts(unread), [unreadKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const countsRef = useRef(counts);
+  countsRef.current = counts;
+
+  useEffect(() => {
+    let stop = false;
+    async function check() {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const res = await fetch("/api/notifications?summary=1", { cache: "no-store" });
+        if (!res.ok || stop) return;
+        const next = ((await res.json()) as { byCategory?: UnreadByCategory }).byCategory ?? {};
+        if (JSON.stringify(next) !== JSON.stringify(countsRef.current)) {
+          setCounts(next);
+          router.refresh(); // also updates the bell and the menu button
+        }
+      } catch {
+        // offline — try again next time
+      }
+    }
+    const timer = setInterval(check, 60_000);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      stop = true;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [router]);
+
+  // Being in a section is how you see what happened in it: its new-activity number clears (the items stay in the bell's list).
+  const here = tabs.find((tab) => tab.href === current);
+  const hereCount = here ? tabUnread(here.href, counts) : 0;
+  useEffect(() => {
+    if (!here || hereCount === 0) return;
+    const cats = categoriesForTab(here.href);
+    setCounts((c) => Object.fromEntries(Object.entries(c).map(([k, v]) => [k, cats.includes(k) ? 0 : v])));
+    fetch("/api/notifications", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ categories: cats }) })
+      .then(() => router.refresh())
+      .catch(() => undefined);
+  }, [here, hereCount, router]);
 
   return (
     <>
@@ -63,18 +117,20 @@ export function MobileBottomBar({ tabs, actions, progressProjects }: { tabs: Bar
         <ul className="grid" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}>
           {tabs.map((tab) => {
             const on = tab.href === current;
+            const badge = tabUnread(tab.href, counts);
             return (
               <li key={tab.href}>
                 <Link
                   href={tab.target}
                   onClick={() => haptic("tap")}
                   aria-current={on ? "page" : undefined}
+                  aria-label={badge > 0 ? `${t(tab.labelKey)}, ${badge}` : undefined}
                   className={`relative flex min-h-[56px] flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-[11px] font-medium leading-tight ${on ? ACTIVE : "text-ink-500"}`}
                 >
                   <span aria-hidden className={`absolute inset-x-5 top-0 h-0.5 rounded-b ${on ? "bg-[#8a1a28] dark:bg-red-300" : "bg-transparent"}`} />
                   <span aria-hidden className="relative text-xl leading-none">
                     {tab.icon}
-                    {tab.badge > 0 && <span className="absolute -right-2 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">{tab.badge}</span>}
+                    {badge > 0 && <span className="absolute -right-3 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">{badgeText(badge)}</span>}
                   </span>
                   <span className="w-full truncate text-center">{t(tab.labelKey)}</span>
                 </Link>
@@ -156,13 +212,27 @@ function QuickAdd({ actions, progressProjects }: { actions: QuickAction[]; progr
               <ul className="space-y-2">
                 {actions.map((a) => (
                   <li key={a.key}>
-                    {a.href ? (
+                    {a.kind === "link" && a.href ? (
                       <Link href={a.href} className={row}>
                         <span aria-hidden className="text-xl">
                           {a.icon}
                         </span>
                         {t(a.labelKey)}
                       </Link>
+                    ) : a.kind === "search" ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpen(false);
+                          openSearch();
+                        }}
+                        className={row}
+                      >
+                        <span aria-hidden className="text-xl">
+                          {a.icon}
+                        </span>
+                        {t(a.labelKey)}
+                      </button>
                     ) : (
                       <button type="button" onClick={() => setPicking(true)} className={row}>
                         <span aria-hidden className="text-xl">

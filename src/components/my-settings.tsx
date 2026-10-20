@@ -9,6 +9,7 @@ import { LanguageToggle } from "@/components/language-toggle";
 import { hapticsOn, setHaptics, toast } from "@/components/feedback-provider";
 import { passkeysSupported, registerPasskey, wasCancelled } from "@/lib/passkey-client";
 import { MAX_TABS, MIN_TABS } from "@/lib/mobile-tabs";
+import { MAX_QUICK } from "@/lib/quick-actions";
 
 interface TabOption {
   href: string;
@@ -30,30 +31,120 @@ function deviceName(): string {
   return browser ? `${os} · ${browser}` : os;
 }
 
-export function MySettings({ tabs, chosen, defaults, usingDefault: startsDefault, passkeys }: { tabs: TabOption[]; chosen: string[]; defaults: string[]; usingDefault: boolean; passkeys: PasskeyRow[] }) {
+interface PickOption {
+  key: string;
+  label: string;
+  icon: string;
+}
+
+/**
+ * "Pick what goes here" — tick the options you want (the order you tick them is the order they show), save, or go back to the
+ * default. Used for the bottom bar and for the floating + button.
+ */
+function PickSection({
+  field,
+  title,
+  help,
+  options,
+  chosen,
+  defaults,
+  usingDefault: startsDefault,
+  min,
+  max,
+  defaultNote,
+}: {
+  field: "mobileTabs" | "quickActions";
+  title: string;
+  help: string;
+  options: PickOption[];
+  chosen: string[];
+  defaults: string[];
+  usingDefault: boolean;
+  min: number;
+  max: number;
+  defaultNote: string;
+}) {
   const t = useT();
   const router = useRouter();
-
-  // ----- bottom bar -----
   const [picked, setPicked] = useState<string[]>(chosen);
-  const [barBusy, setBarBusy] = useState(false);
-  const [barError, setBarError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const [usingDefault, setUsingDefault] = useState(startsDefault);
-  const toggle = (href: string) => {
-    setBarError("");
+
+  const toggle = (key: string) => {
+    setError("");
     setUsingDefault(false);
-    setPicked((cur) => (cur.includes(href) ? cur.filter((h) => h !== href) : cur.length >= MAX_TABS ? cur : [...cur, href]));
+    setPicked((cur) => (cur.includes(key) ? cur.filter((k) => k !== key) : cur.length >= max ? cur : [...cur, key]));
   };
-  async function saveBar(tabsToSave: string[]) {
-    setBarBusy(true);
-    setBarError("");
-    const res = await fetch("/api/account/prefs", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mobileTabs: tabsToSave }) });
-    setBarBusy(false);
-    if (!res.ok) return setBarError(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? "Couldn't save");
-    setUsingDefault(tabsToSave.length === 0);
+  async function save(toSave: string[]) {
+    setBusy(true);
+    setError("");
+    const res = await fetch("/api/account/prefs", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [field]: toSave }) });
+    setBusy(false);
+    if (!res.ok) return setError(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? "Couldn't save");
+    setUsingDefault(toSave.length === 0);
     toast(t("toast.saved"));
     router.refresh();
   }
+
+  return (
+    <section className="space-y-3 rounded-lg border border-ink-200 p-4">
+      <h2 className="text-sm font-semibold text-ink-900">{title}</h2>
+      <p className="text-xs text-ink-500">{help}</p>
+      {usingDefault && <p className="text-xs font-medium text-ink-600">{defaultNote}</p>}
+      <ul className="grid gap-1.5 sm:grid-cols-2">
+        {options.map((o) => {
+          const on = picked.includes(o.key);
+          const full = !on && picked.length >= max;
+          return (
+            <li key={o.key}>
+              <label className={`flex min-h-[40px] cursor-pointer items-center gap-2 rounded-lg border px-3 text-sm ${on ? "border-[#8a1a28] bg-[#8a1a28]/5 text-ink-900" : "border-ink-200 text-ink-700"} ${full ? "opacity-50" : ""}`}>
+                <input type="checkbox" checked={on} disabled={full} onChange={() => toggle(o.key)} />
+                <span aria-hidden>{o.icon}</span>
+                {o.label}
+                {on && <span className="ml-auto text-xs text-ink-400">{picked.indexOf(o.key) + 1}</span>}
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+      {error && <p className="text-sm text-red-700">{error}</p>}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={() => save(picked)} disabled={busy || picked.length < min}>
+          {t("settings.save")}
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            setPicked(defaults);
+            save([]);
+          }}
+          disabled={busy}
+        >
+          {t("settings.useDefault")}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+export function MySettings({
+  tabs,
+  chosen,
+  defaults,
+  usingDefault,
+  quick,
+  passkeys,
+}: {
+  tabs: TabOption[];
+  chosen: string[];
+  defaults: string[];
+  usingDefault: boolean;
+  quick: { options: PickOption[]; chosen: string[]; defaults: string[]; usingDefault: boolean };
+  passkeys: PasskeyRow[];
+}) {
+  const t = useT();
+  const router = useRouter();
 
   // ----- vibration -----
   const [vibrate, setVibrate] = useState(true);
@@ -87,43 +178,31 @@ export function MySettings({ tabs, chosen, defaults, usingDefault: startsDefault
   const card = "space-y-3 rounded-lg border border-ink-200 p-4";
   return (
     <div className="space-y-6">
-      <section className={card}>
-        <h2 className="text-sm font-semibold text-ink-900">{t("settings.bottomBar")}</h2>
-        <p className="text-xs text-ink-500">{t("settings.bottomBarHelp")}</p>
-        {usingDefault && <p className="text-xs font-medium text-ink-600">{t("settings.isDefault")}</p>}
-        <ul className="grid gap-1.5 sm:grid-cols-2">
-          {tabs.map((tab) => {
-            const on = picked.includes(tab.href);
-            const full = !on && picked.length >= MAX_TABS;
-            return (
-              <li key={tab.href}>
-                <label className={`flex min-h-[40px] cursor-pointer items-center gap-2 rounded-lg border px-3 text-sm ${on ? "border-[#8a1a28] bg-[#8a1a28]/5 text-ink-900" : "border-ink-200 text-ink-700"} ${full ? "opacity-50" : ""}`}>
-                  <input type="checkbox" checked={on} disabled={full} onChange={() => toggle(tab.href)} />
-                  <span aria-hidden>{tab.icon}</span>
-                  {tab.label}
-                  {on && <span className="ml-auto text-xs text-ink-400">{picked.indexOf(tab.href) + 1}</span>}
-                </label>
-              </li>
-            );
-          })}
-        </ul>
-        {barError && <p className="text-sm text-red-700">{barError}</p>}
-        <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={() => saveBar(picked)} disabled={barBusy || picked.length < MIN_TABS}>
-            {t("settings.save")}
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              setPicked(defaults);
-              saveBar([]);
-            }}
-            disabled={barBusy}
-          >
-            {t("settings.useDefault")}
-          </Button>
-        </div>
-      </section>
+      <PickSection
+        field="mobileTabs"
+        title={t("settings.bottomBar")}
+        help={t("settings.bottomBarHelp")}
+        options={tabs.map((x) => ({ key: x.href, label: x.label, icon: x.icon }))}
+        chosen={chosen}
+        defaults={defaults}
+        usingDefault={usingDefault}
+        min={MIN_TABS}
+        max={MAX_TABS}
+        defaultNote={t("settings.isDefault")}
+      />
+
+      <PickSection
+        field="quickActions"
+        title={t("settings.quickTitle")}
+        help={t("settings.quickHelp")}
+        options={quick.options}
+        chosen={quick.chosen}
+        defaults={quick.defaults}
+        usingDefault={quick.usingDefault}
+        min={1}
+        max={MAX_QUICK}
+        defaultNote={t("settings.quickDefault")}
+      />
 
       <section className={card}>
         <h2 className="text-sm font-semibold text-ink-900">{t("settings.language")}</h2>
