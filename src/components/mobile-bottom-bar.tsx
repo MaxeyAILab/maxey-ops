@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useT } from "@/components/lang-provider";
 import { haptic } from "@/components/feedback-provider";
 import { openSearch } from "@/components/global-search";
+import { playChime } from "@/lib/chime";
 import { badgeText, categoriesForTab, tabUnread, type UnreadByCategory } from "@/lib/tab-activity";
 import type { QuickDef } from "@/lib/quick-actions";
 import type { I18nKey } from "@/lib/i18n";
@@ -22,6 +23,9 @@ export interface BarTab {
 export type QuickAction = QuickDef;
 
 const ACTIVE = "text-[#8a1a28] dark:text-red-300";
+const FAB_SIZE = 56;
+const FAB_MARGIN = 8;
+const FAB_KEY = "maxey_fab";
 /** Pages that live under another tab: a quotation is opened from Leads / CRM. */
 const PARENT_TAB: Record<string, string> = { "/quotations": "/leads" };
 
@@ -69,6 +73,17 @@ export function MobileBottomBar({
   useEffect(() => setCounts(unread), [unreadKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const countsRef = useRef(counts);
   countsRef.current = counts;
+
+  // A soft chime when something new arrives while the app is open (never for numbers going down, or on first load).
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  const prevTotal = useRef(total);
+  useEffect(() => {
+    if (total > prevTotal.current) {
+      playChime();
+      haptic("ok");
+    }
+    prevTotal.current = total;
+  }, [total]);
 
   useEffect(() => {
     let stop = false;
@@ -139,17 +154,67 @@ export function MobileBottomBar({
           })}
         </ul>
       </nav>
-      {actions.length > 0 && !typing && <QuickAdd actions={actions} progressProjects={progressProjects} />}
+      {actions.length > 0 && <QuickAdd actions={actions} progressProjects={progressProjects} hide={typing} />}
     </>
   );
 }
 
 /** The floating "+": the jobs people do most, one tap from anywhere. */
-function QuickAdd({ actions, progressProjects }: { actions: QuickAction[]; progressProjects: { id: string; name: string }[] }) {
+function QuickAdd({ actions, progressProjects, hide }: { actions: QuickAction[]; progressProjects: { id: string; name: string }[]; hide: boolean }) {
   const t = useT();
   const path = usePathname();
   const [open, setOpen] = useState(false);
   const [picking, setPicking] = useState(false);
+
+  // ----- the button can be dragged anywhere on screen, and stays where it was put (on this device) -----
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const drag = useRef<{ id: number; sx: number; sy: number; bx: number; by: number; moved: boolean } | null>(null);
+  const justDragged = useRef(false);
+
+  const clamp = useCallback((x: number, y: number) => ({
+    x: Math.min(Math.max(FAB_MARGIN, x), Math.max(FAB_MARGIN, window.innerWidth - FAB_SIZE - FAB_MARGIN)),
+    y: Math.min(Math.max(FAB_MARGIN, y), Math.max(FAB_MARGIN, window.innerHeight - FAB_SIZE - FAB_MARGIN)),
+  }), []);
+  const fromRatio = useCallback((rx: number, ry: number) => clamp(rx * (window.innerWidth - FAB_SIZE), ry * (window.innerHeight - FAB_SIZE)), [clamp]);
+  const save = (p: { x: number; y: number }) => {
+    try {
+      localStorage.setItem(FAB_KEY, JSON.stringify({ rx: p.x / Math.max(1, window.innerWidth - FAB_SIZE), ry: p.y / Math.max(1, window.innerHeight - FAB_SIZE) }));
+    } catch {
+      // storage blocked — it just goes back to the corner next time
+    }
+  };
+
+  useEffect(() => {
+    const load = () => {
+      try {
+        const raw = localStorage.getItem(FAB_KEY);
+        if (!raw) return setPos(null);
+        const { rx, ry } = JSON.parse(raw) as { rx: number; ry: number };
+        if (typeof rx === "number" && typeof ry === "number") setPos(fromRatio(rx, ry));
+      } catch {
+        setPos(null);
+      }
+    };
+    load();
+    window.addEventListener("resize", load);
+    return () => window.removeEventListener("resize", load);
+  }, [fromRatio]);
+
+  const latest = useRef<{ x: number; y: number } | null>(null);
+  const move = (x: number, y: number) => {
+    const p = clamp(x, y);
+    latest.current = p;
+    setPos(p);
+  };
+  const resetPosition = () => {
+    try {
+      localStorage.removeItem(FAB_KEY);
+    } catch {
+      // nothing to forget
+    }
+    setPos(null);
+  };
 
   useEffect(() => {
     setOpen(false);
@@ -166,24 +231,64 @@ function QuickAdd({ actions, progressProjects }: { actions: QuickAction[]; progr
   return (
     <>
       <button
+        ref={btnRef}
         type="button"
+        onPointerDown={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          drag.current = { id: e.pointerId, sx: e.clientX, sy: e.clientY, bx: r.left, by: r.top, moved: false };
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current;
+          if (!d || d.id !== e.pointerId) return;
+          const dx = e.clientX - d.sx;
+          const dy = e.clientY - d.sy;
+          if (!d.moved && Math.hypot(dx, dy) < 6) return; // a tap, not a drag
+          d.moved = true;
+          move(d.bx + dx, d.by + dy);
+        }}
+        onPointerUp={(e) => {
+          const d = drag.current;
+          drag.current = null;
+          if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+          if (d?.moved) {
+            justDragged.current = true;
+            setTimeout(() => (justDragged.current = false), 0);
+            if (latest.current) save(latest.current);
+          }
+        }}
+        onPointerCancel={() => (drag.current = null)}
+        onKeyDown={(e) => {
+          // arrow keys nudge it for people who can't drag
+          const step = e.shiftKey ? 64 : 16;
+          const delta: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+          const d = delta[e.key];
+          if (!d || !e.altKey) return;
+          e.preventDefault();
+          const r = e.currentTarget.getBoundingClientRect();
+          const next = clamp(r.left + d[0], r.top + d[1]);
+          setPos(next);
+          save(next);
+        }}
         onClick={() => {
+          if (justDragged.current) return;
           haptic("tap");
           setPicking(false);
           setOpen(true);
         }}
         aria-label={t("chrome.quickAdd")}
         aria-haspopup="dialog"
-        className="no-print fixed right-4 z-[15] flex h-14 w-14 items-center justify-center rounded-full bg-[#8a1a28] text-3xl font-light leading-none text-white shadow-lg active:scale-95 md:hidden"
-        style={{ bottom: "calc(env(safe-area-inset-bottom) + 4.75rem)" }}
+        title={t("quick.dragHint")}
+        className={`no-print fixed z-[15] flex h-14 w-14 cursor-grab touch-none select-none items-center justify-center rounded-full bg-[#8a1a28] text-3xl font-light leading-none text-white shadow-lg active:cursor-grabbing active:scale-95 ${hide ? "max-md:hidden" : ""} ${pos ? "" : "bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] right-4 md:bottom-6 md:right-6"}`}
+        style={pos ? { left: pos.x, top: pos.y } : undefined}
       >
         <span aria-hidden>+</span>
       </button>
 
       {open && (
-        <div className="no-print fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true" aria-label={t("quick.title")}>
+        <div className="no-print fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={t("quick.title")}>
           <div aria-hidden className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
-          <div className="absolute inset-x-0 bottom-0 max-h-[80dvh] overflow-y-auto rounded-t-2xl border-t border-ink-200 bg-ink-50 p-4 shadow-xl" style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}>
+          <div className="absolute inset-x-0 bottom-0 max-h-[80dvh] overflow-y-auto rounded-t-2xl border-t border-ink-200 bg-ink-50 p-4 shadow-xl md:inset-x-auto md:bottom-auto md:left-1/2 md:top-1/2 md:w-96 md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl md:border" style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-ink-900">{picking ? t("quick.pickProject") : t("quick.title")}</h2>
               {picking ? (
@@ -247,6 +352,11 @@ function QuickAdd({ actions, progressProjects }: { actions: QuickAction[]; progr
                   </li>
                 ))}
               </ul>
+            )}
+            {pos && !picking && (
+              <button type="button" onClick={resetPosition} className="mt-3 w-full text-center text-xs font-medium text-ink-500 hover:underline">
+                {t("quick.resetPosition")}
+              </button>
             )}
           </div>
         </div>

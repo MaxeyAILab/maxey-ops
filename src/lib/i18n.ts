@@ -56,6 +56,8 @@ const D = {
   "quick.payslip": ["My payslips", "Aking mga payslip"],
   "quick.notifications": ["Notifications", "Mga abiso"],
   "quick.search": ["Search", "Maghanap"],
+  "quick.dragHint": ["Quick add — drag to move it anywhere", "Mabilis na dagdag — i-drag para ilipat kahit saan"],
+  "quick.resetPosition": ["Put the button back in the corner", "Ibalik ang button sa sulok"],
   "quick.noProjects": ["No active projects.", "Walang aktibong proyekto."],
 
   // ----- search -----
@@ -85,6 +87,10 @@ const D = {
   "share.sharing": ["Preparing…", "Inihahanda…"],
   "share.copied": ["Link copied", "Nakopya ang link"],
   "share.downloaded": ["Downloaded — attach it in Viber, Messenger or email", "Na-download — i-attach sa Viber, Messenger o email"],
+  "share.email": ["Send by email", "Ipadala sa email"],
+  "share.viber": ["Send on Viber", "Ipadala sa Viber"],
+  "share.messenger": ["Send on Messenger", "Ipadala sa Messenger"],
+  "share.downloadOnly": ["Just download it", "I-download lang"],
   "share.failed": ["Couldn't share that", "Hindi na-share"],
 
   // ----- location -----
@@ -111,6 +117,7 @@ const D = {
   ],
   "settings.quickDefault": ["This is the default for you.", "Ito ang default para sa iyo."],
   "settings.language": ["Language", "Wika"],
+  "settings.sound": ["Play a soft sound when something new happens", "Tumunog nang mahina kapag may bagong nangyari"],
   "settings.vibration": ["Vibrate when something is saved", "Mag-vibrate kapag may na-save"],
   "settings.notifications": ["Phone notifications", "Mga abiso sa phone"],
   "settings.openNotifications": ["Open notification settings", "Buksan ang settings ng abiso"],

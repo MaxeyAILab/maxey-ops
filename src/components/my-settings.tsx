@@ -7,6 +7,7 @@ import { Button } from "@/components/ui";
 import { useT } from "@/components/lang-provider";
 import { LanguageToggle } from "@/components/language-toggle";
 import { hapticsOn, setHaptics, toast } from "@/components/feedback-provider";
+import { playChime, setSound, soundOn } from "@/lib/chime";
 import { passkeysSupported, registerPasskey, wasCancelled } from "@/lib/passkey-client";
 import { MAX_TABS, MIN_TABS } from "@/lib/mobile-tabs";
 import { MAX_QUICK } from "@/lib/quick-actions";
@@ -149,6 +150,8 @@ export function MySettings({
   // ----- vibration -----
   const [vibrate, setVibrate] = useState(true);
   useEffect(() => setVibrate(hapticsOn()), []);
+  const [sound, setSoundState] = useState(true);
+  useEffect(() => setSoundState(soundOn()), []);
 
   // ----- passkeys -----
   const [canPasskey, setCanPasskey] = useState(true);
@@ -217,6 +220,18 @@ export function MySettings({
             }}
           />
           {t("settings.vibration")}
+        </label>
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-800">
+          <input
+            type="checkbox"
+            checked={sound}
+            onChange={(e) => {
+              setSoundState(e.target.checked);
+              setSound(e.target.checked);
+              if (e.target.checked) playChime(); // so they hear what it sounds like
+            }}
+          />
+          {t("settings.sound")}
         </label>
       </section>
 

@@ -120,7 +120,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <div className="text-[10px] uppercase tracking-wide text-ink-400">{t("chrome.platform")}</div>
         </div>
       </div>
-      <div className="px-3 pt-3">
+      <div className="px-3 pt-3 md:hidden">
         <SearchFieldButton />
       </div>
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
@@ -134,11 +134,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             {user.role} · {t("nav.settings")}
           </div>
         </Link>
-        <div className="mt-2 flex items-center justify-between gap-2">
-          <SyncStatus />
+        <div className="mt-2 flex items-center justify-between gap-2 md:justify-start">
+          <span className="md:hidden">
+            <SyncStatus />
+          </span>
           <div className="flex items-center gap-1">
-            {bell}
-            <RefreshButton />
+            <span className="md:hidden">{bell}</span>
+            <span className="md:hidden">
+              <RefreshButton />
+            </span>
             <ThemeToggle />
           </div>
         </div>
@@ -161,8 +165,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <div className="sticky top-0 h-screen">{panel}</div>
           </aside>
 
-          {/* Mobile top bar (field phones) */}
           <div className="min-w-0 flex-1">
+            {/* Desktop top bar: search everything, sync state, the bell and refresh */}
+            <div className="no-print sticky top-0 z-20 hidden items-center gap-3 border-b border-ink-200 bg-ink-50 px-6 py-2 md:flex">
+              <div className="w-full max-w-md">
+                <SearchFieldButton />
+              </div>
+              <div className="ml-auto flex items-center gap-2">
+                <SyncStatus />
+                {bell}
+                <RefreshButton />
+              </div>
+            </div>
+
+            {/* Mobile top bar (field phones) */}
             <header data-menu-swipe className="no-print sticky top-0 z-20 border-b border-ink-200 bg-ink-50 md:hidden" style={{ paddingTop: "env(safe-area-inset-top)" }}>
               <div className="flex items-center justify-between gap-2 px-3 py-2">
                 <div className="flex min-w-0 items-center gap-2">

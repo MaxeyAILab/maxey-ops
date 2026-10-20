@@ -90,11 +90,52 @@ export function PullToRefresh() {
       reset();
       if (crossed) runRef.current();
     };
+    // ----- computers: pull down with the trackpad or mouse wheel while already at the very top -----
+    // To keep a normal scroll-up-to-the-top from triggering it, the page must have been resting at the top for a moment,
+    // and the pull has to be a deliberate burst (about three wheel notches, or a good trackpad drag).
+    let restingSince = window.scrollY <= 0 ? Date.now() : 0;
+    let burst = 0;
+    let burstTimer: ReturnType<typeof setTimeout> | undefined;
+    let cooldownUntil = 0;
+    const onScroll = () => {
+      restingSince = window.scrollY <= 0 ? restingSince || Date.now() : 0;
+    };
+    const wheel = (e: WheelEvent) => {
+      if (phone() || e.deltaY >= 0 || window.scrollY > 0 || Date.now() < cooldownUntil) return;
+      const target = e.target as HTMLElement | null;
+      if (document.body.style.overflow === "hidden" || target?.closest?.("input, textarea, select, [data-no-pull]")) return;
+      // something inside the page that can still scroll up should scroll first
+      for (let el = target; el && el !== document.body; el = el.parentElement) {
+        if (el.scrollTop > 0 && /(auto|scroll)/.test(getComputedStyle(el).overflowY)) return;
+      }
+      if (!restingSince || Date.now() - restingSince < 500) return;
+      burst += -e.deltaY;
+      pullRef.current = Math.min(MAX_PULL, burst * 0.25);
+      setPull(pullRef.current);
+      clearTimeout(burstTimer);
+      if (burst >= 240) {
+        burst = 0;
+        cooldownUntil = Date.now() + 2000;
+        reset();
+        runRef.current();
+      } else {
+        burstTimer = setTimeout(() => {
+          burst = 0;
+          reset();
+        }, 350);
+      }
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("wheel", wheel, { passive: true });
+
     document.addEventListener("touchstart", down, { passive: true });
     document.addEventListener("touchmove", move, { passive: true });
     document.addEventListener("touchend", up, { passive: true });
     document.addEventListener("touchcancel", reset, { passive: true });
     return () => {
+      clearTimeout(burstTimer);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("wheel", wheel);
       document.removeEventListener("touchstart", down);
       document.removeEventListener("touchmove", move);
       document.removeEventListener("touchend", up);
@@ -107,7 +148,7 @@ export function PullToRefresh() {
   return (
     <div
       aria-hidden={!show}
-      className="no-print pointer-events-none fixed inset-x-0 z-30 flex justify-center md:hidden"
+      className="no-print pointer-events-none fixed inset-x-0 z-30 flex justify-center"
       style={{ top: "calc(env(safe-area-inset-top) + 3.4rem)", transform: `translateY(${busy ? 12 : Math.max(0, pull - 20)}px)`, opacity: show ? 1 : 0, transition: pull ? "none" : "opacity 150ms, transform 150ms" }}
     >
       <div className="flex items-center gap-2 rounded-full border border-ink-200 bg-ink-50 px-3 py-1.5 text-xs font-medium text-ink-700 shadow">
