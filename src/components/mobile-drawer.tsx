@@ -8,7 +8,7 @@ const SWIPE = 60; // px of horizontal travel that counts as a swipe
 
 /**
  * Phone version of the left command panel: the same panel slides in over the page and is tucked away again.
- * Opens with the ☰ button or a swipe in from the left edge; closes with ✕, a tap outside, a swipe back to the left,
+ * Opens with the ☰ button, a swipe in from the left edge, or a swipe down on the top bar (marked data-menu-swipe); closes with ✕, a tap outside, a swipe back to the left,
  * the Escape key, or by choosing a tab.
  */
 export function MobileDrawer({ children, alert }: { children: React.ReactNode; alert?: boolean }) {
@@ -42,23 +42,32 @@ export function MobileDrawer({ children, alert }: { children: React.ReactNode; a
     };
   }, [open]);
 
-  // Swipe in from the left edge to open, swipe left to close.
+  // Swipe in from the left edge (or down on the top bar) to open, swipe left to close.
   useEffect(() => {
     let startX = 0;
     let startY = 0;
     let tracking = false;
+    let fromBar = false;
     const down = (e: TouchEvent) => {
       const t = e.touches[0];
       startX = t.clientX;
       startY = t.clientY;
-      tracking = openRef.current || startX <= EDGE;
+      fromBar = !!(e.target as HTMLElement | null)?.closest?.("[data-menu-swipe]");
+      tracking = openRef.current || startX <= EDGE || fromBar;
     };
     const move = (e: TouchEvent) => {
       if (!tracking) return;
       const t = e.touches[0];
       const dx = t.clientX - startX;
       const dy = t.clientY - startY;
-      if (Math.abs(dy) > Math.abs(dx)) return; // mostly vertical: the person is scrolling
+      if (Math.abs(dy) > Math.abs(dx)) {
+        // mostly vertical: scrolling the page — except a pull down on the top bar, which opens the menu
+        if (!openRef.current && fromBar && dy > SWIPE) {
+          tracking = false;
+          setOpen(true);
+        }
+        return;
+      }
       if (!openRef.current && dx > SWIPE) {
         tracking = false;
         setOpen(true);

@@ -7,7 +7,7 @@ import { SyncStatus } from "@/components/sync-status";
 import { SignOutButton } from "@/components/signout-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CashExpenseNav } from "@/components/cash-expense-nav";
-import { SidebarNav, type SidebarItem } from "@/components/sidebar-nav";
+import { CurrentSection, SidebarNav, type SidebarItem } from "@/components/sidebar-nav";
 import { MobileDrawer } from "@/components/mobile-drawer";
 import { canUseCashExpense } from "@/lib/access";
 import { PushAutoSubscribe } from "@/components/push-auto-subscribe";
@@ -136,12 +136,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
       {/* Mobile top bar (field phones) */}
       <div className="min-w-0 flex-1">
-        <header className="no-print sticky top-0 z-20 border-b border-ink-200 bg-ink-50 md:hidden">
+        <header data-menu-swipe className="no-print sticky top-0 z-20 border-b border-ink-200 bg-ink-50 md:hidden">
           <div className="flex items-center justify-between gap-3 px-4 py-2">
             <div className="flex min-w-0 items-center gap-3">
               <MobileDrawer alert={instructionsBadge > 0}>{panel}</MobileDrawer>
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#8a1a28] text-sm font-black text-white">M</span>
-              <span className="truncate text-sm font-bold text-ink-900">Maxey Ops</span>
+              <CurrentSection items={sidebarItems} />
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <SyncStatus />

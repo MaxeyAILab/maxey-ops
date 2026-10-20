@@ -57,3 +57,16 @@ export function SidebarNav({ items }: { items: SidebarItem[] }) {
     </>
   );
 }
+
+/** Name of the section you're in, for the phone top bar. */
+export function CurrentSection({ items }: { items: SidebarItem[] }) {
+  const path = usePathname() ?? "";
+  const first = "/" + (path.split("/")[1] ?? "");
+  const tab = activeHref(path, items);
+  const label =
+    (tab && items.find((i) => i.href === tab)?.label) ||
+    (first === "/cash-expense" && "Cash Expense") ||
+    (first === "/notifications" && "Notifications") ||
+    "Maxey Ops";
+  return <span className="truncate text-sm font-bold text-ink-900">{label}</span>;
+}
