@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { submitOrQueue } from "@/lib/outbox";
 import { Button, Label, Select } from "@/components/ui";
+import { useT } from "@/components/lang-provider";
 
 interface ProjectOption {
   id: string;
@@ -83,8 +84,24 @@ export function AttendanceClock({
   clockedIn: boolean;
   needsProject: boolean;
 }) {
+  const t = useT();
   const router = useRouter();
   const [projectId, setProjectId] = useState("");
+  const [locState, setLocState] = useState<"unknown" | "granted" | "prompt" | "denied">("unknown");
+  const [lastFix, setLastFix] = useState<"" | "yes" | "no">("");
+
+  // Tell the person up front whether their location will be recorded, so a blocked permission isn't a surprise later.
+  useEffect(() => {
+    const perms = (navigator as Navigator & { permissions?: { query(d: { name: string }): Promise<{ state: string; onchange: (() => void) | null }> } }).permissions;
+    perms
+      ?.query({ name: "geolocation" })
+      .then((p) => {
+        const apply = () => setLocState(p.state as "granted" | "prompt" | "denied");
+        apply();
+        p.onchange = apply;
+      })
+      .catch(() => undefined);
+  }, []);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
@@ -94,6 +111,7 @@ export function AttendanceClock({
     setError("");
     setMsg("");
     const gps = await getGps();
+    setLastFix(gps ? "yes" : "no");
     const result = await submitOrQueue({
       url: "/api/attendance",
       label: `Time ${type.toLowerCase()}`,
@@ -107,13 +125,11 @@ export function AttendanceClock({
     });
     setBusy(false);
     if (!result.ok) {
-      setError(result.error ?? "Failed");
+      setError(result.error ?? t("clock.failed"));
       return;
     }
     if (result.queued) {
-      setMsg(
-        `Time ${type.toLowerCase()} saved on this device (no signal) — it will sync automatically with the exact tap time.`
-      );
+      setMsg(t(type === "IN" ? "clock.queuedIn" : "clock.queuedOut"));
     } else {
       router.refresh();
     }
@@ -123,9 +139,9 @@ export function AttendanceClock({
     <div className="space-y-4">
       {!clockedIn && needsProject && (
         <div>
-          <Label htmlFor="clockProject">Site / project</Label>
+          <Label htmlFor="clockProject">{t("clock.project")}</Label>
           <Select id="clockProject" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-            <option value="">Office / no specific site</option>
+            <option value="">{t("clock.office")}</option>
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -142,7 +158,7 @@ export function AttendanceClock({
           onClick={() => tap("OUT")}
           className="h-24 w-full text-xl font-bold"
         >
-          {busy ? "Recording…" : "⏱ TIME OUT"}
+          {busy ? t("clock.recording") : t("clock.timeOut")}
         </Button>
       ) : (
         <Button
@@ -151,15 +167,16 @@ export function AttendanceClock({
           onClick={() => tap("IN")}
           className="h-24 w-full text-xl font-bold"
         >
-          {busy ? "Recording…" : "⏱ TIME IN"}
+          {busy ? t("clock.recording") : t("clock.timeIn")}
         </Button>
       )}
 
       {msg && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-700">{msg}</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}
-      <p className="text-center text-xs text-ink-400">
-        GPS, device, and exact time are recorded with each tap. Works offline.
+      <p className={`text-center text-xs ${locState === "denied" || lastFix === "no" ? "text-amber-700" : "text-ink-500"}`}>
+        {locState === "denied" ? t("clock.locBlocked") : lastFix === "yes" ? t("clock.locCaptured") : lastFix === "no" ? t("clock.locMissing") : t("clock.locOn")}
       </p>
+      <p className="text-center text-xs text-ink-400">{t("clock.footer")}</p>
     </div>
   );
 }

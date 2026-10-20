@@ -79,6 +79,23 @@ body {
   @apply bg-ink-100 text-ink-900 antialiased;
 }
 
+/* Phones: pulling the page down is handled by the app's own pull-to-refresh, not the browser's full reload. */
+@media (max-width: 767px) {
+  html {
+    overscroll-behavior-y: contain;
+  }
+}
+
+/* Where the "Saved" message sits: above the phone's bottom bar, bottom corner on a computer. */
+.toast-pos {
+  bottom: calc(env(safe-area-inset-bottom) + 5.5rem);
+}
+@media (min-width: 768px) {
+  .toast-pos {
+    bottom: 1.5rem;
+  }
+}
+
 @media print {
   .no-print {
     display: none !important;

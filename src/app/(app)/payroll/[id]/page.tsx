@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { fmtDate, fmtDateTime, php } from "@/lib/format";
 import { hourlyRateForUser, nonCorporateCharge, normalizeEntries, otMultiplierFor, workingDaysInPeriod, type PayrollEntry } from "@/lib/payroll";
 import { Badge, Card, CardBody, CardHeader, Table, Td, Th } from "@/components/ui";
+import { ShareButton } from "@/components/share-button";
 import { PayrollStatusButtons } from "@/components/payroll-actions";
 import { AddPersonToRun, EditablePayrollTable } from "@/components/payroll-entry-editor";
 import { PrintButton } from "@/components/print-button";
@@ -97,6 +98,12 @@ export default async function PayrollRunPage({ params }: { params: { id: string 
               >
                 ⬇ Download payslips
               </a>
+              <ShareButton
+                src={`/api/payroll/${run.id}/payslips`}
+                filename={`Payslips-${run.id.slice(-6)}.pdf`}
+                title="Payslips"
+                className="rounded-lg border border-ink-200 px-3 py-2 text-sm font-medium text-ink-700 hover:bg-ink-50"
+              />
               <a
                 href={`/api/payroll/${run.id}/payslips?inline=1`}
                 target="_blank"

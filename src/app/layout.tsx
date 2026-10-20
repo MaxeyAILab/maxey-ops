@@ -26,6 +26,8 @@ export const viewport: Viewport = {
   themeColor: "#0b6e5a",
   width: "device-width",
   initialScale: 1,
+  // lets the app use the whole phone screen; the bars add their own padding for the notch and home bar (safe areas)
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

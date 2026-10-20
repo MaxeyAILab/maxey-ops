@@ -132,6 +132,7 @@ export default async function PettyCashPage({ searchParams }: { searchParams: { 
       </div>
 
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.6fr)]">
+        <div id="quick-record" className="scroll-mt-16">
         <Panel title="Quick Record">
           <QuickRecordForm
             projects={projectGroups}
@@ -140,6 +141,7 @@ export default async function PettyCashPage({ searchParams }: { searchParams: { 
             canPickRequester={custodian}
           />
         </Panel>
+        </div>
 
         <Panel
           title="Recent Petty Cash Activity"

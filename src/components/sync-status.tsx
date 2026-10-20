@@ -7,7 +7,7 @@ import { flush, pendingCount } from "@/lib/outbox";
  * Visible sync indicator (Spec §4): pending-item count on every relevant
  * screen, with a manual "Sync now" fallback.
  */
-export function SyncStatus() {
+export function SyncStatus({ compact = false }: { compact?: boolean }) {
   const [count, setCount] = useState(0);
   const [online, setOnline] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -49,6 +49,22 @@ export function SyncStatus() {
       navigator.serviceWorker?.removeEventListener("message", onSwMsg);
     };
   }, [refresh, syncNow]);
+
+  if (compact) {
+    // phone top bar: just the dot, plus the number waiting (tap it to send now)
+    const tone = online && count === 0 ? "bg-emerald-500" : online ? "bg-amber-400" : "bg-red-500";
+    return (
+      <button
+        type="button"
+        onClick={count > 0 && online ? syncNow : undefined}
+        aria-label={count > 0 ? `${count} item${count === 1 ? "" : "s"} pending sync${online ? " — tap to sync now" : " (offline)"}` : online ? "Synced" : "Offline"}
+        className="inline-flex items-center gap-1 px-1 text-xs"
+      >
+        <span className={`h-2.5 w-2.5 rounded-full ${tone} ${syncing ? "animate-pulse" : ""}`} />
+        {count > 0 && <span className="font-semibold text-amber-700">{count}</span>}
+      </button>
+    );
+  }
 
   if (online && count === 0) {
     return (

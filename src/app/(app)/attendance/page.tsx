@@ -16,6 +16,7 @@ import {
   RequestWeekendWorkButton,
   type PendingTimeAdjustment,
 } from "@/components/time-adjustment-actions";
+import { LocationPin } from "@/components/location-pin";
 import { EditPeriodTotalButton, EditTodayHoursButton } from "@/components/hours-override-button";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
 import { computeDailyHoursByDay, fetchApprovals, fetchDailyOverrides, withLiveOpenShifts } from "@/lib/payroll";
@@ -410,6 +411,8 @@ export default async function AttendancePage() {
             ? fmtDateTime(r.attendance!.timeIn)
             : fmtDateTime(r.attendance!.timeOut ?? r.attendance!.timeIn),
       requestedByName: r.requestedBy.name,
+      gpsIn: r.attendance?.gpsIn ?? null,
+      gpsOut: r.attendance?.gpsOut ?? null,
     }));
   }
 
@@ -578,6 +581,12 @@ export default async function AttendancePage() {
                   <span className="text-xs text-ink-400">requested by {r.requestedByName}</span>
                 </div>
                 <p className="mt-1 text-xs text-ink-600">{r.reason}</p>
+                {(r.gpsIn || r.gpsOut) && (
+                  <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+                    {r.gpsIn && <LocationPin gps={r.gpsIn} label="Clocked in here" />}
+                    {r.gpsOut && <LocationPin gps={r.gpsOut} label="Clocked out here" />}
+                  </div>
+                )}
                 <div className="mt-2">
                   <DecideTimeAdjustmentButtons request={r} />
                 </div>
@@ -684,6 +693,7 @@ export default async function AttendancePage() {
               <Th>Time out</Th>
               <Th>Site</Th>
               <Th>Device</Th>
+              <Th>Location</Th>
               <Th>Adjustments</Th>
             </tr>
           </thead>
@@ -699,6 +709,12 @@ export default async function AttendancePage() {
                   <Td className="text-xs">{a.timeOut ? fmtDateTime(a.timeOut) : "— open —"}</Td>
                   <Td className="text-xs">{a.project?.name ?? "Office"}</Td>
                   <Td className="text-xs text-ink-500">{a.deviceIn ?? "—"}</Td>
+                  <Td className="text-xs">
+                    <div className="flex flex-col items-start gap-1">
+                      <LocationPin gps={a.gpsIn} label="In" />
+                      {a.timeOut && a.gpsOut && <LocationPin gps={a.gpsOut} label="Out" />}
+                    </div>
+                  </Td>
                   <Td className="text-xs">
                     <div className="flex flex-col items-start gap-1">
                       {showEarly && (
@@ -725,7 +741,7 @@ export default async function AttendancePage() {
             })}
             {recent.length === 0 && (
               <tr>
-                <Td colSpan={5} className="py-6 text-center text-ink-400">
+                <Td colSpan={6} className="py-6 text-center text-ink-400">
                   No entries yet — tap Time In to start.
                 </Td>
               </tr>

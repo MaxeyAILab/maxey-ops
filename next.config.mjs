@@ -14,6 +14,8 @@ const csp = [
   "connect-src 'self'",
   "media-src 'self' blob: data:",
   "worker-src 'self' blob:",
+  // the small map shown when someone taps "View map" on a recorded location (OpenStreetMap, free)
+  "frame-src https://www.openstreetmap.org",
   "manifest-src 'self'",
   "object-src 'none'",
   "base-uri 'self'",

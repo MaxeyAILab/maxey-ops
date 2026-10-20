@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { fmtDate, fmtDateTime, php } from "@/lib/format";
 import { Badge, Card, CardBody, CardHeader, Table, Td, Th } from "@/components/ui";
 import { DeleteDeliveryButton } from "@/components/delivery-actions";
+import { ShareButton } from "@/components/share-button";
+import { LocationPin } from "@/components/location-pin";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
 import { canAccess, canVerifyDelivery } from "@/lib/access";
 
@@ -202,6 +204,7 @@ export default async function DeliveriesPage() {
                   >
                     ⬇ Download
                   </a>
+                  <ShareButton src={`/api/deliveries/${d.id}/pdf`} filename={`Delivery-${d.po.poNumber}.pdf`} title={`Delivery ${d.po.poNumber}`} />
                   {isOwner && <DeleteDeliveryButton deliveryId={d.id} poNumber={d.po.poNumber} />}
                 </div>
               </div>
@@ -211,6 +214,11 @@ export default async function DeliveriesPage() {
                   {d.driverName && d.recipientName && " · "}
                   {d.recipientName && `Received by: ${d.recipientName}`}
                 </p>
+              )}
+              {d.gps && (
+                <div className="mt-1">
+                  <LocationPin gps={d.gps} label="Where it was checked" />
+                </div>
               )}
               {d.discrepancies ? (
                 <p className="mt-1 whitespace-pre-wrap rounded bg-amber-50 p-2 text-xs text-amber-700">
@@ -288,6 +296,9 @@ export default async function DeliveriesPage() {
                             >
                               ⬇
                             </a>
+                            <span className="ml-2">
+                              <ShareButton src={`/api/deliveries/${d.id}/pdf`} filename={`Delivery-${d.po.poNumber}.pdf`} title={`Delivery ${d.po.poNumber}`} />
+                            </span>
                             {isOwner && (
                               <span className="ml-2">
                                 <DeleteDeliveryButton deliveryId={d.id} poNumber={d.po.poNumber} />

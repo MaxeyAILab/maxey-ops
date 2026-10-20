@@ -6,6 +6,7 @@ import crypto from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { clearAttempts, beginAttempt, failAttempt } from "@/lib/login-guard";
 import { clientIp, lockedError } from "@/lib/login-throttle";
+import { newSessionId, readPayload, type LoginTicket } from "@/lib/passkey";
 import type { Department, Role } from "@prisma/client";
 
 export interface SessionUser {
@@ -83,6 +84,25 @@ export const authOptions: NextAuthOptions = {
           clientId: user.clientId,
           sessionId,
         } as never;
+      },
+    }),
+    // Fingerprint / Face ID: the sign-in page first proves the passkey to /api/passkey/login/verify, which hands back a
+    // one-minute signed ticket; redeeming it here starts the very same kind of session a password does.
+    CredentialsProvider({
+      id: "passkey",
+      name: "Fingerprint / Face ID",
+      credentials: { ticket: { label: "Ticket", type: "text" } },
+      async authorize(credentials) {
+        const ticket = readPayload<LoginTicket>(credentials?.ticket);
+        if (!ticket || ticket.typ !== "passkey-login") return null;
+        const user = await prisma.user.findUnique({ where: { id: ticket.uid } });
+        if (!user || !user.active || user.role === "CLIENT") return null;
+        // A ticket works once: it only matches while the session id it carries is still the account's current one,
+        // and redeeming swaps in a new id (so a copied ticket is dead the moment the real one is used).
+        const sessionId = newSessionId();
+        const swapped = await prisma.user.updateMany({ where: { id: user.id, currentSessionId: ticket.sid }, data: { currentSessionId: sessionId } });
+        if (swapped.count !== 1) return null;
+        return { id: user.id, name: user.name, email: user.email, role: user.role, clientId: user.clientId, sessionId } as never;
       },
     }),
   ],

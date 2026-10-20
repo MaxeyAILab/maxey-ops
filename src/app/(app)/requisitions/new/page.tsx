@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { RequisitionForm } from "@/components/requisition-form";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
 import { canRaiseRequisition } from "@/lib/requisitions";
+import { getT } from "@/lib/i18n-server";
 
 export const metadata = { title: "New Requisition" };
 export const dynamic = "force-dynamic";
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function NewRequisitionPage() {
   const user = await getSessionUser();
   if (!user || !canRaiseRequisition(user)) redirect("/requisitions");
+  const t = getT();
 
   const projects = await prisma.project.findMany({
     where: { status: { in: CHARGEABLE_STATUSES } },
@@ -20,7 +22,7 @@ export default async function NewRequisitionPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      <h1 className="text-xl font-bold text-ink-900">New Material Requisition</h1>
+      <h1 className="text-xl font-bold text-ink-900">{t("req.title")}</h1>
       {projects.length === 0 && (
         <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-700">
           No active projects yet — that&apos;s fine, submit this as a General &amp; Administrative

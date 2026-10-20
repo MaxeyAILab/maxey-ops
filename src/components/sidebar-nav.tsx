@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useT } from "@/components/lang-provider";
 
 export interface SidebarItem {
   href: string;
@@ -60,13 +61,15 @@ export function SidebarNav({ items }: { items: SidebarItem[] }) {
 
 /** Name of the section you're in, for the phone top bar. */
 export function CurrentSection({ items }: { items: SidebarItem[] }) {
+  const t = useT();
   const path = usePathname() ?? "";
   const first = "/" + (path.split("/")[1] ?? "");
   const tab = activeHref(path, items);
   const label =
     (tab && items.find((i) => i.href === tab)?.label) ||
-    (first === "/cash-expense" && "Cash Expense") ||
-    (first === "/notifications" && "Notifications") ||
+    (first === "/cash-expense" && t("nav.cash")) ||
+    (first === "/notifications" && t("nav.notifications")) ||
+    (first === "/settings" && t("nav.settings")) ||
     "Maxey Ops";
   return <span className="truncate text-sm font-bold text-ink-900">{label}</span>;
 }

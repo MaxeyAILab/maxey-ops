@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { submitOrQueue } from "@/lib/outbox";
 import { Button, Card, CardBody, Input, Label } from "@/components/ui";
 import { PhotoInput } from "@/components/photo-input";
+import { useT } from "@/components/lang-provider";
 
 interface PoItem {
   name: string;
@@ -45,6 +46,7 @@ function getGps(): Promise<string> {
  * are captured for verification.
  */
 export function DeliveryChecklistForm({ poId, items }: { poId: string; items: PoItem[] }) {
+  const t = useT();
   const router = useRouter();
   const [rows, setRows] = useState<CheckRow[]>(
     items.map((i) => ({
@@ -93,11 +95,11 @@ export function DeliveryChecklistForm({ poId, items }: { poId: string; items: Po
     });
     setBusy(false);
     if (!result.ok) {
-      setError(result.error ?? "Submission failed");
+      setError(result.error ?? t("del.failed"));
       return;
     }
     if (result.queued) {
-      setQueuedMsg("No signal — delivery form saved on this device and will sync automatically.");
+      setQueuedMsg(t("del.queued"));
       return;
     }
     router.push("/deliveries");
@@ -109,7 +111,7 @@ export function DeliveryChecklistForm({ poId, items }: { poId: string; items: Po
       <Card>
         <CardBody className="space-y-3 text-center">
           <p className="text-3xl">📥</p>
-          <p className="font-semibold text-amber-700">Saved to outbox</p>
+          <p className="font-semibold text-amber-700">{t("form.savedToOutbox")}</p>
           <p className="text-sm text-ink-600">{queuedMsg}</p>
         </CardBody>
       </Card>
@@ -120,19 +122,19 @@ export function DeliveryChecklistForm({ poId, items }: { poId: string; items: Po
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <Label htmlFor="driverName">Driver</Label>
+          <Label htmlFor="driverName">{t("del.driver")}</Label>
           <Input
             id="driverName"
-            placeholder="Name of the driver delivering"
+            placeholder={t("del.driverPh")}
             value={driverName}
             onChange={(e) => setDriverName(e.target.value)}
           />
         </div>
         <div>
-          <Label htmlFor="recipientName">Received by</Label>
+          <Label htmlFor="recipientName">{t("del.receivedBy")}</Label>
           <Input
             id="recipientName"
-            placeholder="Name of the person who received it"
+            placeholder={t("del.receivedByPh")}
             value={recipientName}
             onChange={(e) => setRecipientName(e.target.value)}
           />
@@ -149,7 +151,7 @@ export function DeliveryChecklistForm({ poId, items }: { poId: string; items: Po
               <div>
                 <div className="font-medium text-ink-900">{r.item}</div>
                 <div className="text-xs text-ink-500">
-                  Ordered: {r.orderedQty} {r.unit}
+                  {t("del.ordered")}: {r.orderedQty} {r.unit}
                 </div>
               </div>
               <label className="flex min-h-[44px] items-center gap-2 text-sm">
@@ -159,12 +161,12 @@ export function DeliveryChecklistForm({ poId, items }: { poId: string; items: Po
                   onChange={(e) => update(i, { ok: e.target.checked })}
                   className="h-6 w-6 rounded accent-emerald-600"
                 />
-                Spec OK
+                {t("del.specOk")}
               </label>
             </div>
             <div className="mt-2 grid grid-cols-2 gap-2">
               <div>
-                <span className="mb-1 block text-xs text-ink-500">Received qty</span>
+                <span className="mb-1 block text-xs text-ink-500">{t("del.receivedQty")}</span>
                 <Input
                   type="number"
                   min="0"
@@ -175,9 +177,9 @@ export function DeliveryChecklistForm({ poId, items }: { poId: string; items: Po
                 />
               </div>
               <div>
-                <span className="mb-1 block text-xs text-ink-500">Remarks</span>
+                <span className="mb-1 block text-xs text-ink-500">{t("del.remarks")}</span>
                 <Input
-                  placeholder="short / damaged / wrong spec…"
+                  placeholder={t("del.remarksPh")}
                   value={r.remarks}
                   onChange={(e) => update(i, { remarks: e.target.value })}
                 />
@@ -187,21 +189,18 @@ export function DeliveryChecklistForm({ poId, items }: { poId: string; items: Po
         ))}
       </div>
 
-      <PhotoInput label="Photos (delivery, damage, receipts)" onChange={setPhotos} />
+      <PhotoInput label={t("del.photos")} onChange={setPhotos} />
 
       {hasDiscrepancy && (
         <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-700">
-          ⚠ Discrepancies detected — PM and Purchasing will be notified automatically for
-          supplier follow-up.
+          {t("del.discrepancy")}
         </p>
       )}
       {error && <p className="text-sm text-red-600">{error}</p>}
       <Button onClick={submit} disabled={busy} className="w-full">
-        {busy ? "Submitting…" : "Submit delivery form"}
+        {busy ? t("del.submitting") : t("del.submit")}
       </Button>
-      <p className="text-center text-xs text-ink-400">
-        Works offline. GPS + time are recorded for verification.
-      </p>
+      <p className="text-center text-xs text-ink-400">{t("del.footer")}</p>
     </div>
   );
 }

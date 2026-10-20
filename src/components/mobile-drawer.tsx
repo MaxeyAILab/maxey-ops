@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
+import { useT } from "@/components/lang-provider";
 
 const EDGE = 28; // px from the left edge where an open-swipe may start
 const SWIPE = 60; // px of horizontal travel that counts as a swipe
@@ -12,6 +13,7 @@ const SWIPE = 60; // px of horizontal travel that counts as a swipe
  * the Escape key, or by choosing a tab.
  */
 export function MobileDrawer({ children, alert }: { children: React.ReactNode; alert?: boolean }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const path = usePathname();
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -95,10 +97,10 @@ export function MobileDrawer({ children, alert }: { children: React.ReactNode; a
         ref={openerRef}
         type="button"
         onClick={() => setOpen(true)}
-        aria-label="Open menu"
+        aria-label={t("chrome.openMenu")}
         aria-expanded={open}
         aria-controls="mobile-panel"
-        className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-ink-200 text-lg text-ink-700 hover:bg-ink-100"
+        className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-ink-200 text-lg text-ink-700 hover:bg-ink-100"
       >
         <span aria-hidden>☰</span>
         {alert && <span aria-hidden className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-red-600" />}
@@ -113,7 +115,7 @@ export function MobileDrawer({ children, alert }: { children: React.ReactNode; a
         id="mobile-panel"
         role="dialog"
         aria-modal="true"
-        aria-label="Menu"
+        aria-label={t("chrome.menu")}
         // choosing a tab (even the one you're already on) puts the panel away
         onClick={(e) => (e.target as HTMLElement).closest("a") && setOpen(false)}
         className={`no-print fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-ink-200 bg-ink-50 shadow-xl transition-[transform,visibility] duration-200 motion-reduce:transition-none ${open ? "visible translate-x-0" : "invisible -translate-x-full"}`}
@@ -123,7 +125,7 @@ export function MobileDrawer({ children, alert }: { children: React.ReactNode; a
           ref={closeRef}
           type="button"
           onClick={close}
-          aria-label="Close menu"
+          aria-label={t("chrome.closeMenu")}
           className="absolute right-2 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-lg text-ink-500 hover:bg-ink-100"
         >
           <span aria-hidden>✕</span>

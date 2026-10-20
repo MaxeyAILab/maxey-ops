@@ -7,6 +7,7 @@ import { normalizeEntries, type PayrollEntry } from "@/lib/payroll";
 import { runGross } from "@/lib/finance";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
 import { Badge, Card, CardBody, CardHeader, EmptyState, Table, Td, Th } from "@/components/ui";
+import { ShareButton } from "@/components/share-button";
 import {
   AddEmployeeForm,
   DeleteRunButton,
@@ -89,12 +90,15 @@ export default async function PayrollPage() {
                     </Td>
                     <Td className="text-right">
                       {run.status === "APPROVED" || run.status === "PAID" ? (
-                        <a
-                          href={`/api/payroll/${run.id}/payslips`}
-                          className="text-xs font-medium text-brand-600 hover:underline"
-                        >
-                          ⬇ Payslip
-                        </a>
+                        <span className="inline-flex items-center gap-3">
+                          <a
+                            href={`/api/payroll/${run.id}/payslips`}
+                            className="text-xs font-medium text-brand-600 hover:underline"
+                          >
+                            ⬇ Payslip
+                          </a>
+                          <ShareButton src={`/api/payroll/${run.id}/payslips`} filename={`Payslip-${run.id.slice(-6)}.pdf`} title="Payslip" />
+                        </span>
                       ) : (
                         <span className="text-xs text-ink-400">After approval</span>
                       )}

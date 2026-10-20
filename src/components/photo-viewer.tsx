@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ShareButton } from "@/components/share-button";
 
 export interface PhotoViewerItem {
   src: string;
@@ -94,6 +95,7 @@ export function PhotoThumbnails({ photos }: { photos: PhotoViewerItem[] }) {
                 >
                   ⬇ Download
                 </a>
+                <ShareButton src={current.src} filename="Site-photo.jpg" title="Site photo" tone="light" />
                 <button
                   type="button"
                   onClick={() => setOpenIndex(null)}

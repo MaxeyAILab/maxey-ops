@@ -165,6 +165,9 @@ export interface PendingTimeAdjustment {
   reason: string;
   shiftLabel: string; // e.g. "Sep 17, 2026, 6:45 AM" or, for weekend-work, the requested date
   requestedByName: string;
+  /** where the shift was clocked in / out ("lat,lng"), when the phone shared it */
+  gpsIn?: string | null;
+  gpsOut?: string | null;
 }
 
 /** Owner/PM approve/reject controls for one pending request. */

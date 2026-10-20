@@ -2,14 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useT } from "@/components/lang-provider";
 
 /** Sidebar group for Cash Expense: the parent link plus its three pages, the current one highlighted. */
 export function CashExpenseNav({ showAdvances }: { showAdvances: boolean }) {
+  const t = useT();
   const path = usePathname() ?? "";
   const links = [
-    { href: "/cash-expense/petty-cash", label: "Petty Cash" },
-    ...(showAdvances ? [{ href: "/cash-expense/cash-advance", label: "Cash Advance" }] : []),
-    { href: "/cash-expense/report", label: "Petty Cash Report" },
+    { href: "/cash-expense/petty-cash", label: t("nav.pettyCash") },
+    ...(showAdvances ? [{ href: "/cash-expense/cash-advance", label: t("nav.cashAdvance") }] : []),
+    { href: "/cash-expense/report", label: t("nav.pettyCashReport") },
   ];
   return (
     <div className="mt-3 border-t border-ink-100 pt-3">
@@ -22,7 +24,7 @@ export function CashExpenseNav({ showAdvances }: { showAdvances: boolean }) {
         <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-lime-100 text-base">
           💵
         </span>
-        <span className="flex-1">Cash Expense</span>
+        <span className="flex-1">{t("nav.cash")}</span>
         <span aria-hidden className="text-xs text-ink-400">▾</span>
       </Link>
       <div className="mt-1 space-y-0.5">

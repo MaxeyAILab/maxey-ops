@@ -285,76 +285,78 @@ enum PermitStatus {
 // ---------- Core ----------
 
 model User {
-  id           String      @id @default(cuid())
-  name         String
-  email        String      @unique
-  phone        String?
-  passwordHash String
-  role         Role
-  department   Department?
-  position     String? // trade/position: Foreman, Mason, Carpenter, Welder, Driver, Office Admin…
-  employeeNo   String?     @unique // company employee ID printed on the payslip, e.g. VCDC-016
-  canRequisition Boolean    @default(false) // the Owner lets this person raise material requisitions even though their role doesn't already allow it
-  canApprovePettyCash Boolean @default(false) // the Owner lets this person approve petty cash requests (the Owner always can)
-  canReleasePettyCash Boolean @default(false) // ...and/or confirm handing out approved petty cash
-  canManageCash       Boolean @default(false) // full Cash Expense access, like Accounting: every request, the fund, verification, cash advances
-  payslipBaselines PayslipBaseline[]
-  pushSubscriptions PushSubscription[]
-  appNotifications AppNotification[]
-  notificationPref NotificationPref?
-  dailyRate    Decimal?    @db.Decimal(12, 2)
-  hourlyRate   Decimal?    @db.Decimal(12, 2)
+  id                  String             @id @default(cuid())
+  name                String
+  email               String             @unique
+  phone               String?
+  passwordHash        String
+  role                Role
+  department          Department?
+  position            String? // trade/position: Foreman, Mason, Carpenter, Welder, Driver, Office Admin…
+  employeeNo          String?            @unique // company employee ID printed on the payslip, e.g. VCDC-016
+  canRequisition      Boolean            @default(false) // the Owner lets this person raise material requisitions even though their role doesn't already allow it
+  canApprovePettyCash Boolean            @default(false) // the Owner lets this person approve petty cash requests (the Owner always can)
+  canReleasePettyCash Boolean            @default(false) // ...and/or confirm handing out approved petty cash
+  canManageCash       Boolean            @default(false) // full Cash Expense access, like Accounting: every request, the fund, verification, cash advances
+  payslipBaselines    PayslipBaseline[]
+  pushSubscriptions   PushSubscription[]
+  appNotifications    AppNotification[]
+  notificationPref    NotificationPref?
+  userPref            UserPref?
+  passkeys            Passkey[]
+  dailyRate           Decimal?           @db.Decimal(12, 2)
+  hourlyRate          Decimal?           @db.Decimal(12, 2)
   // Office/Architect/Engineer paid a fixed monthly salary instead of an
   // hourly/daily rate — when set, this takes priority over both for
   // semi-monthly payroll (see computePayroll in src/lib/payroll.ts): the
   // effective daily rate for a given month is monthlySalary divided by that
   // month's count of Monday–Saturday calendar days, then /8 for an hourly
   // rate so the existing hours-based engine can price partial days.
-  monthlySalary Decimal?   @db.Decimal(12, 2)
-  active       Boolean     @default(true)
-  mustChangePassword Boolean @default(false) // temp password issued — force change on first login
-  useCustomMenus Boolean   @default(false) // true = customMenus is authoritative, ignore role's default tabs
-  customMenus  String[]    @default([]) // Owner's per-account tab checklist override, when useCustomMenus
-  currentSessionId String? // single-device login (every role but OWNER): each
+  monthlySalary       Decimal?           @db.Decimal(12, 2)
+  active              Boolean            @default(true)
+  mustChangePassword  Boolean            @default(false) // temp password issued — force change on first login
+  useCustomMenus      Boolean            @default(false) // true = customMenus is authoritative, ignore role's default tabs
+  customMenus         String[]           @default([]) // Owner's per-account tab checklist override, when useCustomMenus
+  currentSessionId    String? // single-device login (every role but OWNER): each
   // login overwrites this, so a session from an older device fails its next
   // check in getSessionUser() and is treated as signed out
-  clientId     String? // portal accounts link to a Client
-  client       Client?     @relation(fields: [clientId], references: [id])
-  createdAt    DateTime    @default(now())
+  clientId            String? // portal accounts link to a Client
+  client              Client?            @relation(fields: [clientId], references: [id])
+  createdAt           DateTime           @default(now())
 
-  requisitionsSubmitted Requisition[]   @relation("ReqSubmitter")
-  requisitionsApproved  Requisition[]   @relation("ReqApprover")
-  itemQuotesSubmitted   ItemQuote[]
-  purchaseOrders        PurchaseOrder[]
-  paymentsRecorded      Payment[]
-  progressEntries       ProgressEntry[]
-  dailyReportsSubmitted DailyConstructionReport[]
-  instructionsPosted    SiteInstruction[]   @relation("InstructionPostedBy")
-  instructionsAssigned  SiteInstruction[]   @relation("InstructionAssignedTo") // legacy single-assignee, superseded by assignedInstructions below
-  assignedInstructions  SiteInstruction[]   @relation("InstructionAssignees")
-  instructionsSeen      InstructionSeen[]
-  changeOrdersCreated   ChangeOrder[]   @relation("COCreator")
-  changeOrdersResponded ChangeOrder[]   @relation("COResponder")
-  quotationsCreated     Quotation[]
-  attendance            Attendance[]
-  tripLogs              TripLog[]
-  auditLogs             AuditLog[]
-  assignments           ProjectAssignment[]
-  resetTokens           PasswordResetToken[]
-  cashSnapshots         CashSnapshot[]
-  timeAdjustmentsOwned     TimeAdjustmentRequest[] @relation("TimeAdjUser")
-  timeAdjustmentsRequested TimeAdjustmentRequest[] @relation("TimeAdjRequester")
-  timeAdjustmentsDecided   TimeAdjustmentRequest[] @relation("TimeAdjDecider")
-  hoursOverridesOwned      DailyHoursOverride[]    @relation("HoursOverrideOwner")
-  hoursOverridesSet        DailyHoursOverride[]    @relation("HoursOverrideSetBy")
-  milestonesResponsible    Milestone[]             @relation("MilestoneResponsible")
-  rfisAssigned             Rfi[]                   @relation("RfiAssignee")
-  rfisRaised               Rfi[]                   @relation("RfiRaiser")
-  workRequests             WorkRequest[]           @relation("WorkRequester")
-  findingsRaised           Finding[]               @relation("FindingRaiser")
-  findingsOwned            Finding[]               @relation("FindingOwner")
-  pettyCashRequests        PettyCashRequest[]      @relation("PettyCashRequester")
-  cashAdvances             CashAdvance[]           @relation("CashAdvanceBorrower")
+  requisitionsSubmitted    Requisition[]             @relation("ReqSubmitter")
+  requisitionsApproved     Requisition[]             @relation("ReqApprover")
+  itemQuotesSubmitted      ItemQuote[]
+  purchaseOrders           PurchaseOrder[]
+  paymentsRecorded         Payment[]
+  progressEntries          ProgressEntry[]
+  dailyReportsSubmitted    DailyConstructionReport[]
+  instructionsPosted       SiteInstruction[]         @relation("InstructionPostedBy")
+  instructionsAssigned     SiteInstruction[]         @relation("InstructionAssignedTo") // legacy single-assignee, superseded by assignedInstructions below
+  assignedInstructions     SiteInstruction[]         @relation("InstructionAssignees")
+  instructionsSeen         InstructionSeen[]
+  changeOrdersCreated      ChangeOrder[]             @relation("COCreator")
+  changeOrdersResponded    ChangeOrder[]             @relation("COResponder")
+  quotationsCreated        Quotation[]
+  attendance               Attendance[]
+  tripLogs                 TripLog[]
+  auditLogs                AuditLog[]
+  assignments              ProjectAssignment[]
+  resetTokens              PasswordResetToken[]
+  cashSnapshots            CashSnapshot[]
+  timeAdjustmentsOwned     TimeAdjustmentRequest[]   @relation("TimeAdjUser")
+  timeAdjustmentsRequested TimeAdjustmentRequest[]   @relation("TimeAdjRequester")
+  timeAdjustmentsDecided   TimeAdjustmentRequest[]   @relation("TimeAdjDecider")
+  hoursOverridesOwned      DailyHoursOverride[]      @relation("HoursOverrideOwner")
+  hoursOverridesSet        DailyHoursOverride[]      @relation("HoursOverrideSetBy")
+  milestonesResponsible    Milestone[]               @relation("MilestoneResponsible")
+  rfisAssigned             Rfi[]                     @relation("RfiAssignee")
+  rfisRaised               Rfi[]                     @relation("RfiRaiser")
+  workRequests             WorkRequest[]             @relation("WorkRequester")
+  findingsRaised           Finding[]                 @relation("FindingRaiser")
+  findingsOwned            Finding[]                 @relation("FindingOwner")
+  pettyCashRequests        PettyCashRequest[]        @relation("PettyCashRequester")
+  cashAdvances             CashAdvance[]             @relation("CashAdvanceBorrower")
 }
 
 // Self-service "forgot password" (Spec §8-adjacent hardening). Only the
@@ -440,51 +442,51 @@ model QuotationLineItem {
 }
 
 model Project {
-  id            String        @id @default(cuid())
-  clientId      String
-  client        Client        @relation(fields: [clientId], references: [id])
-  leadId        String?
-  lead          Lead?         @relation(fields: [leadId], references: [id])
-  name          String
-  code          String?       @unique // short project code, e.g. "CTC" — prefixes this project's site instruction Task IDs
-  address       String?
-  contractValue Decimal       @default(0) @db.Decimal(14, 2)
-  termsJson     Json?
-  status        ProjectStatus @default(SITE_SURVEY)
-  pcabRef       String?
-  startDate     DateTime?
-  targetEndDate DateTime?
-  targetMarginPct Decimal?    @db.Decimal(5, 2) // margin bid at contract signing — Finance tab compares current forecast against this
-  isNonCorporate Boolean      @default(false) // a job for another organization or the owner's own property — expenses only, kept out of company operations
-  createdAt     DateTime      @default(now())
+  id              String        @id @default(cuid())
+  clientId        String
+  client          Client        @relation(fields: [clientId], references: [id])
+  leadId          String?
+  lead            Lead?         @relation(fields: [leadId], references: [id])
+  name            String
+  code            String?       @unique // short project code, e.g. "CTC" — prefixes this project's site instruction Task IDs
+  address         String?
+  contractValue   Decimal       @default(0) @db.Decimal(14, 2)
+  termsJson       Json?
+  status          ProjectStatus @default(SITE_SURVEY)
+  pcabRef         String?
+  startDate       DateTime?
+  targetEndDate   DateTime?
+  targetMarginPct Decimal?      @db.Decimal(5, 2) // margin bid at contract signing — Finance tab compares current forecast against this
+  isNonCorporate  Boolean       @default(false) // a job for another organization or the owner's own property — expenses only, kept out of company operations
+  createdAt       DateTime      @default(now())
 
-  paymentTerms    PaymentTerm[]
-  payments        Payment[]
-  requisitions    Requisition[]
-  changeOrders    ChangeOrder[]
-  progressEntries ProgressEntry[]
-  dailyReports    DailyConstructionReport[]
-  instructions    SiteInstruction[]
-  deliveries      Delivery[]
-  meetings        Meeting[]
-  logbookEntries  LogbookEntry[]
-  tripLogs        TripLog[]
-  attendance      Attendance[]
-  assignments     ProjectAssignment[]
-  payrollRuns     PayrollRun[]
-  activityLogs    ProjectActivityLog[]
-  milestones      Milestone[]
-  rfis            Rfi[]
-  workRequests    WorkRequest[]
-  findings        Finding[]
-  closeoutItems   CloseoutItem[]
-  documents       ProjectDocument[]
-  materialStocks  ProjectMaterialStock[]
-  toolAssets      ToolAsset[]           @relation("ToolCurrentProject")
-  materialMovesFrom InventoryMovement[] @relation("MaterialMoveFrom")
-  materialMovesTo   InventoryMovement[] @relation("MaterialMoveTo")
-  toolMovesFrom     ToolMovement[]      @relation("ToolMoveFrom")
-  toolMovesTo       ToolMovement[]      @relation("ToolMoveTo")
+  paymentTerms      PaymentTerm[]
+  payments          Payment[]
+  requisitions      Requisition[]
+  changeOrders      ChangeOrder[]
+  progressEntries   ProgressEntry[]
+  dailyReports      DailyConstructionReport[]
+  instructions      SiteInstruction[]
+  deliveries        Delivery[]
+  meetings          Meeting[]
+  logbookEntries    LogbookEntry[]
+  tripLogs          TripLog[]
+  attendance        Attendance[]
+  assignments       ProjectAssignment[]
+  payrollRuns       PayrollRun[]
+  activityLogs      ProjectActivityLog[]
+  milestones        Milestone[]
+  rfis              Rfi[]
+  workRequests      WorkRequest[]
+  findings          Finding[]
+  closeoutItems     CloseoutItem[]
+  documents         ProjectDocument[]
+  materialStocks    ProjectMaterialStock[]
+  toolAssets        ToolAsset[]               @relation("ToolCurrentProject")
+  materialMovesFrom InventoryMovement[]       @relation("MaterialMoveFrom")
+  materialMovesTo   InventoryMovement[]       @relation("MaterialMoveTo")
+  toolMovesFrom     ToolMovement[]            @relation("ToolMoveFrom")
+  toolMovesTo       ToolMovement[]            @relation("ToolMoveTo")
   pettyCash         PettyCashRequest[]
 }
 
@@ -542,38 +544,38 @@ model CashSnapshot {
 // ---------- Requisition → PO ----------
 
 model Requisition {
-  id             String            @id @default(cuid())
-  clientUuid     String            @unique // generated on the device; makes offline sync idempotent
+  id             String               @id @default(cuid())
+  clientUuid     String               @unique // generated on the device; makes offline sync idempotent
   projectId      String? // nullable: non-project requisitions (emergency / office / warehouse supply)
-  project        Project?          @relation(fields: [projectId], references: [id])
+  project        Project?             @relation(fields: [projectId], references: [id])
   category       RequisitionCategory? // set only when projectId is null
   submittedById  String
-  submittedBy    User              @relation("ReqSubmitter", fields: [submittedById], references: [id])
+  submittedBy    User                 @relation("ReqSubmitter", fields: [submittedById], references: [id])
   submittedAt    DateTime // captured on-device at time of action, not sync time
-  urgency        Urgency           @default(NORMAL)
+  urgency        Urgency              @default(NORMAL)
   neededBy       DateTime?
   notes          String?
-  status         RequisitionStatus @default(SUBMITTED)
-  estimatedCost  Decimal?          @db.Decimal(14, 2)
+  status         RequisitionStatus    @default(SUBMITTED)
+  estimatedCost  Decimal?             @db.Decimal(14, 2)
   approvedById   String?
-  approvedBy     User?             @relation("ReqApprover", fields: [approvedById], references: [id])
+  approvedBy     User?                @relation("ReqApprover", fields: [approvedById], references: [id])
   approvedAt     DateTime?
   rejectedReason String?
-  offlineSynced  Boolean           @default(false)
-  createdAt      DateTime          @default(now())
+  offlineSynced  Boolean              @default(false)
+  createdAt      DateTime             @default(now())
 
   items         RequisitionItem[]
   purchaseOrder PurchaseOrder?
 }
 
 model RequisitionItem {
-  id            String      @id @default(cuid())
-  requisitionId String
-  requisition   Requisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
-  name          String
-  spec          String?
-  qty           Decimal     @db.Decimal(12, 2)
-  unit          String
+  id              String      @id @default(cuid())
+  requisitionId   String
+  requisition     Requisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  name            String
+  spec            String?
+  qty             Decimal     @db.Decimal(12, 2)
+  unit            String
   // Mirrors the currently-selected quote below (kept so every existing
   // consumer — PO creation, PDFs, dashboard rollups — keeps working
   // unchanged); the source of truth for "what are our options" is quotes.
@@ -652,28 +654,28 @@ model ChangeOrder {
 }
 
 model ProgressEntry {
-  id            String   @id @default(cuid())
-  clientUuid    String?  @unique // offline sync idempotency
-  projectId     String
-  project       Project  @relation(fields: [projectId], references: [id])
-  submittedById String
-  submittedBy   User     @relation(fields: [submittedById], references: [id])
-  workItem      String?
-  weight        Decimal? @db.Decimal(6, 2) // this work item's share of the project, for the weighted accomplishment rollup
-  color         String? // hex color for this work item's ring/bar on the accomplishment chart
-  pctComplete   Decimal  @db.Decimal(5, 2) // this entry's completion % for workItem (not the whole project)
-  notes         String?
-  photos        Json?
-  visibleToClient Boolean @default(true)
-  createdAt     DateTime @default(now())
-  editedById    String?
-  editedAt      DateTime?
+  id              String               @id @default(cuid())
+  clientUuid      String?              @unique // offline sync idempotency
+  projectId       String
+  project         Project              @relation(fields: [projectId], references: [id])
+  submittedById   String
+  submittedBy     User                 @relation(fields: [submittedById], references: [id])
+  workItem        String?
+  weight          Decimal?             @db.Decimal(6, 2) // this work item's share of the project, for the weighted accomplishment rollup
+  color           String? // hex color for this work item's ring/bar on the accomplishment chart
+  pctComplete     Decimal              @db.Decimal(5, 2) // this entry's completion % for workItem (not the whole project)
+  notes           String?
+  photos          Json?
+  visibleToClient Boolean              @default(true)
+  createdAt       DateTime             @default(now())
+  editedById      String?
+  editedAt        DateTime?
   // Existing rows default to APPROVED so nothing already visible to clients
   // changes; the progress API sets this explicitly on every new entry.
-  reviewStatus  ProgressReviewStatus @default(APPROVED)
-  reviewedById  String?
-  reviewedAt    DateTime?
-  reviewNote    String?
+  reviewStatus    ProgressReviewStatus @default(APPROVED)
+  reviewedById    String?
+  reviewedAt      DateTime?
+  reviewNote      String?
 }
 
 // Daily Construction Report (DCR) — a fuller end-of-day site record than a
@@ -796,15 +798,15 @@ enum ToolMovementType {
 // a bulk quantity, so at any time you know exactly which project holds which
 // unit and its condition.
 model ToolAsset {
-  id                String     @id @default(cuid())
-  name              String // e.g. "Welding Machine"
-  assetTag          String? // e.g. "WM-002", optional serial/tag
-  category          String? // e.g. Power Tool, Heavy Equipment, Hand Tool
-  condition         String? // latest condition note
-  status            ToolStatus @default(IN_WAREHOUSE)
-  currentProjectId  String? // null = in warehouse
-  currentProject    Project?   @relation("ToolCurrentProject", fields: [currentProjectId], references: [id])
-  createdAt         DateTime   @default(now())
+  id               String     @id @default(cuid())
+  name             String // e.g. "Welding Machine"
+  assetTag         String? // e.g. "WM-002", optional serial/tag
+  category         String? // e.g. Power Tool, Heavy Equipment, Hand Tool
+  condition        String? // latest condition note
+  status           ToolStatus @default(IN_WAREHOUSE)
+  currentProjectId String? // null = in warehouse
+  currentProject   Project?   @relation("ToolCurrentProject", fields: [currentProjectId], references: [id])
+  createdAt        DateTime   @default(now())
 
   movements ToolMovement[]
 }
@@ -826,22 +828,22 @@ model ToolMovement {
 }
 
 model Attendance {
-  id         String   @id @default(cuid())
-  clientUuid String?  @unique // offline sync idempotency
-  userId    String
-  user      User      @relation(fields: [userId], references: [id])
-  projectId String? // null = office
-  project   Project?  @relation(fields: [projectId], references: [id])
-  timeIn    DateTime
-  timeOut   DateTime?
-  gpsIn     String?
-  gpsOut    String?
+  id          String    @id @default(cuid())
+  clientUuid  String?   @unique // offline sync idempotency
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  projectId   String? // null = office
+  project     Project?  @relation(fields: [projectId], references: [id])
+  timeIn      DateTime
+  timeOut     DateTime?
+  gpsIn       String?
+  gpsOut      String?
   deviceIn    String? // readable label, e.g. "Android · Chrome"
   deviceOut   String?
   deviceIdIn  String? // persistent per-browser id (localStorage) — same id tapping in for different users is a buddy-punching signal
   deviceIdOut String?
-  source    String    @default("online") // online | offline_synced
-  createdAt DateTime  @default(now())
+  source      String    @default("online") // online | offline_synced
+  createdAt   DateTime  @default(now())
 
   adjustmentRequests TimeAdjustmentRequest[]
 }
@@ -872,22 +874,22 @@ enum TimeAdjustmentStatus {
 // every attendance row that lands on that Manila date from every clamp
 // (start, breaks, 5pm cutoff) — see computeEffectiveHours's weekendApproved.
 model TimeAdjustmentRequest {
-  id            String                @id @default(cuid())
+  id            String               @id @default(cuid())
   attendanceId  String? // null for a WEEKEND_WORK pre-authorization
-  attendance    Attendance?           @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  attendance    Attendance?          @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
   date          DateTime? // Manila calendar date this applies to — set only for WEEKEND_WORK
   userId        String // whose shift/day this is (normally == requestedById, unless a supervisor files it for their crew)
-  user          User                  @relation("TimeAdjUser", fields: [userId], references: [id])
+  user          User                 @relation("TimeAdjUser", fields: [userId], references: [id])
   type          TimeAdjustmentType
   reason        String
   requestedById String
-  requestedBy   User                  @relation("TimeAdjRequester", fields: [requestedById], references: [id])
-  status        TimeAdjustmentStatus  @default(PENDING)
+  requestedBy   User                 @relation("TimeAdjRequester", fields: [requestedById], references: [id])
+  status        TimeAdjustmentStatus @default(PENDING)
   decidedById   String?
-  decidedBy     User?                 @relation("TimeAdjDecider", fields: [decidedById], references: [id])
+  decidedBy     User?                @relation("TimeAdjDecider", fields: [decidedById], references: [id])
   decidedAt     DateTime?
   decisionNote  String?
-  createdAt     DateTime              @default(now())
+  createdAt     DateTime             @default(now())
 
   @@unique([attendanceId, type])
   @@unique([userId, date, type])
@@ -1016,79 +1018,79 @@ model MilestoneBaselineRevision {
 // Request for information. Project-scoped number (RFI-001...). INTERNAL RFIs
 // are answered by staff; CLIENT RFIs are answered in the client portal.
 model Rfi {
-  id                String       @id @default(cuid())
-  projectId         String
-  project           Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  number            Int
-  clientUuid        String?      @unique // offline idempotency: raised from site without signal
-  subject           String
-  question          String
-  addressedTo       RfiAddressee @default(INTERNAL)
-  assigneeId        String? // staff member expected to answer an INTERNAL RFI
-  assignee          User?        @relation("RfiAssignee", fields: [assigneeId], references: [id])
+  id                 String           @id @default(cuid())
+  projectId          String
+  project            Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  number             Int
+  clientUuid         String?          @unique // offline idempotency: raised from site without signal
+  subject            String
+  question           String
+  addressedTo        RfiAddressee     @default(INTERNAL)
+  assigneeId         String? // staff member expected to answer an INTERNAL RFI
+  assignee           User?            @relation("RfiAssignee", fields: [assigneeId], references: [id])
   answerApprovedById String? // Owner who let an assigned foreman answer this RFI (foremen can't answer without it)
-  answerApprovedAt  DateTime?
-  status            RfiStatus    @default(OPEN)
-  dueDate           DateTime?    @db.Date
-  workItem          String? // free-text reference to a progress work item
-  dailyReportNo     String? // e.g. DCR-004 — text, so it survives the 7-day report cleanup
-  milestoneId       String?
-  milestone         Milestone?   @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
-  siteInstructionId String?
-  siteInstruction   SiteInstruction? @relation(fields: [siteInstructionId], references: [id], onDelete: SetNull)
-  changeOrderId     String?
-  changeOrder       ChangeOrder? @relation(fields: [changeOrderId], references: [id], onDelete: SetNull)
-  documentId        String? // the drawing/document this question is about
-  document          ProjectDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
-  photos            Json?
-  costImpact        ImpactStatus @default(UNKNOWN)
-  scheduleImpact    ImpactStatus @default(UNKNOWN)
+  answerApprovedAt   DateTime?
+  status             RfiStatus        @default(OPEN)
+  dueDate            DateTime?        @db.Date
+  workItem           String? // free-text reference to a progress work item
+  dailyReportNo      String? // e.g. DCR-004 — text, so it survives the 7-day report cleanup
+  milestoneId        String?
+  milestone          Milestone?       @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  siteInstructionId  String?
+  siteInstruction    SiteInstruction? @relation(fields: [siteInstructionId], references: [id], onDelete: SetNull)
+  changeOrderId      String?
+  changeOrder        ChangeOrder?     @relation(fields: [changeOrderId], references: [id], onDelete: SetNull)
+  documentId         String? // the drawing/document this question is about
+  document           ProjectDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  photos             Json?
+  costImpact         ImpactStatus     @default(UNKNOWN)
+  scheduleImpact     ImpactStatus     @default(UNKNOWN)
   scheduleImpactDays Int?
-  impactNote        String?
-  raisedById        String
-  raisedBy          User         @relation("RfiRaiser", fields: [raisedById], references: [id])
-  createdAt         DateTime     @default(now())
-  responseText      String?
-  responsePhotos    Json?
-  respondedById     String?
-  respondedByName   String?
-  respondedAt       DateTime?
-  closedAt          DateTime?
+  impactNote         String?
+  raisedById         String
+  raisedBy           User             @relation("RfiRaiser", fields: [raisedById], references: [id])
+  createdAt          DateTime         @default(now())
+  responseText       String?
+  responsePhotos     Json?
+  respondedById      String?
+  respondedByName    String?
+  respondedAt        DateTime?
+  closedAt           DateTime?
 
   @@unique([projectId, number])
   @@index([projectId, status])
 }
 
 model Finding {
-  id                 String          @id @default(cuid())
-  projectId          String
-  project            Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  number             Int // project-scoped: QS-001...
-  clientUuid         String?         @unique // offline idempotency
-  type               FindingType
-  severity           FindingSeverity
-  title              String
-  description        String
-  location           String?
-  workItem           String?
-  ownerId            String? // who has to fix it
-  owner              User?           @relation("FindingOwner", fields: [ownerId], references: [id])
-  dueDate            DateTime?       @db.Date
-  status             FindingStatus   @default(OPEN)
-  restricted         Boolean         @default(false) // incidents: visible to Owner, PM, raiser and owner only
-  photos             Json?
-  raisedById         String
-  raisedBy           User            @relation("FindingRaiser", fields: [raisedById], references: [id])
-  createdAt          DateTime        @default(now())
+  id                   String          @id @default(cuid())
+  projectId            String
+  project              Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  number               Int // project-scoped: QS-001...
+  clientUuid           String?         @unique // offline idempotency
+  type                 FindingType
+  severity             FindingSeverity
+  title                String
+  description          String
+  location             String?
+  workItem             String?
+  ownerId              String? // who has to fix it
+  owner                User?           @relation("FindingOwner", fields: [ownerId], references: [id])
+  dueDate              DateTime?       @db.Date
+  status               FindingStatus   @default(OPEN)
+  restricted           Boolean         @default(false) // incidents: visible to Owner, PM, raiser and owner only
+  photos               Json?
+  raisedById           String
+  raisedBy             User            @relation("FindingRaiser", fields: [raisedById], references: [id])
+  createdAt            DateTime        @default(now())
   // closure: evidence from the fixer, then a separate reviewer closes it
-  closureNote        String?
-  closurePhotos      Json?
+  closureNote          String?
+  closurePhotos        Json?
   closureSubmittedById String?
-  closureSubmittedAt DateTime?
-  reviewNote         String? // why it was sent back
-  closedById         String?
-  closedByName       String?
-  closedAt           DateTime?
+  closureSubmittedAt   DateTime?
+  reviewNote           String? // why it was sent back
+  closedById           String?
+  closedByName         String?
+  closedAt             DateTime?
 
   @@unique([projectId, number])
   @@index([projectId, status])
@@ -1151,77 +1153,77 @@ model DocumentRevision {
 }
 
 model WorkRequest {
-  id              String            @id @default(cuid())
-  projectId       String
-  project         Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  number          Int // project-scoped: AW-001, AW-002...
-  title           String
-  description     String
-  photos          Json?
-  requestedById   String // the client user, or the staff member who recorded the instruction
-  requestedBy     User              @relation("WorkRequester", fields: [requestedById], references: [id])
-  kind            WorkRequestKind   @default(ADDITION)
-  source          WorkRequestSource @default(PORTAL)
+  id               String            @id @default(cuid())
+  projectId        String
+  project          Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  number           Int // project-scoped: AW-001, AW-002...
+  title            String
+  description      String
+  photos           Json?
+  requestedById    String // the client user, or the staff member who recorded the instruction
+  requestedBy      User              @relation("WorkRequester", fields: [requestedById], references: [id])
+  kind             WorkRequestKind   @default(ADDITION)
+  source           WorkRequestSource @default(PORTAL)
   instructedByName String? // who at the client gave the instruction (when staff recorded it)
-  instructedOn    DateTime?         @db.Date // the day it was given
-  clientUuid      String?           @unique // offline idempotency for instructions recorded on site
-  status          WorkRequestStatus @default(REQUESTED)
-  createdAt       DateTime          @default(now())
+  instructedOn     DateTime?         @db.Date // the day it was given
+  clientUuid       String?           @unique // offline idempotency for instructions recorded on site
+  status           WorkRequestStatus @default(REQUESTED)
+  createdAt        DateTime          @default(now())
   // Staff assessment — the estimate and note are internal until a change order is sent.
-  estimatedCost   Decimal?          @db.Decimal(14, 2)
-  estimatedDays   Int?
-  internalNote    String?
-  declineReason   String? // shown to the client
-  reviewedById    String?
-  reviewedByName  String?
-  reviewedAt      DateTime?
-  changeOrderId   String?           @unique
-  changeOrder     ChangeOrder?      @relation(fields: [changeOrderId], references: [id], onDelete: SetNull)
-  withdrawnAt     DateTime?
+  estimatedCost    Decimal?          @db.Decimal(14, 2)
+  estimatedDays    Int?
+  internalNote     String?
+  declineReason    String? // shown to the client
+  reviewedById     String?
+  reviewedByName   String?
+  reviewedAt       DateTime?
+  changeOrderId    String?           @unique
+  changeOrder      ChangeOrder?      @relation(fields: [changeOrderId], references: [id], onDelete: SetNull)
+  withdrawnAt      DateTime?
 
   @@unique([projectId, number])
   @@index([projectId, status])
 }
 
 model PayrollRun {
-  id          String        @id @default(cuid())
+  id                    String                 @id @default(cuid())
   // Exactly one of the two: project payroll (site crew per project) or a
   // department run (office staff / drivers, who have no project).
-  projectId   String?
-  project     Project?      @relation(fields: [projectId], references: [id])
-  department  Department?
-  periodStart DateTime
-  periodEnd   DateTime
-  entries     Json // [{ userId, hours, ot, gross, deductions, net, slipRef }]
-  status      PayrollStatus @default(DRAFT)
-  createdAt   DateTime      @default(now())
-  approvedAt     DateTime? // when the Owner approved it — printed on payslips as the approval
-  approvedByName String?
+  projectId             String?
+  project               Project?               @relation(fields: [projectId], references: [id])
+  department            Department?
+  periodStart           DateTime
+  periodEnd             DateTime
+  entries               Json // [{ userId, hours, ot, gross, deductions, net, slipRef }]
+  status                PayrollStatus          @default(DRAFT)
+  createdAt             DateTime               @default(now())
+  approvedAt            DateTime? // when the Owner approved it — printed on payslips as the approval
+  approvedByName        String?
   cashAdvanceDeductions CashAdvanceDeduction[]
 }
 
 model SiteInstruction {
-  id                String              @id @default(cuid())
-  taskId            String?             @unique // e.g. OOT-2026-0001, DOT-2026-0001, or {ProjectCode}-2026-0001 — assigned once at creation, never changes
+  id                String               @id @default(cuid())
+  taskId            String?              @unique // e.g. OOT-2026-0001, DOT-2026-0001, or {ProjectCode}-2026-0001 — assigned once at creation, never changes
   title             String? // short task title; nullable so pre-existing rows (created before this field) stay valid
   projectId         String? // nullable: not every instruction needs an active project
-  project           Project?            @relation(fields: [projectId], references: [id])
+  project           Project?             @relation(fields: [projectId], references: [id])
   category          InstructionCategory? // set when projectId is blank — office/site/deliveries/etc.
   postedById        String
-  postedBy          User                @relation("InstructionPostedBy", fields: [postedById], references: [id])
+  postedBy          User                 @relation("InstructionPostedBy", fields: [postedById], references: [id])
   assignedToId      String? // legacy single-assignee column — superseded by assignees below, kept for old rows, no longer written
-  assignedTo        User?               @relation("InstructionAssignedTo", fields: [assignedToId], references: [id])
-  assignees         User[]              @relation("InstructionAssignees") // empty = broadcast to the whole site team
+  assignedTo        User?                @relation("InstructionAssignedTo", fields: [assignedToId], references: [id])
+  assignees         User[]               @relation("InstructionAssignees") // empty = broadcast to the whole site team
   text              String // the task's purpose/description
   photoUrl          String?
-  status            InstructionStatus   @default(NOT_STARTED)
-  priority          InstructionPriority @default(NORMAL)
+  status            InstructionStatus    @default(NOT_STARTED)
+  priority          InstructionPriority  @default(NORMAL)
   dueDate           DateTime? // target completion date the boss wants
   remarks           String? // assignee's latest progress update
   completedAt       DateTime? // actual completion date
   supervisorRemarks String?
-  approval          InstructionApproval @default(PENDING)
-  createdAt         DateTime            @default(now())
+  approval          InstructionApproval  @default(PENDING)
+  createdAt         DateTime             @default(now())
 
   seenBy InstructionSeen[]
   rfis   Rfi[]
@@ -1505,9 +1507,35 @@ model AppNotification {
 
 // A person's own settings: categories they have muted and optional quiet hours (Manila time) with no phone alerts.
 model NotificationPref {
-  userId     String  @id
-  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String   @id
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   muted      String[] @default([])
   quietStart Int? // hour 0-23
   quietEnd   Int? // hour 0-23; may be earlier than start (e.g. 21 to 6)
+}
+
+/// Per-person phone/app preferences: which tabs sit on the bottom bar of the phone view (empty = the default for their role)
+/// and the language of the app (en or fil).
+model UserPref {
+  userId     String   @id
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mobileTabs String[] @default([])
+  language   String   @default("en")
+  updatedAt  DateTime @updatedAt
+}
+
+/// A fingerprint / Face ID sign-in (WebAuthn passkey) a person set up on a phone or computer. Only the public half is kept.
+model Passkey {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId String    @unique
+  publicKey    String // base64url COSE public key
+  counter      Int       @default(0)
+  transports   String[]  @default([])
+  label        String
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+
+  @@index([userId])
 }
