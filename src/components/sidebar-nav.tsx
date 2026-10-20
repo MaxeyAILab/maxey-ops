@@ -57,33 +57,3 @@ export function SidebarNav({ items }: { items: SidebarItem[] }) {
     </>
   );
 }
-
-/** The same tabs in the phone top bar, current one highlighted. */
-export function MobileNav({ items, showCashExpense }: { items: SidebarItem[]; showCashExpense: boolean }) {
-  const path = usePathname() ?? "";
-  const current = activeHref(path, items);
-  const cashOn = path.startsWith("/cash-expense");
-  const cls = (on: boolean, badge = 0) =>
-    `flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 font-medium ${
-      on ? ACTIVE : badge > 0 ? "bg-emerald-50 text-emerald-700" : "text-ink-900 hover:bg-ink-100"
-    }`;
-  return (
-    <>
-      {items.map((n) => (
-        <Link key={n.href} href={n.href} aria-current={n.href === current ? "page" : undefined} className={cls(n.href === current, n.badge)}>
-          {n.label}
-          {n.badge > 0 && (
-            <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-bold text-white">
-              {n.badge}
-            </span>
-          )}
-        </Link>
-      ))}
-      {showCashExpense && (
-        <Link href="/cash-expense/petty-cash" aria-current={cashOn ? "page" : undefined} className={cls(cashOn)}>
-          Cash Expense
-        </Link>
-      )}
-    </>
-  );
-}
