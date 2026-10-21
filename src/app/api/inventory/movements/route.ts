@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
+import { canLogInventoryMovement } from "@/lib/access";
 
 const MOVEMENT_TYPES = [
   "SITE_TO_WAREHOUSE",
@@ -49,8 +50,8 @@ const RULES: Record<
  * the movement record.
  */
 export const POST = handleApi(async (req: NextRequest) => {
-  // Drivers no longer log inventory (owner's rule; trip logs come in Phase 3)
-  const user = await requireUser(["FOREMAN", "PM", "OWNER", "PURCHASING"]);
+  const user = await requireUser();
+  if (!canLogInventoryMovement(user)) throw new ApiError(403, "Not authorized for this action");
   const body = createSchema.parse(await req.json());
 
   const dup = await prisma.inventoryMovement.findUnique({

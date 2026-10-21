@@ -1,4 +1,5 @@
 import type { Department, Role } from "@prisma/client";
+import { isOfficeStaff } from "@/lib/cash-expense";
 
 /**
  * Tabs an Owner can grant to a staff account via the sign-in checklist
@@ -149,4 +150,39 @@ export function canAccess(
  * verify too. Deliberately separate from delete, which stays Owner-only. */
 export function canVerifyDelivery(role: Role, department: Department | null): boolean {
   return ["FOREMAN", "PM", "OWNER", "DRIVER"].includes(role) || department === "ENGINEER" || department === "DRIVER";
+}
+
+/** Site roles that are a job title rather than an account type: a timekeeper, a leadman (any spelling: Lead Man, Lead-man…). */
+const SITE_LOGGER_POSITION = /time[\s-]*keeper|lead[\s-]*(man|men)\b/i;
+export const isTimekeeperOrLeadman = (position: string | null | undefined): boolean => !!position && SITE_LOGGER_POSITION.test(position);
+
+interface InventoryPerson {
+  role: Role;
+  department: Department | null;
+  position?: string | null;
+  customMenus?: string[];
+  useCustomMenus?: boolean;
+}
+
+const hasInventoryTab = (u: InventoryPerson) => canAccess(u.role, u.department, "/inventory", u.customMenus ?? [], u.useCustomMenus ?? false);
+
+/**
+ * Who can add a warehouse stock item or a tool/equipment unit (Inventory tab): the Owner, PM and Purchasing by role, plus office
+ * staff (Office, Architect and Engineer departments — the same "office staff" as Cash Expense) who have the Inventory tab
+ * (2026-10-21).
+ */
+export function canAddInventoryCatalog(u: InventoryPerson): boolean {
+  if (["OWNER", "PM", "PURCHASING"].includes(u.role)) return true;
+  return hasInventoryTab(u) && isOfficeStaff(u);
+}
+
+/**
+ * Who can log a stock movement or check a tool out/in: Foreman, PM, Owner and Purchasing by role, plus — when they have the
+ * Inventory tab — office staff, drivers (the Driver account type or department) and timekeepers and leadmen (by position)
+ * (2026-10-21; drivers were left out until then).
+ */
+export function canLogInventoryMovement(u: InventoryPerson): boolean {
+  if (["FOREMAN", "PM", "OWNER", "PURCHASING"].includes(u.role)) return true;
+  if (!hasInventoryTab(u)) return false;
+  return u.role === "DRIVER" || u.department === "DRIVER" || isOfficeStaff(u) || isTimekeeperOrLeadman(u.position);
 }

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
-import { handleApi, requireUser } from "@/lib/rbac";
+import { ApiError, handleApi, requireUser } from "@/lib/rbac";
+import { canAddInventoryCatalog } from "@/lib/access";
 
 const createSchema = z.object({
   name: z.string().min(1).max(200),
@@ -16,7 +17,8 @@ const createSchema = z.object({
  * warehouse, so it can be checked out to a project and tracked individually.
  */
 export const POST = handleApi(async (req: NextRequest) => {
-  const user = await requireUser(["OWNER", "PM", "PURCHASING"]);
+  const user = await requireUser();
+  if (!canAddInventoryCatalog(user)) throw new ApiError(403, "Not authorized for this action");
   const body = createSchema.parse(await req.json());
 
   const tool = await prisma.toolAsset.create({

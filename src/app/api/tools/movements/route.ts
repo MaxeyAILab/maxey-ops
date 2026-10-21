@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { savePhoto } from "@/lib/storage";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
+import { canLogInventoryMovement } from "@/lib/access";
 import type { ToolStatus } from "@prisma/client";
 
 const TOOL_MOVEMENT_TYPES = [
@@ -33,7 +34,8 @@ const createSchema = z.object({
  * stale form.
  */
 export const POST = handleApi(async (req: NextRequest) => {
-  const user = await requireUser(["FOREMAN", "PM", "OWNER", "PURCHASING"]);
+  const user = await requireUser();
+  if (!canLogInventoryMovement(user)) throw new ApiError(403, "Not authorized for this action");
   const body = createSchema.parse(await req.json());
 
   const dup = await prisma.toolMovement.findUnique({ where: { clientUuid: body.clientUuid } });

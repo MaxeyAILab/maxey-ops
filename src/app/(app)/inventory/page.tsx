@@ -6,15 +6,14 @@ import { Badge, Card, CardBody, CardHeader, Table, Td, Th } from "@/components/u
 import { AddItemForm, MovementForm, ProjectMaterialQuickActions } from "@/components/inventory-forms";
 import { AddToolForm, ToolActions } from "@/components/tool-forms";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
-import { canAccess } from "@/lib/access";
+import { canAccess, canAddInventoryCatalog, canLogInventoryMovement } from "@/lib/access";
 
 export const metadata = { title: "Inventory" };
 export const dynamic = "force-dynamic";
 
 export default async function InventoryPage() {
   const user = await getSessionUser();
-  // Drivers no longer have inventory access by default (owner's rule) —
-  // unless explicitly granted via that account's tab checklist.
+  // Drivers don't have the tab by default (owner's rule) unless it is ticked on their account; with it they can log movements.
   if (!user || !canAccess(user.role, user.department, "/inventory", user.customMenus, user.useCustomMenus)) {
     redirect("/attendance");
   }
@@ -59,8 +58,8 @@ export default async function InventoryPage() {
     )
   );
 
-  const canAddCatalog = ["PURCHASING", "OWNER", "PM"].includes(user.role);
-  const canMove = ["FOREMAN", "PM", "OWNER", "PURCHASING"].includes(user.role);
+  const canAddCatalog = canAddInventoryCatalog(user);
+  const canMove = canLogInventoryMovement(user);
   const projectOptions = projects.map((p) => ({ id: p.id, name: p.name }));
 
   return (

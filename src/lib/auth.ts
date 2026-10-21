@@ -15,6 +15,8 @@ export interface SessionUser {
   email: string;
   role: Role;
   department: Department | null;
+  /** the trade/position text the Owner entered (Timekeeper, Leadman, Driver…) */
+  position: string | null;
   clientId: string | null;
   mustChangePassword: boolean;
   useCustomMenus: boolean;
@@ -148,6 +150,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       mustChangePassword: true,
       role: true,
       department: true,
+      position: true,
       clientId: true,
       name: true,
       useCustomMenus: true,
@@ -168,6 +171,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     name: dbUser.name,
     role: dbUser.role,
     department: dbUser.department,
+    position: dbUser.position,
     clientId: dbUser.clientId,
     mustChangePassword: dbUser.mustChangePassword,
     useCustomMenus: dbUser.useCustomMenus,
