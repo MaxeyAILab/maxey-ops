@@ -5,7 +5,7 @@ import { audit } from "@/lib/audit";
 import { savePhotos } from "@/lib/storage";
 import { php } from "@/lib/format";
 import { ApiError, handleApi } from "@/lib/rbac";
-import { canApproveCash, canApprovePettyCash, canReleasePettyCash, formatPettyCashNo, fundBalance, isCashCustodian, itemsTotal, seesAllPettyCash } from "@/lib/cash-expense";
+import { MAX_LIQUIDATION_RECEIPTS, canApproveCash, canApprovePettyCash, canAttachReceipts, canReleasePettyCash, formatPettyCashNo, fundBalance, isCashCustodian, itemsTotal, receiptCount, seesAllPettyCash } from "@/lib/cash-expense";
 import { requireCashExpenseUser } from "@/lib/cash-expense-db";
 
 const itemSchema = z.object({ description: z.string().trim().min(1).max(200), amount: z.coerce.number().min(0).max(1_000_000) });
@@ -24,6 +24,8 @@ const patchSchema = z.discriminatedUnion("action", [
     // A custodian liquidating with the receipts in hand can verify in the same step.
     verify: z.boolean().optional(),
   }),
+  // Receipts forgotten at the time can be added afterwards — while it waits for verification and after it is posted.
+  z.object({ action: z.literal("add_receipts"), receipts: z.array(z.string()).min(1).max(6) }),
   z.object({ action: z.literal("verify") }),
   z.object({ action: z.literal("send_back"), reason: z.string().trim().min(3).max(300) }),
 ]);
@@ -126,8 +128,23 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
         liquidationSubmittedAt: now,
         ...(body.verify ? { liquidatedByName: user.name, liquidatedAt: now } : {}),
       };
-      action = body.verify ? "PETTY_CASH_LIQUIDATED" : "PETTY_CASH_LIQUIDATION_SUBMITTED";
-      diff = { ...diff, released: Number(r.amount), spent, change: Math.round((Number(r.amount) - spent) * 100) / 100 };
+      // Turned in with no receipt: still accepted (it can be attached later), but flagged to the Owner and Accounting.
+      const noReceipts = receipts.length === 0;
+      action = body.verify ? "PETTY_CASH_LIQUIDATED" : noReceipts ? "PETTY_CASH_LIQUIDATION_NO_RECEIPT" : "PETTY_CASH_LIQUIDATION_SUBMITTED";
+      diff = { ...diff, released: Number(r.amount), spent, change: Math.round((Number(r.amount) - spent) * 100) / 100, ...(noReceipts ? { noReceipts: true } : {}) };
+      break;
+    }
+    case "add_receipts": {
+      expect("FOR_LIQUIDATION", "LIQUIDATED");
+      if (!canAttachReceipts(user, r)) throw new ApiError(403, "Only the requester, whoever filed it, the Owner or Accounting can attach receipts");
+      const have = receiptCount(r);
+      if (have + body.receipts.length > MAX_LIQUIDATION_RECEIPTS) throw new ApiError(400, `${no} can hold ${MAX_LIQUIDATION_RECEIPTS} receipt photos — it already has ${have}`);
+      const added = await savePhotos(body.receipts);
+      if (added.length === 0) throw new ApiError(400, "Those pictures couldn't be read — try again");
+      // Only receipts change: the amounts, the status and any posted expense stay exactly as they were.
+      data = { liquidationReceipts: [...((r.liquidationReceipts as string[] | null) ?? []), ...added] };
+      action = "PETTY_CASH_RECEIPT_ADDED";
+      diff = { ...diff, added: added.length, total: have + added.length, status: r.status, hadNone: have === 0 };
       break;
     }
     case "verify":

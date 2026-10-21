@@ -12,6 +12,7 @@ import {
   formatPettyCashNo,
   fundBalance,
   isCashCustodian,
+  missingReceipt,
   NO_PROJECT,
   NO_PROJECT_LABEL,
   PETTY_CASH_CATEGORY_LABEL,
@@ -20,7 +21,7 @@ import {
   unliquidated,
 } from "@/lib/cash-expense";
 import { CashExpenseHeader, CashIcons, CashStat, CashStatus, Panel } from "@/components/cash-expense-header";
-import { ActivityFilters, FundForm, QuickRecordForm, RequestActions } from "@/components/cash-expense-actions";
+import { ActivityFilters, FundForm, NoReceiptFlag, QuickRecordForm, RequestActions } from "@/components/cash-expense-actions";
 
 export const metadata = { title: "Petty Cash" };
 export const dynamic = "force-dynamic";
@@ -182,6 +183,14 @@ export default async function PettyCashPage({ searchParams }: { searchParams: { 
                         {r.status === "RELEASED" && (
                           <div className="mt-1 text-xs text-ink-500">
                             Released by {r.releasedByName ?? "—"} · {r.receivedAt ? `received by ${r.requestedBy.name} ${TIME_FMT.format(r.receivedAt)}` : `waiting for ${r.requestedBy.name} to confirm receipt`}
+                          </div>
+                        )}
+                        {missingReceipt(r) && (
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <NoReceiptFlag />
+                            <a href="/cash-expense/report#missing-receipts" className="text-xs font-medium text-[#8a1a28] hover:underline dark:text-rose-300">
+                              Attach it on the Petty Cash Report →
+                            </a>
                           </div>
                         )}
                         {r.status === "REJECTED" && r.rejectedReason && <div className="mt-1 text-xs text-red-700 dark:text-red-300">Rejected: {r.rejectedReason}</div>}

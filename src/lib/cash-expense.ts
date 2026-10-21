@@ -129,6 +129,27 @@ export function unliquidated(r: PettyCashLike): number {
   return r.status === "RELEASED" || r.status === "FOR_LIQUIDATION" ? num(r.amount) : 0;
 }
 
+/** The most receipt photos one liquidation can hold, counting those added later. */
+export const MAX_LIQUIDATION_RECEIPTS = 12;
+
+/** How many receipt photos a liquidation has. */
+export function receiptCount(r: { liquidationReceipts?: unknown }): number {
+  return Array.isArray(r.liquidationReceipts) ? r.liquidationReceipts.length : 0;
+}
+
+/**
+ * A liquidation that was turned in (waiting for verification, or already verified and posted) with no receipt attached.
+ * These are flagged for the Owner and Accounting until somebody attaches one.
+ */
+export function missingReceipt(r: { status: string; liquidationReceipts?: unknown }): boolean {
+  return (r.status === "FOR_LIQUIDATION" || r.status === "LIQUIDATED") && receiptCount(r) === 0;
+}
+
+/** Who may add receipts to a liquidation after it was submitted: the person it is for, whoever typed it in, and the cash custodians. */
+export function canAttachReceipts(u: { id: string; role: string; canManageCash?: boolean | null }, r: { requestedById: string; createdById: string }): boolean {
+  return r.requestedById === u.id || r.createdById === u.id || isCashCustodian(u);
+}
+
 /** Cash in the fund now: replenishments and corrections, less cash released, plus change returned at liquidation. */
 export function fundBalance(fundEntries: { amount: Money }[], requests: PettyCashLike[]): number {
   const funded = fundEntries.reduce((s, e) => s + num(e.amount), 0);

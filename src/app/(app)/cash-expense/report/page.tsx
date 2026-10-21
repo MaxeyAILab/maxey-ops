@@ -15,9 +15,11 @@ import {
   PETTY_CASH_CATEGORY_LABEL,
   postedExpense,
   seesAllPettyCash,
+  canAttachReceipts,
+  missingReceipt,
 } from "@/lib/cash-expense";
 import { CashExpenseHeader, CashIcons, CashStat, CashStatus, Panel } from "@/components/cash-expense-header";
-import { LiquidationForm, RequestActions, VerifyActions } from "@/components/cash-expense-actions";
+import { AddReceipts, LiquidationForm, NoReceiptFlag, RequestActions, VerifyActions } from "@/components/cash-expense-actions";
 import { PrintButton } from "@/components/print-button";
 
 export const metadata = { title: "Petty Cash Report" };
@@ -61,7 +63,7 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
   const mine: Prisma.PettyCashRequestWhereInput = seesAllPettyCash(user) ? {} : { OR: [{ requestedById: user.id }, { createdById: user.id }] };
   const include = { project: { select: { name: true } }, requestedBy: { select: { name: true } } } as const;
 
-  const [open, posted, projects] = await Promise.all([
+  const [open, posted, projects, turnedIn] = await Promise.all([
     prisma.pettyCashRequest.findMany({
       where: { AND: [mine, { status: { in: ["RELEASED", "FOR_LIQUIDATION"] } }] },
       orderBy: { releasedAt: "asc" },
@@ -79,7 +81,15 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
       include,
     }),
     prisma.project.findMany({ where: { pettyCash: { some: {} } }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    // every liquidation that was turned in (waiting or already posted), whatever the date, so none with a missing receipt is hidden by the date filter
+    prisma.pettyCashRequest.findMany({
+      where: { AND: [mine, { status: { in: ["FOR_LIQUIDATION", "LIQUIDATED"] } }] },
+      orderBy: { liquidationSubmittedAt: "desc" },
+      include,
+      take: 300,
+    }),
   ]);
+  const missing = turnedIn.filter(missingReceipt);
 
   const toLiquidate = open.filter((r) => r.status === "RELEASED");
   // Only the person the cash went to reports what it was spent on; everyone else just sees who still owes a report.
@@ -116,6 +126,34 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
         <CashStat icon={CashIcons.receipt} tone="blue" label="Posted Expense" value={php(totalSpent)} sub={`${fmtDate(from)} – ${fmtDate(to)}`} />
         <CashStat icon={CashIcons.cash} tone="green" label="Change Returned" value={php(totalReturned)} sub="Back in the petty cash fund" />
       </div>
+
+      {missing.length > 0 && (
+        <div id="missing-receipts" className="no-print scroll-mt-6">
+          <Panel title={`⚠ Missing receipts (${missing.length})`}>
+            <p className="mb-3 text-sm text-amber-900 dark:text-amber-200">
+              {custodian
+                ? "These expense reports were turned in without a receipt. Ask the requester for it, or attach it here yourself."
+                : "These expense reports of yours have no receipt yet. Attach the receipt photo so Accounting can verify them."}
+            </p>
+            <div className="space-y-2">
+              {missing.map((r) => (
+                <div key={r.id} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50/60 px-4 py-3 dark:border-amber-800 dark:bg-amber-950/20">
+                  <div className="min-w-0">
+                    <div className="font-medium text-ink-900">
+                      {formatPettyCashNo(r.number)} · {r.purpose}
+                    </div>
+                    <div className="text-xs text-ink-600">
+                      {r.project?.name ?? NO_PROJECT_LABEL} · {r.requestedBy.name} · spent {php(r.spentAmount)} · turned in {fmtDateTime(r.liquidationSubmittedAt)} ·{" "}
+                      {r.status === "LIQUIDATED" ? "already verified and posted" : "waiting for verification"}
+                    </div>
+                  </div>
+                  {canAttachReceipts(user, r) ? <AddReceipts id={r.id} hasNone /> : <span className="text-xs text-ink-500">Only {r.requestedBy.name} or Accounting can attach it</span>}
+                </div>
+              ))}
+            </div>
+          </Panel>
+        </div>
+      )}
 
       {myToLiquidate.length > 0 && (
         <Panel title="Report your expenses" className="no-print">
@@ -193,7 +231,10 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
                         {r.project?.name ?? NO_PROJECT_LABEL} · {r.requestedBy.name} · submitted {fmtDateTime(r.liquidationSubmittedAt)}
                       </div>
                     </div>
-                    <CashStatus status={r.status} label="For liquidation" />
+                    <div className="flex flex-col items-end gap-1">
+                      <CashStatus status={r.status} label="For liquidation" />
+                      {missingReceipt(r) && <NoReceiptFlag />}
+                    </div>
                   </div>
                   <ul className="mt-3 space-y-1 text-sm">
                     {items.map((i, n) => (
@@ -213,8 +254,13 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
                     <Receipts urls={r.liquidationReceipts} />
                   </div>
                   {r.liquidationNote && <p className="mt-1 text-xs text-ink-500">Note: {r.liquidationNote}</p>}
+                  {canAttachReceipts(user, r) && (
+                    <div className="mt-2">
+                      <AddReceipts id={r.id} hasNone={missingReceipt(r)} />
+                    </div>
+                  )}
                   <div className="mt-3 flex flex-wrap items-start justify-between gap-2">
-                    {custodian ? <VerifyActions id={r.id} /> : <p className="text-xs text-ink-500">Waiting for Accounting or the Owner to verify.</p>}
+                    {custodian ? <VerifyActions id={r.id} noReceipt={missingReceipt(r)} /> : <p className="text-xs text-ink-500">Waiting for Accounting or the Owner to verify.</p>}
                     <RequestActions id={r.id} status={r.status} canApprove={false} canRelease={false} canDelete={canDelete} custodian={custodian} own={false} isRequester={false} received={!!r.receivedAt} />
                   </div>
                 </div>
@@ -288,6 +334,16 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
                         <div className="no-print">
                           <Receipts urls={r.liquidationReceipts} />
                         </div>
+                        {missingReceipt(r) && (
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <NoReceiptFlag />
+                            {canAttachReceipts(user, r) && (
+                              <span className="no-print">
+                                <AddReceipts id={r.id} hasNone />
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-ink-700">{PETTY_CASH_CATEGORY_LABEL[r.category]}</td>
                       <td className="px-3 py-2 text-ink-700">{r.requestedBy.name}</td>

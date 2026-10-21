@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { compressImage } from "@/lib/photos";
+import { toast } from "@/components/feedback-provider";
 import { NO_PROJECT, PETTY_CASH_CATEGORIES, PETTY_CASH_STATUS_LABEL } from "@/lib/cash-expense";
 
 const fieldCls =
@@ -483,7 +484,10 @@ export function LiquidationForm({ id, released, custodian }: { id: string; relea
     });
     setBusy(false);
     if (err) setError(err);
-    else router.refresh();
+    else {
+      if (receipts.length === 0) toast("Submitted WITHOUT a receipt — Accounting and the Owner were alerted. Please attach it as soon as you can.", "error");
+      router.refresh();
+    }
   }
 
   return (
@@ -524,6 +528,11 @@ export function LiquidationForm({ id, released, custodian }: { id: string; relea
         <ReceiptInput value={receipts} onChange={setReceipts} max={6} label="Attach receipts" />
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional)" className={fieldCls} />
       </div>
+      {receipts.length === 0 && (
+        <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
+          ⚠ No receipt attached. You can still submit, but Accounting and the Owner will be alerted that this report has no receipt. You can attach it later from the Petty Cash Report.
+        </p>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-ink-100 px-3 py-2 text-sm">
         <span>
           Released <b className="tabular-nums">{peso(released)}</b> · Spent <b className="tabular-nums">{peso(spent)}</b>
@@ -547,8 +556,70 @@ export function LiquidationForm({ id, released, custodian }: { id: string; relea
   );
 }
 
+/** The warning shown wherever a turned-in liquidation has no receipt. */
+export function NoReceiptFlag({ className = "" }: { className?: string }) {
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900 dark:bg-amber-900/40 dark:text-amber-200 ${className}`}>
+      ⚠ No receipt attached
+    </span>
+  );
+}
+
+/**
+ * Add receipt photos to a liquidation that was already turned in (or already verified). Only the receipts are added — the
+ * amounts and the posted expense do not change.
+ */
+export function AddReceipts({ id, hasNone = false }: { id: string; hasNone?: boolean }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function upload() {
+    setBusy(true);
+    setError("");
+    const err = await send(`/api/petty-cash/${id}`, "PATCH", { action: "add_receipts", receipts: photos });
+    setBusy(false);
+    if (err) return setError(err);
+    setPhotos([]);
+    setOpen(false);
+    router.refresh();
+  }
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className={hasNone ? `${smallBtn} border-amber-400 text-amber-900 dark:text-amber-200` : smallBtn}>
+        📎 {hasNone ? "Attach the receipt" : "Add another receipt"}
+      </button>
+    );
+  }
+  return (
+    <div className="mt-1 w-full max-w-sm space-y-2 rounded-md border border-ink-200 p-3">
+      <ReceiptInput value={photos} onChange={setPhotos} max={6} label="Take / choose receipt photo" />
+      {error && <p className="text-xs text-red-700 dark:text-red-300">{error}</p>}
+      <div className="flex gap-2">
+        <button type="button" onClick={upload} disabled={busy || photos.length === 0} className={`${primaryBtn} min-h-[36px] px-3 text-xs`}>
+          {busy ? "Uploading…" : `Upload ${photos.length > 1 ? `${photos.length} receipts` : "receipt"}`}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            setPhotos([]);
+            setError("");
+          }}
+          className={smallBtn}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Owner/Accounting: verify a submitted liquidation (posts the expense) or send it back. */
-export function VerifyActions({ id }: { id: string }) {
+export function VerifyActions({ id, noReceipt = false }: { id: string; noReceipt?: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -563,7 +634,14 @@ export function VerifyActions({ id }: { id: string }) {
   return (
     <div>
       <div className="flex flex-wrap gap-1.5">
-        <button className={`${primaryBtn} min-h-[34px] px-3 text-xs`} disabled={busy} onClick={() => act({ action: "verify" })}>
+        <button
+          className={`${primaryBtn} min-h-[34px] px-3 text-xs`}
+          disabled={busy}
+          onClick={() => {
+            if (noReceipt && !window.confirm("No receipt is attached to this expense report. Verify it and post the expense anyway?\n\n(Cancel, then use Send back or ask for the receipt first.)")) return;
+            act({ action: "verify" });
+          }}
+        >
           Verify &amp; post expense
         </button>
         <button

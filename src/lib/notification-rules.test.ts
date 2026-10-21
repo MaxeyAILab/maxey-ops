@@ -163,6 +163,15 @@ describe("cash expense follows the approver / releaser / custodian switches", ()
     expect(pick("PETTY_CASH_LIQUIDATION_SUBMITTED")).toEqual(["acct", "arlene", "owner"]);
   });
 
+  it("a report turned in without a receipt is raised to the custodians with a warning, not the ordinary wording", () => {
+    expect(pick("PETTY_CASH_LIQUIDATION_NO_RECEIPT")).toEqual(["acct", "arlene", "owner"]);
+    expect(eventTitle(eventFor("PETTY_CASH_LIQUIDATION_NO_RECEIPT")!, ctx())).toMatch(/WITHOUT a receipt/);
+  });
+
+  it("a receipt added later tells the custodians", () => {
+    expect(pick("PETTY_CASH_RECEIPT_ADDED")).toEqual(["acct", "arlene", "owner"]);
+  });
+
   it("a rejected request reaches only its requester (and the Owner)", () => {
     expect(pick("PETTY_CASH_REJECTED", ctx({ explicit: ["foremanA"] }))).toEqual(["foremanA", "owner"]);
   });

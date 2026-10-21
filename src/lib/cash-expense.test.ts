@@ -2,13 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   advanceBalance,
   allocateDeduction,
+  canAttachReceipts,
   cashOut,
   formatCashAdvanceNo,
   formatPettyCashNo,
   fundBalance,
   liquidationReturn,
+  missingReceipt,
   plannedDeduction,
   postedExpense,
+  receiptCount,
   unliquidated,
 } from "@/lib/cash-expense";
 
@@ -137,5 +140,36 @@ describe("who handles petty cash", () => {
     expect(seesAllPettyCash({ role: "DRIVER", department: "OFFICE" })).toBe(false);
     // seeing everyone's records isn't managing them
     expect(isCashCustodian({ role: "OFFICE" })).toBe(false);
+  });
+});
+
+describe("receipts on a liquidation", () => {
+  it("counts the receipt photos", () => {
+    expect(receiptCount({ liquidationReceipts: ["a.jpg", "b.jpg"] })).toBe(2);
+    expect(receiptCount({ liquidationReceipts: [] })).toBe(0);
+    expect(receiptCount({ liquidationReceipts: null })).toBe(0);
+    expect(receiptCount({})).toBe(0);
+  });
+
+  it("flags a liquidation that was turned in with no receipt — waiting or already posted", () => {
+    expect(missingReceipt({ status: "FOR_LIQUIDATION", liquidationReceipts: null })).toBe(true);
+    expect(missingReceipt({ status: "LIQUIDATED", liquidationReceipts: [] })).toBe(true);
+  });
+
+  it("does not flag one with a receipt, or one that has not been turned in yet", () => {
+    expect(missingReceipt({ status: "FOR_LIQUIDATION", liquidationReceipts: ["a.jpg"] })).toBe(false);
+    expect(missingReceipt({ status: "LIQUIDATED", liquidationReceipts: ["a.jpg"] })).toBe(false);
+    for (const status of ["PENDING", "APPROVED", "RELEASED", "REJECTED", "CANCELLED"]) expect(missingReceipt({ status, liquidationReceipts: null }), status).toBe(false);
+  });
+
+  it("lets the requester, whoever filed it, and the cash custodians attach receipts — nobody else", () => {
+    const r = { requestedById: "req", createdById: "clerk" };
+    expect(canAttachReceipts({ id: "req", role: "OFFICE" }, r)).toBe(true);
+    expect(canAttachReceipts({ id: "clerk", role: "OFFICE" }, r)).toBe(true);
+    expect(canAttachReceipts({ id: "x", role: "OWNER" }, r)).toBe(true);
+    expect(canAttachReceipts({ id: "x", role: "ACCOUNTING" }, r)).toBe(true);
+    expect(canAttachReceipts({ id: "x", role: "OFFICE", canManageCash: true }, r)).toBe(true);
+    expect(canAttachReceipts({ id: "x", role: "OFFICE" }, r)).toBe(false);
+    expect(canAttachReceipts({ id: "x", role: "FOREMAN" }, r)).toBe(false);
   });
 });
