@@ -69,8 +69,8 @@ export function AddItemForm() {
 
 const MOVEMENT_TYPES = [
   { value: "WAREHOUSE_TO_SITE", label: "Warehouse → Site (issue to project)", from: false, to: true },
-  { value: "SITE_TO_WAREHOUSE", label: "Site → Warehouse (pullout of unused)", from: true, to: false },
-  { value: "SITE_TO_SITE", label: "Site → Site (direct transfer)", from: true, to: true },
+  { value: "SITE_TO_WAREHOUSE", label: "Site → Warehouse (return of unused — needs approval)", from: true, to: false },
+  { value: "SITE_TO_SITE", label: "Site → Site (direct transfer — needs approval)", from: true, to: true },
   { value: "CONSUMED_ON_SITE", label: "Used on site (consumed)", from: true, to: false },
   { value: "SUPPLIER_TO_SITE", label: "Supplier → Site (direct delivery)", from: false, to: true },
   { value: "SUPPLIER_TO_WAREHOUSE", label: "Supplier → Warehouse", from: false, to: false },
@@ -84,9 +84,12 @@ const MOVEMENT_TYPES = [
 export function MovementForm({
   items,
   projects,
+  instant = false,
 }: {
   items: ItemOption[];
   projects: ProjectOption[];
+  /** the Owner's returns and transfers are approved on the spot */
+  instant?: boolean;
 }) {
   const router = useRouter();
   const [type, setType] = useState<(typeof MOVEMENT_TYPES)[number]["value"]>("WAREHOUSE_TO_SITE");
@@ -123,6 +126,9 @@ export function MovementForm({
       setMsg("No signal — movement saved on this device and will sync automatically.");
     } else {
       (e.target as HTMLFormElement).reset?.();
+      if ((type === "SITE_TO_WAREHOUSE" || type === "SITE_TO_SITE") && !instant) {
+        setMsg("Request sent — nothing moves until office staff approve it. See “Requests waiting for approval” at the top.");
+      }
       router.refresh();
     }
   }
@@ -214,10 +220,13 @@ export function ProjectMaterialQuickActions({
   projectId,
   stocks,
   otherProjects,
+  instant = false,
 }: {
   projectId: string;
   stocks: OnSiteStockRow[];
   otherProjects: ProjectOption[];
+  /** the Owner's returns and transfers are approved on the spot */
+  instant?: boolean;
 }) {
   const router = useRouter();
   const [action, setAction] = useState<"usage" | "return" | "transfer">("usage");
@@ -253,6 +262,7 @@ export function ProjectMaterialQuickActions({
     if (result.queued) setMsg("Saved offline — will sync automatically.");
     else {
       (e.target as HTMLFormElement).reset?.();
+      if (action !== "usage" && !instant) setMsg("Request sent — nothing moves until office staff approve it.");
       router.refresh();
     }
   }
@@ -275,8 +285,8 @@ export function ProjectMaterialQuickActions({
         <Label>Action</Label>
         <Select value={action} onChange={(e) => setAction(e.target.value as typeof action)}>
           <option value="usage">Log usage</option>
-          <option value="return">Return to warehouse</option>
-          <option value="transfer">Transfer to project</option>
+          <option value="return">Return to warehouse (request)</option>
+          <option value="transfer">Transfer to project (request)</option>
         </Select>
       </div>
       <div>
@@ -302,7 +312,7 @@ export function ProjectMaterialQuickActions({
       )}
       <div className="sm:col-span-5 flex items-center gap-3">
         <Button type="submit" variant="secondary" disabled={busy}>
-          {busy ? "Saving…" : "Save"}
+          {busy ? "Saving…" : action === "usage" || instant ? "Save" : "Send"}
         </Button>
         {error && <p className="text-sm text-red-600">{error}</p>}
         {msg && <p className="text-sm text-amber-600">{msg}</p>}

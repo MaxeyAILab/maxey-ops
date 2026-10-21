@@ -5,6 +5,7 @@ import { audit } from "@/lib/audit";
 import { savePhoto } from "@/lib/storage";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { canLogInventoryMovement } from "@/lib/access";
+import { toolNeedsApproval } from "@/lib/inventory-requests";
 import type { ToolStatus } from "@prisma/client";
 
 const TOOL_MOVEMENT_TYPES = [
@@ -32,6 +33,10 @@ const createSchema = z.object({
  * 2026-07-07). The source project is derived from the tool's current
  * location, not trusted from the client, so the ledger can't be spoofed by a
  * stale form.
+ *
+ * A RETURN to the warehouse and a TRANSFER to another project are requests (status PENDING, 2026-10-21): the tool stays
+ * where it is until office staff approve (PATCH /[id]). The Owner's own requests are approved on the spot. Checkouts and the
+ * repair/lost/available flags apply at once. Every movement records who logged it.
  */
 export const POST = handleApi(async (req: NextRequest) => {
   const user = await requireUser();
@@ -43,6 +48,9 @@ export const POST = handleApi(async (req: NextRequest) => {
 
   const tool = await prisma.toolAsset.findUnique({ where: { id: body.toolId } });
   if (!tool) throw new ApiError(404, "Tool not found");
+
+  const waiting = await prisma.toolMovement.findFirst({ where: { toolId: tool.id, status: "PENDING" }, select: { id: true } });
+  if (waiting) throw new ApiError(400, `${tool.name} already has a request waiting for approval — wait until it is decided`);
 
   const toProjectId = body.toProjectId || null;
   const fromProjectId = tool.currentProjectId; // derived from actual state, not client input
@@ -95,6 +103,8 @@ export const POST = handleApi(async (req: NextRequest) => {
   }
 
   const photoUrl = body.photo ? await savePhoto(body.photo).catch(() => null) : null;
+  const isRequest = toolNeedsApproval(body.type) && user.role !== "OWNER";
+  const decided = !isRequest && toolNeedsApproval(body.type) ? { decidedById: user.id, decidedByName: user.name, decidedAt: new Date() } : {};
 
   const movement = await prisma.$transaction(async (db) => {
     const movement = await db.toolMovement.create({
@@ -110,26 +120,30 @@ export const POST = handleApi(async (req: NextRequest) => {
         photoUrl,
         actorId: user.id,
         createdAt: body.submittedAt,
+        status: isRequest ? "PENDING" : "APPLIED",
+        ...decided,
       },
     });
-    await db.toolAsset.update({
-      where: { id: tool.id },
-      data: {
-        status: nextStatus,
-        currentProjectId: nextProjectId,
-        condition: body.condition || undefined,
-      },
-    });
+    if (!isRequest) {
+      await db.toolAsset.update({
+        where: { id: tool.id },
+        data: {
+          status: nextStatus,
+          currentProjectId: nextProjectId,
+          condition: body.condition || undefined,
+        },
+      });
+    }
     return movement;
   });
 
   await audit({
-    entityType: "ToolAsset",
-    entityId: tool.id,
+    entityType: isRequest ? "ToolMovement" : "ToolAsset",
+    entityId: isRequest ? movement.id : tool.id,
     actorId: user.id,
     actorName: user.name,
-    action: `TOOL_${body.type}`,
-    diff: { tool: tool.name, condition: body.condition || null },
+    action: isRequest ? "TOOL_REQUEST_SUBMITTED" : `TOOL_${body.type}`,
+    diff: { tool: tool.name, type: body.type, condition: body.condition || null },
   });
 
   return NextResponse.json(movement, { status: 201 });

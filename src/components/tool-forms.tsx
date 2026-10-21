@@ -80,11 +80,14 @@ export function ToolActions({
   status,
   currentProjectId,
   projects,
+  pending,
 }: {
   toolId: string;
   status: "IN_WAREHOUSE" | "ON_SITE" | "UNDER_REPAIR" | "LOST";
   currentProjectId: string | null;
   projects: ProjectOption[];
+  /** set while a return/transfer request for this tool is waiting for approval: says who asked */
+  pending?: string;
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("idle");
@@ -93,6 +96,9 @@ export function ToolActions({
   const [photos, setPhotos] = useState<string[]>([]);
 
   const transferTargets = projects.filter((p) => p.id !== currentProjectId);
+
+  // While a request is waiting, the tool stays where it is and nothing else can be asked of it.
+  if (pending) return <span className="text-xs font-medium text-amber-700">⏳ {pending}</span>;
 
   async function act(type: string, body: Record<string, unknown> = {}) {
     setBusy(true);
@@ -132,7 +138,7 @@ export function ToolActions({
           ))}
         </Select>
         <button type="submit" disabled={busy} className="text-xs font-medium text-brand-600 hover:underline">
-          {busy ? "…" : "Confirm"}
+          {busy ? "…" : mode === "checkout" ? "Confirm" : "Send request"}
         </button>
         <button type="button" onClick={() => setMode("idle")} className="text-xs text-ink-400 hover:text-ink-600">
           Cancel
@@ -179,11 +185,11 @@ export function ToolActions({
       )}
       {status === "ON_SITE" && (
         <>
-          <button onClick={() => act("RETURN_TO_WAREHOUSE")} disabled={busy} className="text-xs font-medium text-emerald-600 hover:underline">
-            Return to warehouse
+          <button onClick={() => act("RETURN_TO_WAREHOUSE")} disabled={busy} title="Office staff approve it before the tool is back in the warehouse" className="text-xs font-medium text-emerald-600 hover:underline">
+            Return to warehouse (request)
           </button>
-          <button onClick={() => setMode("transfer")} className="text-xs font-medium text-brand-600 hover:underline">
-            Transfer
+          <button onClick={() => setMode("transfer")} title="Office staff approve it before the tool moves" className="text-xs font-medium text-brand-600 hover:underline">
+            Transfer (request)
           </button>
           <button onClick={() => setMode("repair")} className="text-xs text-amber-600 hover:underline">
             Mark under repair

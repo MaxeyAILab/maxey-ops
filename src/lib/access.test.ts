@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Department, Role } from "@prisma/client";
-import { canAddInventoryCatalog, canLogInventoryMovement, canVerifyDelivery, isTimekeeperOrLeadman } from "./access";
+import { canAddInventoryCatalog, canApproveInventoryRequest, canLogInventoryMovement, canVerifyDelivery, isTimekeeperOrLeadman } from "./access";
 
 describe("who can verify a delivery", () => {
   it("includes a driver whose account is Office staff in the Driver department", () => {
@@ -89,5 +89,23 @@ describe("logging stock and tool movements", () => {
     expect(canLogInventoryMovement(person("OFFICE", "SITE", "Mason"))).toBe(false);
     expect(canLogInventoryMovement(person("OFFICE", "SITE", null))).toBe(false);
     expect(canLogInventoryMovement(person("CLIENT", null))).toBe(false);
+  });
+});
+
+describe("approving return and transfer requests", () => {
+  it("is for the Owner, PM, Purchasing and office staff who have the Inventory tab", () => {
+    for (const role of ["OWNER", "PM", "PURCHASING"] as const) expect(canApproveInventoryRequest(person(role, "OFFICE", null, false)), role).toBe(true);
+    expect(canApproveInventoryRequest(person("OFFICE", "OFFICE"))).toBe(true);
+    expect(canApproveInventoryRequest(person("OFFICE", "ENGINEER"))).toBe(true);
+  });
+
+  it("is not for the people who make the requests", () => {
+    expect(canApproveInventoryRequest(person("OFFICE", "OFFICE", null, false))).toBe(false); // no Inventory tab
+    expect(canApproveInventoryRequest(person("FOREMAN", "SITE"))).toBe(false);
+    expect(canApproveInventoryRequest(person("DRIVER", "DRIVER"))).toBe(false);
+    expect(canApproveInventoryRequest(person("OFFICE", "DRIVER", "Driver"))).toBe(false);
+    expect(canApproveInventoryRequest(person("OFFICE", "SITE", "Timekeeper"))).toBe(false);
+    expect(canApproveInventoryRequest(person("OFFICE", "SITE", "Leadman"))).toBe(false);
+    expect(canApproveInventoryRequest(person("CLIENT", null))).toBe(false);
   });
 });

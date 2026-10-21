@@ -1,5 +1,5 @@
 import type { Role } from "@prisma/client";
-import { allowedMenus } from "@/lib/access";
+import { allowedMenus, canApproveInventoryRequest } from "@/lib/access";
 
 /**
  * Who gets told about what. Pure rules — no database — so they can be tested directly.
@@ -76,12 +76,14 @@ export function hasCategoryMenu(u: RecipientUser, category: NotificationCategory
   return allowedMenus(u.role, u.department as never, u.customMenus, u.useCustomMenus).includes(menu);
 }
 
-export type AudienceToken = "cashApprovers" | "cashReleasers" | "cashCustodians";
+export type AudienceToken = "cashApprovers" | "cashReleasers" | "cashCustodians" | "inventoryApprovers";
 
 const TOKEN_TEST: Record<AudienceToken, (u: RecipientUser) => boolean> = {
   cashApprovers: (u) => u.role === "OWNER" || u.canApprovePettyCash,
   cashReleasers: (u) => u.role === "OWNER" || u.canReleasePettyCash,
   cashCustodians: (u) => u.role === "OWNER" || u.role === "ACCOUNTING" || u.canManageCash,
+  // whoever may approve a return/transfer request on the Inventory tab
+  inventoryApprovers: (u) => canApproveInventoryRequest({ role: u.role, department: u.department as never, customMenus: u.customMenus, useCustomMenus: u.useCustomMenus }),
 };
 
 /** What a resolver learned about the record an event is about. */
@@ -145,6 +147,13 @@ export const EVENTS: Record<string, EventDef> = {
   // ----- inventory & tools (Owner always; others only if given the role below) -----
   WAREHOUSE_ITEM_CREATED: { category: "INVENTORY", roles: [], title: "New warehouse item added", body: bodyOf },
   TOOL_REGISTERED: { category: "INVENTORY", roles: [], title: "New tool registered", body: bodyOf },
+  // returns and transfers are requests that office staff approve
+  INVENTORY_REQUEST_SUBMITTED: { category: "INVENTORY", tokens: ["inventoryApprovers"], title: "Inventory request waiting for approval", body: bodyOf },
+  INVENTORY_REQUEST_APPROVED: { category: "INVENTORY", roles: [], title: "Inventory request approved", explicitTitle: "Your inventory request was approved", body: bodyOf },
+  INVENTORY_REQUEST_REJECTED: { category: "INVENTORY", roles: [], title: "Inventory request rejected", explicitTitle: "Your inventory request was rejected", body: bodyOf },
+  TOOL_REQUEST_SUBMITTED: { category: "INVENTORY", tokens: ["inventoryApprovers"], title: "Tool request waiting for approval", body: bodyOf },
+  TOOL_REQUEST_APPROVED: { category: "INVENTORY", roles: [], title: "Tool request approved", explicitTitle: "Your tool request was approved", body: bodyOf },
+  TOOL_REQUEST_REJECTED: { category: "INVENTORY", roles: [], title: "Tool request rejected", explicitTitle: "Your tool request was rejected", body: bodyOf },
 
   // ----- cash expense: petty cash and cash advances -----
   PETTY_CASH_REQUESTED: { category: "CASH", tokens: ["cashApprovers"], title: "Petty cash request awaiting approval", body: bodyOf },
@@ -269,7 +278,7 @@ export function selectRecipients(
 export function eligibleCategories(u: RecipientUser): NotificationCategory[] {
   if (u.role === "OWNER") return ALL_CATEGORIES;
   return ALL_CATEGORIES.filter((c) => {
-    if (c === "LEADS" || c === "SECURITY" || c === "INVENTORY") return false;
+    if (c === "LEADS" || c === "SECURITY") return false;
     if (c === "FINANCE") return u.role === "ACCOUNTING";
     if (c === "CASH" || c === "PAYROLL") return true; // everyone has their own cash requests and payslips
     return hasCategoryMenu(u, c);

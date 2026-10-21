@@ -177,6 +177,36 @@ describe("cash expense follows the approver / releaser / custodian switches", ()
   });
 });
 
+describe("inventory requests", () => {
+  const officeStaff = user("office", "OFFICE", { department: "OFFICE", useCustomMenus: true, customMenus: ["/inventory", "/attendance"] });
+  const officeNoTab = user("office2", "OFFICE", { department: "OFFICE", useCustomMenus: true, customMenus: ["/attendance"] });
+  const crew = user("crew", "OFFICE", { department: "SITE", useCustomMenus: true, customMenus: ["/inventory"] });
+  const staff = [owner, pm, arlene, accounting, foremanA, driver, officeStaff, officeNoTab, crew];
+  const pick = (action: string, c = ctx(), actor: string | null = null) => selectRecipients(eventFor(action)!, c, staff, new Set(), actor).map((r) => r.userId).sort();
+
+  it("a new request goes to the Owner, PM, Purchasing and office staff with the Inventory tab — not the foremen, drivers and site crew who make requests", () => {
+    expect(pick("INVENTORY_REQUEST_SUBMITTED")).toEqual(["acct", "arlene", "office", "owner", "pm"]); // Accounting is office staff too
+    expect(pick("TOOL_REQUEST_SUBMITTED")).toEqual(["acct", "arlene", "office", "owner", "pm"]);
+  });
+
+  it("the person who asked is not told about their own request", () => {
+    expect(pick("INVENTORY_REQUEST_SUBMITTED", ctx(), "office")).not.toContain("office");
+  });
+
+  it("the decision goes to whoever asked, in their own words", () => {
+    const c = ctx({ explicit: ["crew"] });
+    expect(pick("INVENTORY_REQUEST_APPROVED", c, "office")).toEqual(["crew", "owner"]);
+    expect(pick("TOOL_REQUEST_REJECTED", c, "office")).toEqual(["crew", "owner"]);
+    expect(eventExplicitTitle(eventFor("INVENTORY_REQUEST_APPROVED")!, c)).toBe("Your inventory request was approved");
+    expect(eventExplicitTitle(eventFor("TOOL_REQUEST_REJECTED")!, c)).toBe("Your tool request was rejected");
+  });
+
+  it("people with the Inventory tab can mute or unmute Inventory notifications", () => {
+    expect(eligibleCategories(officeStaff)).toContain("INVENTORY");
+    expect(eligibleCategories(officeNoTab)).not.toContain("INVENTORY");
+  });
+});
+
 describe("what each person's settings page lists", () => {
   it("the Owner sees every category", () => {
     expect(eligibleCategories(owner)).toEqual(ALL_CATEGORIES);
@@ -185,7 +215,7 @@ describe("what each person's settings page lists", () => {
   it("Arlene sees purchasing-side categories but not projects, leads, security or payments received", () => {
     const cats = eligibleCategories(arlene);
     expect(cats).toEqual(expect.arrayContaining(["REQUISITIONS", "PURCHASING", "DELIVERIES", "CASH", "PAYROLL", "INSTRUCTIONS", "ATTENDANCE"]));
-    for (const c of ["PROJECTS", "LEADS", "SECURITY", "FINANCE", "INVENTORY"]) expect(cats).not.toContain(c);
+    for (const c of ["PROJECTS", "LEADS", "SECURITY", "FINANCE"]) expect(cats).not.toContain(c);
   });
 
   it("Accounting sees payments received", () => {

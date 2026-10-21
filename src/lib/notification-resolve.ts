@@ -3,6 +3,7 @@ import { CATEGORY_LABELS, GA_LABEL } from "@/lib/requisitions";
 import { payslipPeriodLabel } from "@/lib/payslip";
 import type { PayrollEntry } from "@/lib/payroll";
 import type { EventCtx } from "@/lib/notification-rules";
+import { REQUEST_LABEL } from "@/lib/inventory-labels";
 
 /**
  * Looks up what an audit record is about: which project, a short human reference, where tapping the notification should go,
@@ -23,6 +24,8 @@ const fallbackUrl: Record<string, string> = {
   CashSnapshot: "/dashboard",
   WarehouseItem: "/inventory",
   Tool: "/inventory",
+  InventoryMovement: "/inventory",
+  ToolMovement: "/inventory",
 };
 
 const projectUrl = (projectId: string | null | undefined, section = "") => (projectId ? `/projects/${projectId}${section}` : "/projects");
@@ -102,6 +105,17 @@ export async function resolveContext(entityType: string, entityId: string, actio
       case "ProjectAssignment": {
         const a = await prisma.projectAssignment.findUnique({ where: { id: entityId }, select: { userId: true, projectId: true, project: { select: { name: true } } } });
         return a ? { url: projectUrl(a.projectId), projectId: a.projectId, projectName: a.project.name, label: a.project.name, explicit: ids(a.userId) } : null;
+      }
+      case "InventoryMovement": {
+        // a return/transfer request: the people it is about is whoever asked for it (told when it is decided)
+        const m = await prisma.inventoryMovement.findUnique({ where: { id: entityId }, select: { actorId: true, type: true, item: { select: { name: true } } } });
+        if (!m) return { url: "/inventory" };
+        return { url: "/inventory", label: `${m.item.name} · ${REQUEST_LABEL[m.type] ?? "Request"}`, explicit: ids(m.actorId) };
+      }
+      case "ToolMovement": {
+        const m = await prisma.toolMovement.findUnique({ where: { id: entityId }, select: { actorId: true, type: true, tool: { select: { name: true } } } });
+        if (!m) return { url: "/inventory" };
+        return { url: "/inventory", label: `${m.tool.name} · ${REQUEST_LABEL[m.type] ?? "Request"}`, explicit: ids(m.actorId) };
       }
       case "PettyCashRequest": {
         const r = await prisma.pettyCashRequest.findUnique({ where: { id: entityId }, select: { number: true, requestedById: true, projectId: true, project: { select: { name: true } } } });

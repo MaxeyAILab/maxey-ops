@@ -186,3 +186,12 @@ export function canLogInventoryMovement(u: InventoryPerson): boolean {
   if (!hasInventoryTab(u)) return false;
   return u.role === "DRIVER" || u.department === "DRIVER" || isOfficeStaff(u) || isTimekeeperOrLeadman(u.position);
 }
+
+/**
+ * Who can approve (or reject) a return or transfer request on the Inventory tab: the Owner, PM and Purchasing, and office staff
+ * who have the Inventory tab (2026-10-21). Nobody but the Owner approves their own request.
+ */
+export function canApproveInventoryRequest(u: InventoryPerson): boolean {
+  if (["OWNER", "PM", "PURCHASING"].includes(u.role)) return true;
+  return hasInventoryTab(u) && isOfficeStaff(u);
+}

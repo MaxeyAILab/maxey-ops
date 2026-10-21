@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { canLogInventoryMovement } from "@/lib/access";
+import { MATERIAL_RULES, applyMaterialMove, assertMaterialAvailable, materialNeedsApproval } from "@/lib/inventory-requests";
 
 const MOVEMENT_TYPES = [
   "SITE_TO_WAREHOUSE",
@@ -26,28 +27,10 @@ const createSchema = z.object({
 });
 
 /**
- * Which side of a movement is a project's on-site stock, and how the
- * company warehouse balance is affected (Spec 6.4 + owner's per-project
- * on-site tracking, 2026-07-07). CONSUMED_ON_SITE never touches the
- * warehouse — the material already left it when originally issued.
- */
-const RULES: Record<
-  (typeof MOVEMENT_TYPES)[number],
-  { needsFromProject: boolean; needsToProject: boolean; warehouseDelta: 1 | -1 | 0 }
-> = {
-  SITE_TO_WAREHOUSE: { needsFromProject: true, needsToProject: false, warehouseDelta: 1 },
-  WAREHOUSE_TO_SITE: { needsFromProject: false, needsToProject: true, warehouseDelta: -1 },
-  SITE_TO_SITE: { needsFromProject: true, needsToProject: true, warehouseDelta: 0 },
-  CONSUMED_ON_SITE: { needsFromProject: true, needsToProject: false, warehouseDelta: 0 },
-  SUPPLIER_TO_SITE: { needsFromProject: false, needsToProject: true, warehouseDelta: 0 },
-  SUPPLIER_TO_WAREHOUSE: { needsFromProject: false, needsToProject: false, warehouseDelta: 1 },
-};
-
-/**
- * POST /api/inventory/movements — log a materials movement, offline-capable
- * (foreman logs transfers/usage from the phone). Updates the warehouse
- * balance and/or the affected project(s)' on-site balance atomically with
- * the movement record.
+ * POST /api/inventory/movements — log a materials movement, offline-capable (the foreman logs transfers/usage from the
+ * phone). Issuing to a site, usage and supplier deliveries are applied at once. A RETURN to the warehouse and a TRANSFER to
+ * another project are requests (status PENDING): nothing moves until office staff approve them (PATCH /[id]) — the
+ * Owner's own requests are approved on the spot. Either way the movement records who logged it.
  */
 export const POST = handleApi(async (req: NextRequest) => {
   const user = await requireUser();
@@ -62,7 +45,7 @@ export const POST = handleApi(async (req: NextRequest) => {
   const item = await prisma.warehouseItem.findUnique({ where: { id: body.itemId } });
   if (!item) throw new ApiError(404, "Warehouse item not found");
 
-  const rule = RULES[body.type];
+  const rule = MATERIAL_RULES[body.type];
   const fromProjectId = body.fromProjectId || null;
   const toProjectId = body.toProjectId || null;
   if (rule.needsFromProject !== !!fromProjectId) {
@@ -77,6 +60,7 @@ export const POST = handleApi(async (req: NextRequest) => {
       rule.needsToProject ? "This movement requires a destination project" : "This movement type has no destination project"
     );
   }
+  if (fromProjectId && fromProjectId === toProjectId) throw new ApiError(400, "Pick a different project to transfer to");
 
   const [fromProject, toProject] = await Promise.all([
     fromProjectId ? prisma.project.findUnique({ where: { id: fromProjectId } }) : null,
@@ -85,24 +69,8 @@ export const POST = handleApi(async (req: NextRequest) => {
   if (fromProjectId && !fromProject) throw new ApiError(400, "Unknown source project");
   if (toProjectId && !toProject) throw new ApiError(400, "Unknown destination project");
 
-  if (rule.warehouseDelta === -1 && Number(item.currentQty) < body.qty) {
-    throw new ApiError(
-      400,
-      `Insufficient warehouse stock: ${item.name} has ${Number(item.currentQty)} ${item.unit}`
-    );
-  }
-  if (fromProjectId) {
-    const stock = await prisma.projectMaterialStock.findUnique({
-      where: { projectId_itemId: { projectId: fromProjectId, itemId: body.itemId } },
-    });
-    const onSite = Number(stock?.qty ?? 0);
-    if (onSite < body.qty) {
-      throw new ApiError(
-        400,
-        `Insufficient on-site stock: ${item.name} has ${onSite} ${item.unit} at ${fromProject!.name}`
-      );
-    }
-  }
+  const move = { itemId: body.itemId, type: body.type, qty: body.qty, fromProjectId, toProjectId };
+  await assertMaterialAvailable(move, item);
 
   const fromLoc = fromProject
     ? fromProject.name
@@ -110,6 +78,10 @@ export const POST = handleApi(async (req: NextRequest) => {
       ? "Supplier"
       : "Warehouse";
   const toLoc = toProject ? toProject.name : body.type === "CONSUMED_ON_SITE" ? "Used on site" : "Warehouse";
+
+  // A return or transfer waits for approval — except the Owner's own, which is approved right now.
+  const isRequest = materialNeedsApproval(body.type) && user.role !== "OWNER";
+  const decided = !isRequest && materialNeedsApproval(body.type) ? { decidedById: user.id, decidedByName: user.name, decidedAt: new Date() } : {};
 
   const movement = await prisma.$transaction(async (db) => {
     const movement = await db.inventoryMovement.create({
@@ -122,30 +94,14 @@ export const POST = handleApi(async (req: NextRequest) => {
         toLoc,
         fromProjectId,
         toProjectId,
+        note: body.note || null,
         actorId: user.id,
         createdAt: body.submittedAt,
+        status: isRequest ? "PENDING" : "APPLIED",
+        ...decided,
       },
     });
-    if (rule.warehouseDelta !== 0) {
-      await db.warehouseItem.update({
-        where: { id: body.itemId },
-        data: { currentQty: { increment: rule.warehouseDelta * body.qty } },
-      });
-    }
-    if (fromProjectId) {
-      await db.projectMaterialStock.upsert({
-        where: { projectId_itemId: { projectId: fromProjectId, itemId: body.itemId } },
-        create: { projectId: fromProjectId, itemId: body.itemId, qty: -body.qty },
-        update: { qty: { decrement: body.qty } },
-      });
-    }
-    if (toProjectId) {
-      await db.projectMaterialStock.upsert({
-        where: { projectId_itemId: { projectId: toProjectId, itemId: body.itemId } },
-        create: { projectId: toProjectId, itemId: body.itemId, qty: body.qty },
-        update: { qty: { increment: body.qty } },
-      });
-    }
+    if (!isRequest) await applyMaterialMove(db, move);
     return movement;
   });
 
@@ -154,8 +110,8 @@ export const POST = handleApi(async (req: NextRequest) => {
     entityId: movement.id,
     actorId: user.id,
     actorName: user.name,
-    action: `STOCK_${body.type}`,
-    diff: { item: item.name, qty: body.qty, from: fromLoc, to: toLoc, note: body.note || null },
+    action: isRequest ? "INVENTORY_REQUEST_SUBMITTED" : `STOCK_${body.type}`,
+    diff: { item: item.name, qty: body.qty, unit: item.unit, type: body.type, from: fromLoc, to: toLoc, note: body.note || null },
   });
 
   return NextResponse.json(movement, { status: 201 });

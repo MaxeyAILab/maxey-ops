@@ -6,7 +6,9 @@ import { Badge, Card, CardBody, CardHeader, Table, Td, Th } from "@/components/u
 import { AddItemForm, MovementForm, ProjectMaterialQuickActions } from "@/components/inventory-forms";
 import { AddToolForm, ToolActions } from "@/components/tool-forms";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
-import { canAccess, canAddInventoryCatalog, canLogInventoryMovement } from "@/lib/access";
+import { canAccess, canAddInventoryCatalog, canApproveInventoryRequest, canLogInventoryMovement } from "@/lib/access";
+import { DeleteStockItemButton, RequestDecision } from "@/components/inventory-requests-ui";
+import { REQUEST_LABEL, decisionText } from "@/lib/inventory-labels";
 
 export const metadata = { title: "Inventory" };
 export const dynamic = "force-dynamic";
@@ -18,8 +20,11 @@ export default async function InventoryPage() {
     redirect("/attendance");
   }
 
-  const [items, movements, projects, tools, toolMovements] = await Promise.all([
-    prisma.warehouseItem.findMany({ orderBy: { name: "asc" } }),
+  const [items, movements, projects, tools, toolMovements, pendingStock, pendingTools] = await Promise.all([
+    prisma.warehouseItem.findMany({
+      orderBy: { name: "asc" },
+      include: { _count: { select: { movements: true } }, projectStocks: { select: { qty: true } } },
+    }),
     prisma.inventoryMovement.findMany({
       orderBy: { createdAt: "desc" },
       take: 30,
@@ -49,9 +54,16 @@ export default async function InventoryPage() {
         toProject: { select: { name: true } },
       },
     }),
+    // requests waiting for office staff (every one, however old)
+    prisma.inventoryMovement.findMany({ where: { status: "PENDING" }, orderBy: { createdAt: "asc" }, include: { item: { select: { name: true, unit: true } } } }),
+    prisma.toolMovement.findMany({
+      where: { status: "PENDING" },
+      orderBy: { createdAt: "asc" },
+      include: { tool: { select: { name: true, assetTag: true } }, fromProject: { select: { name: true } }, toProject: { select: { name: true } } },
+    }),
   ]);
 
-  const actorIds = [...new Set([...movements.map((m) => m.actorId), ...toolMovements.map((m) => m.actorId)])];
+  const actorIds = [...new Set([...movements, ...toolMovements, ...pendingStock, ...pendingTools].map((m) => m.actorId))];
   const actorNames = new Map(
     (await prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } })).map(
       (u) => [u.id, u.name]
@@ -60,11 +72,55 @@ export default async function InventoryPage() {
 
   const canAddCatalog = canAddInventoryCatalog(user);
   const canMove = canLogInventoryMovement(user);
+  const canApprove = canApproveInventoryRequest(user);
+  const isOwner = user.role === "OWNER";
+  const pendingByTool = new Map(pendingTools.map((m) => [m.toolId, m]));
+  const waitingText = (m: { type: string; actorId: string }) => `${REQUEST_LABEL[m.type] ?? "Request"} requested by ${actorNames.get(m.actorId) ?? "—"} — waiting for approval`;
+  const pendingCount = pendingStock.length + pendingTools.length;
   const projectOptions = projects.map((p) => ({ id: p.id, name: p.name }));
 
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold text-ink-900">Inventory</h1>
+
+      {pendingCount > 0 && (
+        <Card className="border-amber-300">
+          <CardHeader
+            title={`Requests waiting for approval (${pendingCount})`}
+            subtitle="Returns to the warehouse and transfers between projects only take effect once office staff approve them"
+          />
+          <CardBody className="space-y-2">
+            {pendingStock.map((m) => (
+              <div key={m.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-ink-100 p-3 text-sm">
+                <div>
+                  <div className="font-medium text-ink-900">
+                    {REQUEST_LABEL[m.type]} · {Number(m.qty)} {m.item.unit} {m.item.name}
+                  </div>
+                  <div className="text-xs text-ink-500">
+                    {m.fromLoc} → {m.toLoc} · requested by <b>{actorNames.get(m.actorId) ?? "—"}</b> · {fmtDateTime(m.createdAt)}
+                    {m.note ? ` · ${m.note}` : ""}
+                  </div>
+                </div>
+                <RequestDecision kind="stock" id={m.id} canDecide={canApprove && (isOwner || m.actorId !== user.id)} mine={m.actorId === user.id} />
+              </div>
+            ))}
+            {pendingTools.map((m) => (
+              <div key={m.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-ink-100 p-3 text-sm">
+                <div>
+                  <div className="font-medium text-ink-900">
+                    {REQUEST_LABEL[m.type]} · {m.tool.name}
+                    {m.tool.assetTag ? ` (${m.tool.assetTag})` : ""}
+                  </div>
+                  <div className="text-xs text-ink-500">
+                    {m.fromProject?.name ?? "Warehouse"} → {m.toProject?.name ?? "Warehouse"} · requested by <b>{actorNames.get(m.actorId) ?? "—"}</b> · {fmtDateTime(m.createdAt)}
+                  </div>
+                </div>
+                <RequestDecision kind="tool" id={m.id} canDecide={canApprove && (isOwner || m.actorId !== user.id)} mine={m.actorId === user.id} />
+              </div>
+            ))}
+          </CardBody>
+        </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
@@ -75,6 +131,7 @@ export default async function InventoryPage() {
                 <Th>Item</Th>
                 <Th className="text-right">Qty</Th>
                 <Th>Unit</Th>
+                {isOwner && <Th />}
               </tr>
             </thead>
             <tbody>
@@ -87,11 +144,22 @@ export default async function InventoryPage() {
                     {Number(i.currentQty)}
                   </Td>
                   <Td>{i.unit}</Td>
+                  {isOwner && (
+                    <Td className="text-right">
+                      <DeleteStockItemButton
+                        id={i.id}
+                        name={i.name}
+                        movements={i._count.movements}
+                        warehouseQty={Number(i.currentQty)}
+                        onSiteTotal={i.projectStocks.reduce((sum, st) => sum + Math.max(0, Number(st.qty)), 0)}
+                      />
+                    </Td>
+                  )}
                 </tr>
               ))}
               {items.length === 0 && (
                 <tr>
-                  <Td colSpan={3} className="py-6 text-center text-ink-400">
+                  <Td colSpan={isOwner ? 4 : 3} className="py-6 text-center text-ink-400">
                     No stock items yet.
                   </Td>
                 </tr>
@@ -113,7 +181,7 @@ export default async function InventoryPage() {
           <CardBody>
             {canMove ? (
               items.length > 0 && projectOptions.length > 0 ? (
-                <MovementForm items={items} projects={projectOptions} />
+                <MovementForm items={items} projects={projectOptions} instant={isOwner} />
               ) : (
                 <p className="text-sm text-ink-400">Add a stock item and an active project first.</p>
               )
@@ -158,6 +226,7 @@ export default async function InventoryPage() {
                       status={t.status}
                       currentProjectId={t.currentProjectId}
                       projects={projectOptions}
+                      pending={pendingByTool.get(t.id) ? waitingText(pendingByTool.get(t.id)!) : undefined}
                     />
                   </Td>
                 )}
@@ -223,6 +292,7 @@ export default async function InventoryPage() {
                       qty: Number(s.qty),
                     }))}
                     otherProjects={otherProjects}
+                    instant={isOwner}
                   />
                 )}
               </div>
@@ -247,6 +317,7 @@ export default async function InventoryPage() {
                             status={t.status}
                             currentProjectId={t.currentProjectId}
                             projects={projectOptions}
+                            pending={pendingByTool.get(t.id) ? waitingText(pendingByTool.get(t.id)!) : undefined}
                           />
                         )}
                       </li>
@@ -271,7 +342,8 @@ export default async function InventoryPage() {
               <Th>Item</Th>
               <Th className="text-right">Qty</Th>
               <Th>From → To</Th>
-              <Th>By</Th>
+              <Th>Requested / logged by</Th>
+              <Th>Approval</Th>
             </tr>
           </thead>
           <tbody>
@@ -287,11 +359,12 @@ export default async function InventoryPage() {
                   {m.fromLoc} → {m.toLoc}
                 </Td>
                 <Td className="text-xs">{actorNames.get(m.actorId) ?? "—"}</Td>
+                <Td className="text-xs">{decisionText(m, fmtDateTime) ?? "—"}</Td>
               </tr>
             ))}
             {movements.length === 0 && (
               <tr>
-                <Td colSpan={6} className="py-6 text-center text-ink-400">
+                <Td colSpan={7} className="py-6 text-center text-ink-400">
                   No movements logged yet.
                 </Td>
               </tr>
@@ -309,7 +382,8 @@ export default async function InventoryPage() {
               <Th>Tool</Th>
               <Th>Action</Th>
               <Th>From → To</Th>
-              <Th>By</Th>
+              <Th>Requested / logged by</Th>
+              <Th>Approval</Th>
             </tr>
           </thead>
           <tbody>
@@ -325,11 +399,12 @@ export default async function InventoryPage() {
                   {m.fromProject?.name ?? "Warehouse"} → {m.toProject?.name ?? "Warehouse"}
                 </Td>
                 <Td className="text-xs">{actorNames.get(m.actorId) ?? "—"}</Td>
+                <Td className="text-xs">{decisionText(m, fmtDateTime) ?? "—"}</Td>
               </tr>
             ))}
             {toolMovements.length === 0 && (
               <tr>
-                <Td colSpan={5} className="py-6 text-center text-ink-400">
+                <Td colSpan={6} className="py-6 text-center text-ink-400">
                   No tool movements logged yet.
                 </Td>
               </tr>
