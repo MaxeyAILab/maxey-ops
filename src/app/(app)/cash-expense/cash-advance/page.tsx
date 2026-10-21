@@ -33,7 +33,7 @@ export default async function CashAdvancePage() {
         user: { select: { name: true, employeeNo: true } },
         deductions: {
           orderBy: { createdAt: "asc" },
-          include: { payrollRun: { select: { id: true, periodStart: true, periodEnd: true, department: true, project: { select: { name: true } } } } },
+          include: { payrollRun: { select: { id: true, status: true, periodStart: true, periodEnd: true, department: true, project: { select: { name: true } } } } },
         },
       },
     }),
@@ -121,7 +121,27 @@ export default async function CashAdvancePage() {
                         </details>
                       )}
                       <div className="mt-2">
-                        {manage && <AdvanceActions id={a.id} status={a.status} canApprove={canApprove} repaid={a.repaid > 0} />}
+                        {manage && (
+                          <AdvanceActions
+                            id={a.id}
+                            status={a.status}
+                            canApprove={canApprove}
+                            repaid={a.repaid > 0}
+                            deleteInfo={
+                              canApprove
+                                ? {
+                                    no: formatCashAdvanceNo(a.number),
+                                    employee: a.user.name,
+                                    amount: Number(a.amount),
+                                    repaid: a.repaid,
+                                    balance: a.balance,
+                                    repayments: a.deductions.length,
+                                    issuedPayslipRepayments: a.deductions.filter((d) => d.payrollRun && ["APPROVED", "PAID"].includes(d.payrollRun.status)).length,
+                                  }
+                                : undefined
+                            }
+                          />
+                        )}
                       </div>
                     </td>
                     <td className="whitespace-nowrap px-3 py-4 text-right tabular-nums">{php(a.amount)}</td>

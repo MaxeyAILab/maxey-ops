@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { compressImage } from "@/lib/photos";
 import { toast } from "@/components/feedback-provider";
-import { NO_PROJECT, PETTY_CASH_CATEGORIES, PETTY_CASH_STATUS_LABEL } from "@/lib/cash-expense";
+import { NO_PROJECT, PETTY_CASH_CATEGORIES, PETTY_CASH_STATUS_LABEL, advanceDeleteWarning } from "@/lib/cash-expense";
 
 const fieldCls =
   "block min-h-[44px] w-full rounded-md border border-ink-200 bg-ink-50 px-3 text-sm text-ink-900 placeholder:text-ink-400 focus:border-[#8a1a28] focus:outline-none focus:ring-1 focus:ring-[#8a1a28]";
@@ -753,7 +753,18 @@ export function CashAdvanceForm({ people, canApprove }: { people: Option[]; canA
 }
 
 /** Approve / reject / payment / change-deduction / cancel on one cash advance. */
-export function AdvanceActions({ id, status, canApprove, repaid }: { id: string; status: string; canApprove: boolean; repaid: boolean }) {
+export interface AdvanceDeleteInfo {
+  no: string;
+  employee: string;
+  amount: number;
+  repaid: number;
+  balance: number;
+  repayments: number;
+  issuedPayslipRepayments: number;
+}
+
+/** Approve / reject / payment / change-deduction / cancel on one cash advance — and, for the Owner, Delete. */
+export function AdvanceActions({ id, status, canApprove, repaid, deleteInfo }: { id: string; status: string; canApprove: boolean; repaid: boolean; /** set only for the Owner */ deleteInfo?: AdvanceDeleteInfo }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -819,6 +830,28 @@ export function AdvanceActions({ id, status, canApprove, repaid }: { id: string;
           Cancel
         </button>
       );
+  }
+  if (deleteInfo) {
+    b.push(
+      <button
+        key="x"
+        className={`${smallBtn} text-red-700 dark:text-red-300`}
+        disabled={busy}
+        aria-label={`Delete ${deleteInfo.no}`}
+        onClick={async () => {
+          const money = (n: number) => `₱${n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+          if (!window.confirm(advanceDeleteWarning({ ...deleteInfo, status }, money))) return;
+          setBusy(true);
+          setError("");
+          const err = await remove(`/api/cash-advances/${id}`);
+          setBusy(false);
+          if (err) setError(err);
+          else router.refresh();
+        }}
+      >
+        Delete
+      </button>
+    );
   }
   if (b.length === 0) return null;
   return (

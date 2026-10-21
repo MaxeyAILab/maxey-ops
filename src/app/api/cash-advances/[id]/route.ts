@@ -85,3 +85,44 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
   await audit({ entityType: "CashAdvance", entityId: a.id, actorId: user.id, actorName: user.name, action, diff: diff as never });
   return NextResponse.json({ ok: true });
 });
+
+/**
+ * DELETE /api/cash-advances/[id] — Owner only: remove a cash advance entered while testing (or by mistake), whatever its status,
+ * together with its repayment records. Payroll runs and payslips already issued are never touched — they keep their own
+ * snapshot of the deduction. The audit log keeps a full copy of the advance and its repayments.
+ */
+export const DELETE = handleApi(async (_req: NextRequest, { params }: { params: { id: string } }) => {
+  const user = await requireCashExpenseUser();
+  if (!canApproveCash(user)) throw new ApiError(403, "Only the Owner deletes cash advances");
+  const a = await prisma.cashAdvance.findUnique({
+    where: { id: params.id },
+    include: { user: { select: { name: true } }, deductions: { include: { payrollRun: { select: { status: true } } }, orderBy: { createdAt: "asc" } } },
+  });
+  if (!a) throw new ApiError(404, "Cash advance not found");
+  const no = formatCashAdvanceNo(a.number);
+
+  await prisma.$transaction(async (db) => {
+    await db.cashAdvanceDeduction.deleteMany({ where: { advanceId: a.id } });
+    await db.cashAdvance.delete({ where: { id: a.id } });
+  });
+
+  await audit({
+    entityType: "CashAdvance",
+    entityId: a.id,
+    actorId: user.id,
+    actorName: user.name,
+    action: "CASH_ADVANCE_DELETED",
+    diff: {
+      no,
+      employee: a.user.name,
+      status: a.status,
+      amount: Number(a.amount),
+      deductionPerCutoff: Number(a.deductionPerCutoff),
+      reason: a.reason,
+      createdBy: a.createdByName,
+      approvedBy: a.approvedByName,
+      repayments: a.deductions.map((d) => ({ amount: Number(d.amount), note: d.note, payrollRunId: d.payrollRunId, payrollRunStatus: d.payrollRun?.status ?? null, at: d.createdAt })),
+    } as never,
+  });
+  return NextResponse.json({ ok: true });
+});

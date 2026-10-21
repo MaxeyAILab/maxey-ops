@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   advanceBalance,
+  advanceDeleteWarning,
   allocateDeduction,
   canAttachReceipts,
   cashOut,
@@ -171,5 +172,35 @@ describe("receipts on a liquidation", () => {
     expect(canAttachReceipts({ id: "x", role: "OFFICE", canManageCash: true }, r)).toBe(true);
     expect(canAttachReceipts({ id: "x", role: "OFFICE" }, r)).toBe(false);
     expect(canAttachReceipts({ id: "x", role: "FOREMAN" }, r)).toBe(false);
+  });
+});
+
+describe("the warning before a cash advance is deleted", () => {
+  const money = (n: number) => `P${n.toFixed(2)}`;
+  const base = { no: "CA-0001", employee: "Jacob B. Villamor", amount: 6350, repaid: 0, balance: 6350, repayments: 0, issuedPayslipRepayments: 0 };
+
+  it("names the advance and says it cannot be undone", () => {
+    const w = advanceDeleteWarning({ ...base, status: "CANCELLED" }, money);
+    expect(w).toContain("Delete CA-0001 (P6350.00, Jacob B. Villamor)?");
+    expect(w).toContain("can't be undone");
+    expect(w).not.toContain("still owed");
+  });
+
+  it("says when money is still owed, so nobody deletes a live loan by accident", () => {
+    const w = advanceDeleteWarning({ ...base, status: "ACTIVE", repaid: 1000, balance: 5350, repayments: 1 }, money);
+    expect(w).toContain("P5350.00 is still owed");
+    expect(w).toContain("no more will be taken from payroll");
+    expect(w).toContain("draft");
+  });
+
+  it("says its repayment records go with it, but issued payslips stay", () => {
+    const w = advanceDeleteWarning({ ...base, status: "PAID", repaid: 6350, balance: 0, repayments: 2, issuedPayslipRepayments: 2 }, money);
+    expect(w).toContain("removes its 2 repayment records (P6350.00 repaid)");
+    expect(w).toContain("already approved keep their payslips");
+    expect(w).not.toContain("still owed");
+  });
+
+  it("uses the singular for one repayment", () => {
+    expect(advanceDeleteWarning({ ...base, status: "PAID", repaid: 6350, balance: 0, repayments: 1, issuedPayslipRepayments: 0 }, money)).toContain("its 1 repayment record (");
   });
 });

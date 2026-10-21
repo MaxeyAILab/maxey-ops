@@ -164,6 +164,20 @@ export function itemsTotal(items: { amount: number }[]): number {
 
 // ---------- Cash advances ----------
 
+/**
+ * What the Owner is told before deleting a cash advance, so nothing is a surprise: whether money is still owed on it, what was
+ * repaid, and that payslips already issued keep showing their deduction.
+ */
+export function advanceDeleteWarning(a: { no: string; employee: string; status: string; amount: number; repaid: number; balance: number; repayments: number; issuedPayslipRepayments: number }, money: (n: number) => string): string {
+  const lines = [`Delete ${a.no} (${money(a.amount)}, ${a.employee})?`];
+  if (a.status === "ACTIVE" && a.balance > 0) lines.push(`⚠ ${money(a.balance)} is still owed on it. Deleting it means no more will be taken from payroll.`);
+  if (a.repayments > 0) lines.push(`This also removes its ${a.repayments} repayment record${a.repayments === 1 ? "" : "s"} (${money(a.repaid)} repaid).`);
+  if (a.issuedPayslipRepayments > 0) lines.push("Payroll runs already approved keep their payslips and deductions exactly as they are.");
+  if (a.status === "ACTIVE") lines.push("A payroll run that is still a draft may already have this deduction filled in — check it before approving.");
+  lines.push("This can't be undone (the audit log keeps a full record).");
+  return lines.join("\n\n");
+}
+
 export interface AdvanceLike {
   id: string;
   amount: Money;
