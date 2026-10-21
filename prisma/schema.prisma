@@ -799,6 +799,14 @@ enum ToolStatus {
   LOST
 }
 
+/// How the tool/equipment is doing — separate from where it is (ToolStatus).
+enum ToolCondition {
+  WORKING
+  FOR_REPAIR
+  NOT_WORKING
+  FOR_DISPOSAL
+}
+
 enum ToolMovementType {
   CHECKOUT_TO_SITE
   RETURN_TO_WAREHOUSE
@@ -813,15 +821,16 @@ enum ToolMovementType {
 // a bulk quantity, so at any time you know exactly which project holds which
 // unit and its condition.
 model ToolAsset {
-  id               String     @id @default(cuid())
+  id               String        @id @default(cuid())
   name             String // e.g. "Welding Machine"
   assetTag         String? // e.g. "WM-002", optional serial/tag
   category         String? // e.g. Power Tool, Heavy Equipment, Hand Tool
   condition        String? // latest condition note
-  status           ToolStatus @default(IN_WAREHOUSE)
+  status           ToolStatus    @default(IN_WAREHOUSE)
+  workingStatus    ToolCondition @default(WORKING)
   currentProjectId String? // null = in warehouse
-  currentProject   Project?   @relation("ToolCurrentProject", fields: [currentProjectId], references: [id])
-  createdAt        DateTime   @default(now())
+  currentProject   Project?      @relation("ToolCurrentProject", fields: [currentProjectId], references: [id])
+  createdAt        DateTime      @default(now())
 
   movements ToolMovement[]
 }

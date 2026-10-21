@@ -6,6 +6,7 @@ import { savePhoto } from "@/lib/storage";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { canLogInventoryMovement } from "@/lib/access";
 import { toolNeedsApproval } from "@/lib/inventory-requests";
+import { TOOL_CONDITION_LABEL, blocksCheckout, conditionAfterMovement } from "@/lib/tool-condition";
 import type { ToolStatus } from "@prisma/client";
 
 const TOOL_MOVEMENT_TYPES = [
@@ -64,6 +65,9 @@ export const POST = handleApi(async (req: NextRequest) => {
         throw new ApiError(400, `${tool.name} is not in the warehouse (currently ${tool.status})`);
       }
       if (!toProjectId) throw new ApiError(400, "Select a project to check out to");
+      if (blocksCheckout(tool.workingStatus)) {
+        throw new ApiError(400, `${tool.name} is marked “${TOOL_CONDITION_LABEL[tool.workingStatus]}” — it can't be checked out until it is working again`);
+      }
       nextStatus = "ON_SITE";
       nextProjectId = toProjectId;
       break;
@@ -131,6 +135,7 @@ export const POST = handleApi(async (req: NextRequest) => {
           status: nextStatus,
           currentProjectId: nextProjectId,
           condition: body.condition || undefined,
+          workingStatus: conditionAfterMovement(body.type, tool.workingStatus),
         },
       });
     }

@@ -195,3 +195,12 @@ export function canApproveInventoryRequest(u: InventoryPerson): boolean {
   if (["OWNER", "PM", "PURCHASING"].includes(u.role)) return true;
   return hasInventoryTab(u) && isOfficeStaff(u);
 }
+
+/**
+ * Who can delete a tool or piece of equipment: the Owner always (with its movement history); whoever may add tools (office
+ * staff, PM, Purchasing) only a tool that has never been moved — i.e. one registered by mistake (2026-10-21).
+ */
+export function canDeleteTool(u: InventoryPerson, movementCount: number): boolean {
+  if (u.role === "OWNER") return true;
+  return canAddInventoryCatalog(u) && movementCount === 0;
+}

@@ -4,9 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { fmtDateTime, labelize } from "@/lib/format";
 import { Badge, Card, CardBody, CardHeader, Table, Td, Th } from "@/components/ui";
 import { AddItemForm, MovementForm, ProjectMaterialQuickActions } from "@/components/inventory-forms";
-import { AddToolForm, ToolActions } from "@/components/tool-forms";
+import { AddToolForm, DeleteToolButton, ToolActions, ToolConditionControl } from "@/components/tool-forms";
+import { TOOL_CONDITION_LABEL } from "@/lib/tool-condition";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
-import { canAccess, canAddInventoryCatalog, canApproveInventoryRequest, canLogInventoryMovement } from "@/lib/access";
+import { canAccess, canAddInventoryCatalog, canApproveInventoryRequest, canDeleteTool, canLogInventoryMovement } from "@/lib/access";
 import { DeleteStockItemButton, RequestDecision } from "@/components/inventory-requests-ui";
 import { REQUEST_LABEL, decisionText } from "@/lib/inventory-labels";
 
@@ -43,7 +44,7 @@ export default async function InventoryPage() {
     }),
     prisma.toolAsset.findMany({
       orderBy: { name: "asc" },
-      include: { currentProject: { select: { name: true } } },
+      include: { currentProject: { select: { name: true } }, _count: { select: { movements: true } } },
     }),
     prisma.toolMovement.findMany({
       orderBy: { createdAt: "desc" },
@@ -204,6 +205,7 @@ export default async function InventoryPage() {
               <Th>Tag</Th>
               <Th>Category</Th>
               <Th>Status</Th>
+              <Th>Condition</Th>
               <Th>Location</Th>
               {canMove && <Th>Actions</Th>}
             </tr>
@@ -218,23 +220,27 @@ export default async function InventoryPage() {
                   <Badge value={t.status} />
                   {t.condition && <div className="mt-0.5 text-[11px] text-ink-400">{t.condition}</div>}
                 </Td>
+                <Td>{canMove ? <ToolConditionControl toolId={t.id} value={t.workingStatus} /> : <Badge value={t.workingStatus} label={TOOL_CONDITION_LABEL[t.workingStatus]} />}</Td>
                 <Td className="text-ink-600">{t.currentProject?.name ?? "Warehouse"}</Td>
                 {canMove && (
                   <Td>
-                    <ToolActions
-                      toolId={t.id}
-                      status={t.status}
-                      currentProjectId={t.currentProjectId}
-                      projects={projectOptions}
-                      pending={pendingByTool.get(t.id) ? waitingText(pendingByTool.get(t.id)!) : undefined}
-                    />
+                    <div className="flex flex-wrap items-center gap-3">
+                      <ToolActions
+                        toolId={t.id}
+                        status={t.status}
+                        currentProjectId={t.currentProjectId}
+                        projects={projectOptions}
+                        pending={pendingByTool.get(t.id) ? waitingText(pendingByTool.get(t.id)!) : undefined}
+                      />
+                      {canDeleteTool(user, t._count.movements) && <DeleteToolButton toolId={t.id} name={t.name} movements={t._count.movements} />}
+                    </div>
                   </Td>
                 )}
               </tr>
             ))}
             {tools.length === 0 && (
               <tr>
-                <Td colSpan={canMove ? 6 : 5} className="py-6 text-center text-ink-400">
+                <Td colSpan={canMove ? 7 : 6} className="py-6 text-center text-ink-400">
                   No tools registered yet.
                 </Td>
               </tr>
@@ -310,6 +316,7 @@ export default async function InventoryPage() {
                           <span className="font-medium text-ink-800">{t.name}</span>
                           {t.assetTag && <span className="ml-1 text-xs text-ink-400">({t.assetTag})</span>}
                           <Badge value={t.status} />
+                          {t.workingStatus !== "WORKING" && <Badge value={t.workingStatus} label={TOOL_CONDITION_LABEL[t.workingStatus]} />}
                         </div>
                         {canMove && (
                           <ToolActions

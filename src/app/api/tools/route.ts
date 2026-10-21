@@ -4,11 +4,14 @@ import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { canAddInventoryCatalog } from "@/lib/access";
+import { TOOL_CONDITIONS, TOOL_CONDITION_LABEL, type ToolConditionValue } from "@/lib/tool-condition";
 
 const createSchema = z.object({
   name: z.string().min(1).max(200),
   assetTag: z.string().max(50).optional().or(z.literal("")),
   category: z.string().max(100).optional().or(z.literal("")),
+  /** how it is doing when it is added: working, for repair, not working, for disposal */
+  workingStatus: z.enum(TOOL_CONDITIONS).default("WORKING"),
 });
 
 /**
@@ -26,6 +29,7 @@ export const POST = handleApi(async (req: NextRequest) => {
       name: body.name,
       assetTag: body.assetTag || null,
       category: body.category || null,
+      workingStatus: body.workingStatus,
     },
   });
 
@@ -35,7 +39,7 @@ export const POST = handleApi(async (req: NextRequest) => {
     actorId: user.id,
     actorName: user.name,
     action: "TOOL_REGISTERED",
-    diff: { name: body.name, assetTag: body.assetTag || null, category: body.category || null },
+    diff: { name: body.name, assetTag: body.assetTag || null, category: body.category || null, condition: TOOL_CONDITION_LABEL[body.workingStatus as ToolConditionValue] },
   });
 
   return NextResponse.json(tool, { status: 201 });

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { submitOrQueue } from "@/lib/outbox";
 import { Button, Input, Label, Select } from "@/components/ui";
 import { PhotoInput } from "@/components/photo-input";
+import { TOOL_CONDITIONS, TOOL_CONDITION_LABEL, type ToolConditionValue } from "@/lib/tool-condition";
 
 interface ProjectOption {
   id: string;
@@ -29,6 +30,7 @@ export function AddToolForm() {
         name: fd.get("name"),
         assetTag: fd.get("assetTag"),
         category: fd.get("category"),
+        workingStatus: fd.get("workingStatus"),
       }),
     });
     setBusy(false);
@@ -39,7 +41,7 @@ export function AddToolForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-4">
+    <form onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-5">
       <div className="sm:col-span-2">
         <Label htmlFor="toolName">Tool / equipment name</Label>
         <Input id="toolName" name="name" required placeholder="e.g., Welding Machine" />
@@ -58,8 +60,18 @@ export function AddToolForm() {
           <option value="Safety Equipment" />
         </datalist>
       </div>
-      {error && <p className="text-sm text-red-600 sm:col-span-4">{error}</p>}
-      <div className="sm:col-span-4">
+      <div>
+        <Label htmlFor="toolStatus">Status</Label>
+        <Select id="toolStatus" name="workingStatus" defaultValue="WORKING">
+          {TOOL_CONDITIONS.map((c) => (
+            <option key={c} value={c}>
+              {TOOL_CONDITION_LABEL[c]}
+            </option>
+          ))}
+        </Select>
+      </div>
+      {error && <p className="text-sm text-red-600 sm:col-span-5">{error}</p>}
+      <div className="sm:col-span-5">
         <Button type="submit" variant="secondary" disabled={busy}>
           {busy ? "Adding…" : "+ Add tool / equipment"}
         </Button>
@@ -206,5 +218,74 @@ export function ToolActions({
       )}
       {error && <span className="text-xs text-red-600">{error}</span>}
     </div>
+  );
+}
+
+const CONDITION_TONE: Record<ToolConditionValue, string> = {
+  WORKING: "border-teal-300 bg-teal-50 text-teal-800",
+  FOR_REPAIR: "border-amber-300 bg-amber-50 text-amber-800",
+  NOT_WORKING: "border-red-300 bg-red-50 text-red-800",
+  FOR_DISPOSAL: "border-ink-300 bg-ink-100 text-ink-700",
+};
+
+/** How the tool is doing — working, for repair, not working, for disposal. Anyone who logs movements can change it; it is recorded who did. */
+export function ToolConditionControl({ toolId, value }: { toolId: string; value: ToolConditionValue }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function change(next: string) {
+    setBusy(true);
+    setError("");
+    const res = await fetch(`/api/tools/${toolId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workingStatus: next }) });
+    setBusy(false);
+    if (res.ok) router.refresh();
+    else setError(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? "Couldn't change it");
+  }
+
+  return (
+    <div>
+      <select
+        aria-label="Condition"
+        value={value}
+        disabled={busy}
+        onChange={(e) => change(e.target.value)}
+        className={`min-h-[30px] rounded-md border px-2 text-xs font-medium disabled:opacity-60 ${CONDITION_TONE[value]}`}
+      >
+        {TOOL_CONDITIONS.map((c) => (
+          <option key={c} value={c}>
+            {TOOL_CONDITION_LABEL[c]}
+          </option>
+        ))}
+      </select>
+      {error && <p className="mt-0.5 text-[11px] text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+/** Remove a tool/equipment entry typed in wrongly. The Owner can remove any; others only one that has never moved. */
+export function DeleteToolButton({ toolId, name, movements }: { toolId: string; name: string; movements: number }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function remove() {
+    const detail = movements > 0 ? `\n\nThis also removes its ${movements} logged movement${movements === 1 ? "" : "s"}.` : "";
+    if (!window.confirm(`Delete “${name}” from Tools & Equipment?${detail}\n\nThis can't be undone (the audit log keeps a record).`)) return;
+    setBusy(true);
+    setError("");
+    const res = await fetch(`/api/tools/${toolId}`, { method: "DELETE" });
+    setBusy(false);
+    if (res.ok) router.refresh();
+    else setError(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? "Couldn't delete it");
+  }
+
+  return (
+    <span>
+      <button type="button" onClick={remove} disabled={busy} aria-label={`Delete ${name}`} className="text-xs font-medium text-red-600 hover:underline disabled:opacity-50">
+        {busy ? "…" : "Delete"}
+      </button>
+      {error && <span className="ml-2 text-xs text-red-600">{error}</span>}
+    </span>
   );
 }

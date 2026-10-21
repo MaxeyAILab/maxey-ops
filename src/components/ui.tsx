@@ -184,6 +184,11 @@ const badgeTones: Record<string, string> = {
   IN_WAREHOUSE: "bg-ink-100 text-ink-600",
   ON_SITE: teal,
   UNDER_REPAIR: amber,
+  // tool/equipment condition
+  WORKING: teal,
+  FOR_REPAIR: amber,
+  NOT_WORKING: red,
+  FOR_DISPOSAL: "bg-ink-200 text-ink-700",
   // site instructions / assignments
   NOT_STARTED: "bg-ink-100 text-ink-600",
   IN_PROGRESS: blue,

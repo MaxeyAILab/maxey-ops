@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Department, Role } from "@prisma/client";
-import { canAddInventoryCatalog, canApproveInventoryRequest, canLogInventoryMovement, canVerifyDelivery, isTimekeeperOrLeadman } from "./access";
+import { canAddInventoryCatalog, canApproveInventoryRequest, canDeleteTool, canLogInventoryMovement, canVerifyDelivery, isTimekeeperOrLeadman } from "./access";
 
 describe("who can verify a delivery", () => {
   it("includes a driver whose account is Office staff in the Driver department", () => {
@@ -107,5 +107,31 @@ describe("approving return and transfer requests", () => {
     expect(canApproveInventoryRequest(person("OFFICE", "SITE", "Timekeeper"))).toBe(false);
     expect(canApproveInventoryRequest(person("OFFICE", "SITE", "Leadman"))).toBe(false);
     expect(canApproveInventoryRequest(person("CLIENT", null))).toBe(false);
+  });
+});
+
+describe("deleting tools and equipment", () => {
+  it("the Owner can delete any tool, moved or not", () => {
+    expect(canDeleteTool(person("OWNER", "OFFICE", null, false), 0)).toBe(true);
+    expect(canDeleteTool(person("OWNER", "OFFICE", null, false), 12)).toBe(true);
+  });
+
+  it("office staff, PM and Purchasing can delete a tool that has never moved (a typing mistake)", () => {
+    expect(canDeleteTool(person("OFFICE", "OFFICE"), 0)).toBe(true);
+    expect(canDeleteTool(person("PM", "OFFICE"), 0)).toBe(true);
+    expect(canDeleteTool(person("PURCHASING", "OFFICE"), 0)).toBe(true);
+  });
+
+  it("but not one that already has movement history", () => {
+    expect(canDeleteTool(person("OFFICE", "OFFICE"), 1)).toBe(false);
+    expect(canDeleteTool(person("PM", "OFFICE"), 3)).toBe(false);
+    expect(canDeleteTool(person("PURCHASING", "OFFICE"), 2)).toBe(false);
+  });
+
+  it("and never the people who only use tools", () => {
+    expect(canDeleteTool(person("FOREMAN", "SITE"), 0)).toBe(false);
+    expect(canDeleteTool(person("DRIVER", "DRIVER"), 0)).toBe(false);
+    expect(canDeleteTool(person("OFFICE", "SITE", "Timekeeper"), 0)).toBe(false);
+    expect(canDeleteTool(person("OFFICE", "OFFICE", null, false), 0)).toBe(false); // office staff without the Inventory tab
   });
 });
