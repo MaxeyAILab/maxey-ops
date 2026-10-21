@@ -4,11 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { submitOrQueue } from "@/lib/outbox";
 import { Button, Input, Label, Select } from "@/components/ui";
+import { MATERIAL_CATEGORIES } from "@/lib/material-category";
 
 interface ItemOption {
   id: string;
   name: string;
   unit: string;
+  category?: string;
 }
 
 interface ProjectOption {
@@ -34,6 +36,7 @@ export function AddItemForm() {
         name: fd.get("name"),
         unit: fd.get("unit"),
         currentQty: fd.get("currentQty"),
+        category: fd.get("category"),
       }),
     });
     setBusy(false);
@@ -48,6 +51,19 @@ export function AddItemForm() {
       <div className="sm:col-span-2">
         <Label htmlFor="itemName">Item name</Label>
         <Input id="itemName" name="name" required placeholder="e.g., GI pipe 2 inch" />
+      </div>
+      <div className="sm:col-span-2">
+        <Label htmlFor="itemCategory">Category</Label>
+        <Select id="itemCategory" name="category" required defaultValue="">
+          <option value="" disabled>
+            Choose a category…
+          </option>
+          {MATERIAL_CATEGORIES.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </Select>
       </div>
       <div>
         <Label htmlFor="itemUnit">Unit</Label>
@@ -139,11 +155,18 @@ export function MovementForm({
         <div>
           <Label htmlFor="mvItem">Item</Label>
           <Select id="mvItem" name="itemId" required>
-            {items.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name} ({i.unit})
-              </option>
-            ))}
+            {MATERIAL_CATEGORIES.map((c) => {
+              const group = items.filter((i) => (i.category ?? "OTHERS") === c.value);
+              return group.length === 0 ? null : (
+                <optgroup key={c.value} label={c.label}>
+                  {group.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.name} ({i.unit})
+                    </option>
+                  ))}
+                </optgroup>
+              );
+            })}
           </Select>
         </div>
         <div>

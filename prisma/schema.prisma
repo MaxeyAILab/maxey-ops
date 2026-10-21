@@ -739,12 +739,21 @@ model Delivery {
   createdAt     DateTime      @default(now())
 }
 
+/// The four groups warehouse materials are sorted into.
+enum MaterialCategory {
+  CIVIL_ARCHITECTURAL
+  PLUMBING
+  ELECTRICAL
+  OTHERS
+}
+
 model WarehouseItem {
-  id         String   @id @default(cuid())
+  id         String           @id @default(cuid())
   name       String
   unit       String
-  currentQty Decimal  @default(0) @db.Decimal(12, 2) // company-wide warehouse balance
-  createdAt  DateTime @default(now())
+  category   MaterialCategory @default(OTHERS)
+  currentQty Decimal          @default(0) @db.Decimal(12, 2) // company-wide warehouse balance
+  createdAt  DateTime         @default(now())
 
   movements     InventoryMovement[]
   projectStocks ProjectMaterialStock[]

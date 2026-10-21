@@ -3,33 +3,67 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
-import { canDeleteTool, canLogInventoryMovement } from "@/lib/access";
+import { canAddInventoryCatalog, canDeleteTool, canLogInventoryMovement } from "@/lib/access";
 import { TOOL_CONDITIONS, TOOL_CONDITION_LABEL } from "@/lib/tool-condition";
 
-const patchSchema = z.object({ workingStatus: z.enum(TOOL_CONDITIONS) });
+const patchSchema = z
+  .object({
+    workingStatus: z.enum(TOOL_CONDITIONS).optional(),
+    name: z.string().trim().min(1).max(200).optional(),
+    assetTag: z.string().trim().max(50).optional(),
+    category: z.string().trim().max(100).optional(),
+  })
+  .refine((b) => b.workingStatus !== undefined || b.name !== undefined || b.assetTag !== undefined || b.category !== undefined, { message: "Nothing to change" });
 
 /**
- * PATCH /api/tools/[id] — change how a tool or piece of equipment is doing: working, for repair, not working, for disposal.
- * Anyone who can log inventory movements can report it (a broken tool is usually noticed on site); the change is recorded with
- * who made it.
+ * PATCH /api/tools/[id] — change a tool or piece of equipment after it was added:
+ *  - how it is doing (working, for repair, not working, for disposal): anyone who can log inventory movements, since a broken
+ *    tool is usually noticed on site;
+ *  - its name, asset tag or category (fixing what was typed or forgotten): the people who can add tools (office staff, Owner,
+ *    PM, Purchasing).
+ * Every change is recorded with who made it and what it was before.
  */
 export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { id: string } }) => {
   const user = await requireUser();
-  if (!canLogInventoryMovement(user)) throw new ApiError(403, "Not authorized for this action");
   const body = patchSchema.parse(await req.json());
+  const editsDetails = body.name !== undefined || body.assetTag !== undefined || body.category !== undefined;
+  if (body.workingStatus !== undefined && !canLogInventoryMovement(user)) throw new ApiError(403, "Not authorized for this action");
+  if (editsDetails && !canAddInventoryCatalog(user)) throw new ApiError(403, "Only office staff can edit a tool's name, tag or category");
   const tool = await prisma.toolAsset.findUnique({ where: { id: params.id } });
   if (!tool) throw new ApiError(404, "Tool not found");
-  if (tool.workingStatus === body.workingStatus) return NextResponse.json({ ok: true });
 
-  await prisma.toolAsset.update({ where: { id: tool.id }, data: { workingStatus: body.workingStatus } });
-  await audit({
-    entityType: "ToolAsset",
-    entityId: tool.id,
-    actorId: user.id,
-    actorName: user.name,
-    action: "TOOL_CONDITION_CHANGED",
-    diff: { tool: tool.name, from: TOOL_CONDITION_LABEL[tool.workingStatus], to: TOOL_CONDITION_LABEL[body.workingStatus] },
-  });
+  const data: { workingStatus?: typeof tool.workingStatus; name?: string; assetTag?: string | null; category?: string | null } = {};
+  const changes: Record<string, { from: unknown; to: unknown }> = {};
+  if (body.name !== undefined && body.name !== tool.name) {
+    data.name = body.name;
+    changes.name = { from: tool.name, to: body.name };
+  }
+  if (body.assetTag !== undefined && (body.assetTag || null) !== tool.assetTag) {
+    data.assetTag = body.assetTag || null;
+    changes.assetTag = { from: tool.assetTag, to: body.assetTag || null };
+  }
+  if (body.category !== undefined && (body.category || null) !== tool.category) {
+    data.category = body.category || null;
+    changes.category = { from: tool.category, to: body.category || null };
+  }
+  const conditionChanged = body.workingStatus !== undefined && body.workingStatus !== tool.workingStatus;
+  if (conditionChanged) data.workingStatus = body.workingStatus;
+  if (Object.keys(data).length === 0) return NextResponse.json({ ok: true });
+
+  await prisma.toolAsset.update({ where: { id: tool.id }, data });
+  if (Object.keys(changes).length > 0) {
+    await audit({ entityType: "ToolAsset", entityId: tool.id, actorId: user.id, actorName: user.name, action: "TOOL_EDITED", diff: { tool: tool.name, changes } as never });
+  }
+  if (conditionChanged) {
+    await audit({
+      entityType: "ToolAsset",
+      entityId: tool.id,
+      actorId: user.id,
+      actorName: user.name,
+      action: "TOOL_CONDITION_CHANGED",
+      diff: { tool: tool.name, from: TOOL_CONDITION_LABEL[tool.workingStatus], to: TOOL_CONDITION_LABEL[body.workingStatus!] },
+    });
+  }
   return NextResponse.json({ ok: true });
 });
 

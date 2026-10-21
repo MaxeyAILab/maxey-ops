@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -8,7 +9,9 @@ import { AddToolForm, DeleteToolButton, ToolActions, ToolConditionControl } from
 import { TOOL_CONDITION_LABEL } from "@/lib/tool-condition";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
 import { canAccess, canAddInventoryCatalog, canApproveInventoryRequest, canDeleteTool, canLogInventoryMovement } from "@/lib/access";
-import { DeleteStockItemButton, RequestDecision } from "@/components/inventory-requests-ui";
+import { RequestDecision } from "@/components/inventory-requests-ui";
+import { EditToolButton } from "@/components/inventory-edit";
+import { MATERIAL_CATEGORIES, summarizeByCategory } from "@/lib/material-category";
 import { REQUEST_LABEL, decisionText } from "@/lib/inventory-labels";
 
 export const metadata = { title: "Inventory" };
@@ -78,6 +81,7 @@ export default async function InventoryPage() {
   const pendingByTool = new Map(pendingTools.map((m) => [m.toolId, m]));
   const waitingText = (m: { type: string; actorId: string }) => `${REQUEST_LABEL[m.type] ?? "Request"} requested by ${actorNames.get(m.actorId) ?? "—"} — waiting for approval`;
   const pendingCount = pendingStock.length + pendingTools.length;
+  const categoryCounts = summarizeByCategory(items);
   const projectOptions = projects.map((p) => ({ id: p.id, name: p.name }));
 
   return (
@@ -125,48 +129,39 @@ export default async function InventoryPage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
-          <CardHeader title={`Warehouse stock (${items.length})`} subtitle="Real-time levels" />
-          <Table>
-            <thead>
-              <tr>
-                <Th>Item</Th>
-                <Th className="text-right">Qty</Th>
-                <Th>Unit</Th>
-                {isOwner && <Th />}
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((i) => (
-                <tr key={i.id} className={Number(i.currentQty) === 0 ? "opacity-50" : ""}>
-                  <Td className="font-medium">{i.name}</Td>
-                  <Td
-                    className={`text-right tabular-nums ${Number(i.currentQty) === 0 ? "text-red-600" : ""}`}
-                  >
-                    {Number(i.currentQty)}
-                  </Td>
-                  <Td>{i.unit}</Td>
-                  {isOwner && (
-                    <Td className="text-right">
-                      <DeleteStockItemButton
-                        id={i.id}
-                        name={i.name}
-                        movements={i._count.movements}
-                        warehouseQty={Number(i.currentQty)}
-                        onSiteTotal={i.projectStocks.reduce((sum, st) => sum + Math.max(0, Number(st.qty)), 0)}
-                      />
-                    </Td>
-                  )}
-                </tr>
+          <CardHeader
+            title={`Warehouse stock (${items.length})`}
+            subtitle="By category — open one to see its items"
+            action={
+              <Link href="/inventory/stock" className="text-sm font-medium text-brand-600 hover:underline">
+                View all items →
+              </Link>
+            }
+          />
+          <CardBody>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {MATERIAL_CATEGORIES.map((c) => (
+                <Link
+                  key={c.value}
+                  href={`/inventory/stock?category=${c.slug}`}
+                  className="group rounded-xl border border-ink-200 p-4 transition hover:border-[#8a1a28] hover:bg-ink-100/50"
+                >
+                  <div className="flex items-start gap-3">
+                    <span aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ink-100 text-xl">
+                      {c.icon}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-ink-900">{c.label}</div>
+                      <div className="text-sm text-ink-600">
+                        {categoryCounts[c.value].items} item{categoryCounts[c.value].items === 1 ? "" : "s"}
+                      </div>
+                      {categoryCounts[c.value].outOfStock > 0 && <div className="text-xs font-medium text-red-600">{categoryCounts[c.value].outOfStock} out of stock</div>}
+                    </div>
+                  </div>
+                </Link>
               ))}
-              {items.length === 0 && (
-                <tr>
-                  <Td colSpan={isOwner ? 4 : 3} className="py-6 text-center text-ink-400">
-                    No stock items yet.
-                  </Td>
-                </tr>
-              )}
-            </tbody>
-          </Table>
+            </div>
+          </CardBody>
           {canAddCatalog && (
             <CardBody className="border-t border-ink-100">
               <AddItemForm />
@@ -232,6 +227,7 @@ export default async function InventoryPage() {
                         projects={projectOptions}
                         pending={pendingByTool.get(t.id) ? waitingText(pendingByTool.get(t.id)!) : undefined}
                       />
+                      {canAddCatalog && <EditToolButton id={t.id} name={t.name} assetTag={t.assetTag} category={t.category} />}
                       {canDeleteTool(user, t._count.movements) && <DeleteToolButton toolId={t.id} name={t.name} movements={t._count.movements} />}
                     </div>
                   </Td>
