@@ -143,8 +143,10 @@ export function canAccess(
 }
 
 /** Who can submit a delivery verification (Spec 6.3) — Foreman/PM/Owner by
- * role, plus Drivers and Engineers (2026-09-21). Deliberately separate from
- * delete, which stays Owner-only regardless of this. */
+ * role, plus Drivers and Engineers (2026-09-21). "Driver" counts both as the
+ * account type and as the department: some drivers have an Office account in the
+ * Driver department (payroll treats them as drivers), and they must be able to
+ * verify too. Deliberately separate from delete, which stays Owner-only. */
 export function canVerifyDelivery(role: Role, department: Department | null): boolean {
-  return ["FOREMAN", "PM", "OWNER", "DRIVER"].includes(role) || department === "ENGINEER";
+  return ["FOREMAN", "PM", "OWNER", "DRIVER"].includes(role) || department === "ENGINEER" || department === "DRIVER";
 }
