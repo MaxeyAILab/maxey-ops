@@ -752,6 +752,7 @@ model WarehouseItem {
   name       String
   unit       String
   category   MaterialCategory @default(OTHERS)
+  unitPrice  Decimal?         @db.Decimal(12, 2) // price per unit, to value the stock in the warehouse (optional until entered)
   currentQty Decimal          @default(0) @db.Decimal(12, 2) // company-wide warehouse balance
   createdAt  DateTime         @default(now())
 
@@ -792,6 +793,7 @@ model InventoryMovement {
   actorId        String // who logged it / who requested it
   createdAt      DateTime       @default(now())
   note           String?
+  unitPrice      Decimal?       @db.Decimal(12, 2) // the item price per unit when this was logged, so its value never changes when the price is edited later
   status         MovementStatus @default(APPLIED)
   decidedById    String? // office staff who approved (or rejected) the request
   decidedByName  String?

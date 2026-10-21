@@ -2,7 +2,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canAccess, canAddInventoryCatalog } from "@/lib/access";
+import { canAccess, canAddInventoryCatalog, canSeeStockPrices } from "@/lib/access";
+import { php } from "@/lib/format";
+import { PriceEditor } from "@/components/price-editor";
+import { lineValue, summarizeValue } from "@/lib/warehouse-value";
 import { Card, CardHeader, Table, Td, Th } from "@/components/ui";
 import { DeleteStockItemButton } from "@/components/inventory-requests-ui";
 import { EditStockItemButton } from "@/components/inventory-edit";
@@ -15,7 +18,7 @@ export const dynamic = "force-dynamic";
  * The items of the warehouse stock, by category. The Inventory tab shows only the four categories; this page lists what is in
  * each one, with a search box, and is where an item is edited or (by the Owner) deleted.
  */
-export default async function WarehouseStockPage({ searchParams }: { searchParams: { category?: string; q?: string } }) {
+export default async function WarehouseStockPage({ searchParams }: { searchParams: { category?: string; q?: string; edit?: string } }) {
   const user = await getSessionUser();
   if (!user || !canAccess(user.role, user.department, "/inventory", user.customMenus, user.useCustomMenus)) redirect("/attendance");
 
@@ -23,12 +26,16 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
   const q = (searchParams.q ?? "").trim().slice(0, 80);
   const canEdit = canAddInventoryCatalog(user);
   const isOwner = user.role === "OWNER";
+  const showPrices = canSeeStockPrices(user); // prices and the value of the stock: office staff, Owner, PM, Purchasing
+  const editPrices = showPrices && searchParams.edit === "prices";
 
   const all = await prisma.warehouseItem.findMany({
     orderBy: { name: "asc" },
     include: { _count: { select: { movements: true } }, projectStocks: { select: { qty: true } } },
   });
   const counts = summarizeByCategory(all);
+  const value = summarizeValue(all);
+  const here = category ? value.byCategory[category] : null;
   const needle = q.toLowerCase();
   const items = all.filter((i) => (!category || i.category === category) && (!needle || i.name.toLowerCase().includes(needle)));
 
@@ -37,6 +44,7 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
     const qs = new URLSearchParams();
     if (slug) qs.set("category", slug);
     if (q) qs.set("q", q);
+    if (editPrices) qs.set("edit", "prices");
     return (
       <Link
         key={slug ?? "all"}
@@ -64,7 +72,56 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
         {MATERIAL_CATEGORIES.map((c) => tab(c.slug, c.label, counts[c.value].items))}
       </div>
 
+      {showPrices && (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-ink-200 p-4">
+            <div className="text-xs font-medium uppercase tracking-wide text-ink-500">Total value in the warehouse</div>
+            <div className="mt-1 text-2xl font-bold tabular-nums text-ink-900">{php(value.total)}</div>
+            <div className="text-xs text-ink-500">{value.priced} priced item{value.priced === 1 ? "" : "s"} · quantity × price per unit</div>
+          </div>
+          <div className="rounded-xl border border-ink-200 p-4">
+            <div className="text-xs font-medium uppercase tracking-wide text-ink-500">{category ? MATERIAL_CATEGORY_LABEL[category] : "Per category"}</div>
+            {here ? (
+              <>
+                <div className="mt-1 text-2xl font-bold tabular-nums text-ink-900">{php(here.value)}</div>
+                <div className="text-xs text-ink-500">{here.items} item{here.items === 1 ? "" : "s"}</div>
+              </>
+            ) : (
+              <ul className="mt-1 space-y-0.5 text-sm">
+                {MATERIAL_CATEGORIES.map((c) => (
+                  <li key={c.value} className="flex justify-between gap-3">
+                    <span className="text-ink-600">{c.label}</span>
+                    <span className="tabular-nums text-ink-900">{php(value.byCategory[c.value].value)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className={`rounded-xl border p-4 ${value.unpriced > 0 ? "border-amber-300" : "border-ink-200"}`}>
+            <div className="text-xs font-medium uppercase tracking-wide text-ink-500">Items without a price</div>
+            <div className={`mt-1 text-2xl font-bold tabular-nums ${value.unpriced > 0 ? "text-amber-700" : "text-ink-900"}`}>{value.unpriced}</div>
+            <div className="text-xs text-ink-500">{value.unpriced > 0 ? "not counted in the total yet" : "every item has a price"}</div>
+          </div>
+        </div>
+      )}
+
+      {showPrices && (
+        <div className="flex flex-wrap items-center gap-3">
+          {editPrices ? (
+            <span className="text-sm font-medium text-ink-700">Setting prices for {category ? MATERIAL_CATEGORY_LABEL[category] : "all categories"}{q ? ` matching “${q}”` : ""}</span>
+          ) : (
+            <Link
+              href={`/inventory/stock?${new URLSearchParams({ ...(category ? { category: searchParams.category! } : {}), ...(q ? { q } : {}), edit: "prices" })}`}
+              className="rounded-lg border border-ink-200 px-3 py-2 text-sm font-medium text-ink-800 hover:bg-ink-100"
+            >
+              ✎ Set prices
+            </Link>
+          )}
+        </div>
+      )}
+
       <form method="get" className="flex flex-wrap items-center gap-2">
+        {editPrices && <input type="hidden" name="edit" value="prices" />}
         {category && <input type="hidden" name="category" value={searchParams.category} />}
         <input
           type="search"
@@ -84,6 +141,9 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
         )}
       </form>
 
+      {editPrices ? (
+        <PriceEditor key={`${searchParams.category ?? "all"}|${q}`} rows={items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, qty: Number(i.currentQty), price: i.unitPrice === null ? null : Number(i.unitPrice) }))} doneHref={`/inventory/stock${category ? `?category=${searchParams.category}` : ""}`} />
+      ) : (
       <Card>
         <CardHeader title={`${category ? MATERIAL_CATEGORY_LABEL[category] : "All categories"} (${items.length})`} subtitle="Real-time levels" />
         <Table>
@@ -93,6 +153,8 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
               {!category && <Th>Category</Th>}
               <Th className="text-right">Qty</Th>
               <Th>Unit</Th>
+              {showPrices && <Th className="text-right">Price / unit</Th>}
+              {showPrices && <Th className="text-right">Total</Th>}
               {(canEdit || isOwner) && <Th />}
             </tr>
           </thead>
@@ -105,10 +167,12 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
                   {!category && <Td className="text-ink-500">{MATERIAL_CATEGORY_LABEL[cat]}</Td>}
                   <Td className={`text-right tabular-nums ${Number(i.currentQty) === 0 ? "text-red-600" : ""}`}>{Number(i.currentQty)}</Td>
                   <Td>{i.unit}</Td>
+                  {showPrices && <Td className="text-right tabular-nums text-ink-700">{i.unitPrice === null ? <span className="text-amber-700">no price</span> : php(i.unitPrice)}</Td>}
+                  {showPrices && <Td className="text-right tabular-nums font-medium text-ink-900">{lineValue(i.currentQty, i.unitPrice) === null ? "—" : php(lineValue(i.currentQty, i.unitPrice) ?? 0)}</Td>}
                   {(canEdit || isOwner) && (
                     <Td className="text-right">
                       <span className="inline-flex items-center gap-3">
-                        {canEdit && <EditStockItemButton id={i.id} name={i.name} unit={i.unit} category={cat} qty={Number(i.currentQty)} />}
+                        {canEdit && <EditStockItemButton id={i.id} name={i.name} unit={i.unit} category={cat} qty={Number(i.currentQty)} price={i.unitPrice === null ? null : Number(i.unitPrice)} canPrice={showPrices} />}
                         {isOwner && (
                           <DeleteStockItemButton
                             id={i.id}
@@ -126,7 +190,7 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
             })}
             {items.length === 0 && (
               <tr>
-                <Td colSpan={5} className="py-8 text-center text-ink-400">
+                <Td colSpan={showPrices ? 7 : 5} className="py-8 text-center text-ink-400">
                   {q ? `Nothing matches “${q}”.` : "No items in this category yet."}
                 </Td>
               </tr>
@@ -134,6 +198,7 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
           </tbody>
         </Table>
       </Card>
+      )}
     </div>
   );
 }

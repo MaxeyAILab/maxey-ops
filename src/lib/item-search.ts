@@ -12,6 +12,8 @@ export interface PickItem {
   category: string;
   /** how many there are (in the warehouse, or on the site for that project's list) */
   qty: number;
+  /** price per unit — only supplied to people who may see prices */
+  price?: number | null;
 }
 
 const compact = (s: string) => s.toLowerCase().replace(/[^a-z0-9/.]/g, "");

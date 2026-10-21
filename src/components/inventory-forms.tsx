@@ -6,6 +6,8 @@ import { submitOrQueue } from "@/lib/outbox";
 import { Button, Input, Label, Select } from "@/components/ui";
 import { MATERIAL_CATEGORIES } from "@/lib/material-category";
 import { ItemPicker } from "@/components/item-picker";
+import { lineValue, parsePrice } from "@/lib/warehouse-value";
+import type { PickItem } from "@/lib/item-search";
 
 interface ItemOption {
   id: string;
@@ -14,6 +16,8 @@ interface ItemOption {
   category?: string;
   /** how many are in the warehouse */
   qty?: number;
+  /** price per unit (only given to people who may see prices) */
+  price?: number | null;
 }
 
 interface ProjectOption {
@@ -22,7 +26,7 @@ interface ProjectOption {
 }
 
 /** Register a new warehouse stock item (Spec 6.4). */
-export function AddItemForm() {
+export function AddItemForm({ withPrice = false }: { withPrice?: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -40,6 +44,7 @@ export function AddItemForm() {
         unit: fd.get("unit"),
         currentQty: fd.get("currentQty"),
         category: fd.get("category"),
+        unitPrice: parsePrice(String(fd.get("unitPrice") ?? "")) ?? null,
       }),
     });
     setBusy(false);
@@ -76,6 +81,12 @@ export function AddItemForm() {
         <Label htmlFor="itemQty">Starting qty</Label>
         <Input id="itemQty" name="currentQty" type="number" min="0" step="0.01" defaultValue={0} />
       </div>
+      {withPrice && (
+        <div>
+          <Label htmlFor="itemPrice">Price per unit (₱)</Label>
+          <Input id="itemPrice" name="unitPrice" inputMode="decimal" placeholder="optional" />
+        </div>
+      )}
       {error && <p className="text-sm text-red-600 sm:col-span-4">{error}</p>}
       <div className="sm:col-span-4">
         <Button type="submit" variant="secondary" disabled={busy}>
@@ -105,9 +116,12 @@ export function MovementForm({
   projects,
   recentIds = [],
   instant = false,
+  showValue = false,
 }: {
   items: ItemOption[];
   projects: ProjectOption[];
+  /** show the value (quantity × price) of what is being logged — for people who may see prices */
+  showValue?: boolean;
   /** the items this person logged most recently, newest first */
   recentIds?: string[];
   /** the Owner's returns and transfers are approved on the spot */
@@ -116,7 +130,10 @@ export function MovementForm({
   const router = useRouter();
   const [type, setType] = useState<(typeof MOVEMENT_TYPES)[number]["value"]>("WAREHOUSE_TO_SITE");
   const [pickerKey, setPickerKey] = useState(0); // a new key clears the chosen item after each movement is logged
-  const pickItems = items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, category: i.category ?? "OTHERS", qty: i.qty ?? 0 }));
+  const pickItems: PickItem[] = items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, category: i.category ?? "OTHERS", qty: i.qty ?? 0, price: i.price ?? null }));
+  const [chosen, setChosen] = useState<PickItem | null>(null);
+  const [qtyText, setQtyText] = useState("");
+  const entryValue = chosen ? lineValue(qtyText, chosen.price) : null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
@@ -156,6 +173,8 @@ export function MovementForm({
     } else {
       (e.target as HTMLFormElement).reset?.();
       setPickerKey((k) => k + 1);
+      setChosen(null);
+      setQtyText("");
       if ((type === "SITE_TO_WAREHOUSE" || type === "SITE_TO_SITE") && !instant) {
         setMsg("Request sent — nothing moves until office staff approve it. See “Requests waiting for approval” at the top.");
       }
@@ -168,7 +187,7 @@ export function MovementForm({
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <Label htmlFor="mvItem">Item</Label>
-          <ItemPicker key={pickerKey} id="mvItem" items={pickItems} recentIds={recentIds} qtyNote="in warehouse" />
+          <ItemPicker key={pickerKey} id="mvItem" items={pickItems} recentIds={recentIds} qtyNote="in warehouse" onChange={setChosen} />
         </div>
         <div>
           <Label htmlFor="mvType">Movement type</Label>
@@ -188,7 +207,7 @@ export function MovementForm({
       <div className="grid gap-3 sm:grid-cols-3">
         <div>
           <Label htmlFor="mvQty">Qty</Label>
-          <Input id="mvQty" name="qty" type="number" min="0.01" step="0.01" required />
+          <Input id="mvQty" name="qty" type="number" min="0.01" step="0.01" required value={qtyText} onChange={(e) => setQtyText(e.target.value)} />
         </div>
         {rule.from && (
           <div>
@@ -215,6 +234,24 @@ export function MovementForm({
           </div>
         )}
       </div>
+      {showValue && chosen && (
+        <p className="rounded-lg bg-ink-100 px-3 py-2 text-sm text-ink-800" aria-live="polite">
+          {chosen.price == null ? (
+            <span className="text-ink-500">No price has been entered for this item yet, so this movement has no value.</span>
+          ) : entryValue != null && Number(qtyText) > 0 ? (
+            <>
+              {type === "WAREHOUSE_TO_SITE" ? "Taken out of the warehouse: " : type === "SITE_TO_WAREHOUSE" ? "Back into the warehouse: " : "Value: "}
+              <b className="tabular-nums">₱{entryValue.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
+              <span className="text-ink-500">
+                {" "}
+                ({Number(qtyText)} × ₱{chosen.price.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+              </span>
+            </>
+          ) : (
+            <span className="text-ink-500">Enter a quantity to see its value (₱{chosen.price.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} each).</span>
+          )}
+        </p>
+      )}
       <div>
         <Label htmlFor="mvNote">Note (optional)</Label>
         <Input id="mvNote" name="note" placeholder="e.g., poured column C4" />

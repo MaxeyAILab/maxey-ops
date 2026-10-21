@@ -12,6 +12,8 @@ const createSchema = z.object({
   currentQty: z.coerce.number().min(0).default(0),
   /** which of the four groups it belongs to */
   category: z.enum(MATERIAL_CATEGORIES.map((c) => c.value) as [string, ...string[]]).default("OTHERS"),
+  /** price per unit in pesos (optional; can be entered later) */
+  unitPrice: z.number().min(0).max(100_000_000).nullable().optional(),
 });
 
 /** POST /api/inventory/items — register a warehouse stock item (Spec 6.4). */
@@ -20,7 +22,7 @@ export const POST = handleApi(async (req: NextRequest) => {
   if (!canAddInventoryCatalog(user)) throw new ApiError(403, "Not authorized for this action");
   const body = createSchema.parse(await req.json());
 
-  const item = await prisma.warehouseItem.create({ data: { ...body, category: body.category as MaterialCategoryValue } });
+  const item = await prisma.warehouseItem.create({ data: { ...body, category: body.category as MaterialCategoryValue, unitPrice: body.unitPrice == null ? null : Math.round(body.unitPrice * 100) / 100 } });
 
   await audit({
     entityType: "WarehouseItem",

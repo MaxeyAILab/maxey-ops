@@ -204,3 +204,9 @@ export function canDeleteTool(u: InventoryPerson, movementCount: number): boolea
   if (u.role === "OWNER") return true;
   return canAddInventoryCatalog(u) && movementCount === 0;
 }
+
+/**
+ * Who sees the price and total value of warehouse stock, and can enter prices: the Owner, PM, Purchasing and office staff with the
+ * Inventory tab — the same people who add and edit stock items. Foremen, drivers, timekeepers and leadmen see quantities only.
+ */
+export const canSeeStockPrices = canAddInventoryCatalog;

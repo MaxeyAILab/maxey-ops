@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Input, Label, Select } from "@/components/ui";
 import { MATERIAL_CATEGORIES, type MaterialCategoryValue } from "@/lib/material-category";
+import { parsePrice } from "@/lib/warehouse-value";
 
 /** A plain pop-up panel: closes with Escape or a click outside, and keeps the page behind it still. */
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
@@ -39,7 +40,7 @@ async function patch(url: string, body: Record<string, unknown>): Promise<string
 }
 
 /** Fix a warehouse stock item after it was added: name, unit, category, or the quantity (a quantity change needs a reason). */
-export function EditStockItemButton({ id, name, unit, category, qty }: { id: string; name: string; unit: string; category: MaterialCategoryValue; qty: number }) {
+export function EditStockItemButton({ id, name, unit, category, qty, price, canPrice = false }: { id: string; name: string; unit: string; category: MaterialCategoryValue; qty: number; price?: number | null; canPrice?: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -50,9 +51,15 @@ export function EditStockItemButton({ id, name, unit, category, qty }: { id: str
   async function save(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+    let unitPrice: number | null | undefined;
+    if (canPrice) {
+      unitPrice = parsePrice(String(fd.get("unitPrice") ?? ""));
+      if (unitPrice === undefined) return setError("The price must be an amount like 150 or 1,250.50");
+    }
     setBusy(true);
     setError("");
     const err = await patch(`/api/inventory/items/${id}`, {
+      ...(unitPrice !== undefined ? { unitPrice } : {}),
       name: fd.get("name"),
       unit: fd.get("unit"),
       category: fd.get("category"),
@@ -92,6 +99,12 @@ export function EditStockItemButton({ id, name, unit, category, qty }: { id: str
                 </Select>
               </div>
             </div>
+            {canPrice && (
+              <div>
+                <Label htmlFor={`ep-${id}`}>Price per unit (₱)</Label>
+                <Input id={`ep-${id}`} name="unitPrice" inputMode="decimal" defaultValue={price == null ? "" : String(price)} placeholder="leave blank if not known" />
+              </div>
+            )}
             <div>
               <Label htmlFor={`eq-${id}`}>Quantity in the warehouse</Label>
               <Input id={`eq-${id}`} type="number" min="0" step="0.01" value={newQty} onChange={(e) => setNewQty(e.target.value)} />

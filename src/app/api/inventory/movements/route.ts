@@ -95,6 +95,7 @@ export const POST = handleApi(async (req: NextRequest) => {
         fromProjectId,
         toProjectId,
         note: body.note || null,
+        unitPrice: item.unitPrice,
         actorId: user.id,
         createdAt: body.submittedAt,
         status: isRequest ? "PENDING" : "APPLIED",

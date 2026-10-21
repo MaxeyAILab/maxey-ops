@@ -13,10 +13,12 @@ const patchSchema = z
     unit: z.string().trim().min(1).max(30).optional(),
     category: z.enum(MATERIAL_CATEGORIES.map((c) => c.value) as [string, ...string[]]).optional(),
     currentQty: z.coerce.number().min(0).max(1_000_000_000).optional(),
+    /** price per unit in pesos; null removes the price */
+    unitPrice: z.number().min(0).max(100_000_000).nullable().optional(),
     /** required when the warehouse quantity is changed by hand */
     qtyReason: z.string().trim().max(300).optional(),
   })
-  .refine((b) => b.name !== undefined || b.unit !== undefined || b.category !== undefined || b.currentQty !== undefined, { message: "Nothing to change" });
+  .refine((b) => b.name !== undefined || b.unit !== undefined || b.category !== undefined || b.currentQty !== undefined || b.unitPrice !== undefined, { message: "Nothing to change" });
 
 /**
  * PATCH /api/inventory/items/[id] — correct a stock item after it was added: its name, unit, category, or the quantity in the
@@ -30,7 +32,7 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
   const item = await prisma.warehouseItem.findUnique({ where: { id: params.id } });
   if (!item) throw new ApiError(404, "Stock item not found");
 
-  const data: { name?: string; unit?: string; category?: "CIVIL_ARCHITECTURAL" | "PLUMBING" | "ELECTRICAL" | "OTHERS"; currentQty?: number } = {};
+  const data: { name?: string; unit?: string; category?: "CIVIL_ARCHITECTURAL" | "PLUMBING" | "ELECTRICAL" | "OTHERS"; currentQty?: number; unitPrice?: number | null } = {};
   const changes: Record<string, { from: unknown; to: unknown }> = {};
   if (body.name !== undefined && body.name !== item.name) {
     data.name = body.name;
@@ -48,6 +50,14 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
     if (!body.qtyReason || body.qtyReason.length < 3) throw new ApiError(400, "Say why the quantity is being changed");
     data.currentQty = body.currentQty;
     changes.quantity = { from: Number(item.currentQty), to: body.currentQty };
+  }
+  if (body.unitPrice !== undefined) {
+    const next = body.unitPrice === null ? null : Math.round(body.unitPrice * 100) / 100;
+    const was = item.unitPrice === null ? null : Number(item.unitPrice);
+    if (next !== was) {
+      data.unitPrice = next;
+      changes.price = { from: was, to: next };
+    }
   }
   if (Object.keys(changes).length === 0) return NextResponse.json({ ok: true });
 

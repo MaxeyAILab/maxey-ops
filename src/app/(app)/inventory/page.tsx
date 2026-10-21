@@ -9,7 +9,10 @@ import { AddToolForm, DeleteToolButton, ToolActions, ToolConditionControl } from
 import { TOOL_CONDITION_LABEL } from "@/lib/tool-condition";
 import { TOOL_FILTERS, filterTools, isToolFilter, toolFilterCounts } from "@/lib/tool-filter";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
-import { canAccess, canAddInventoryCatalog, canApproveInventoryRequest, canDeleteTool, canLogInventoryMovement } from "@/lib/access";
+import { canAccess, canAddInventoryCatalog, canApproveInventoryRequest, canDeleteTool, canLogInventoryMovement, canSeeStockPrices } from "@/lib/access";
+import { issuedFromWarehouse, lineValue, summarizeValue } from "@/lib/warehouse-value";
+import { php } from "@/lib/format";
+import { manilaDayKey } from "@/lib/time-rules";
 import { RequestDecision } from "@/components/inventory-requests-ui";
 import { EditToolButton } from "@/components/inventory-edit";
 import { MATERIAL_CATEGORIES, summarizeByCategory } from "@/lib/material-category";
@@ -25,7 +28,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
     redirect("/attendance");
   }
 
-  const [items, movements, projects, tools, toolMovements, pendingStock, pendingTools, myRecent] = await Promise.all([
+  const [items, movements, projects, tools, toolMovements, pendingStock, pendingTools, myRecent, issuedRows] = await Promise.all([
     prisma.warehouseItem.findMany({
       orderBy: { name: "asc" },
       include: { _count: { select: { movements: true } }, projectStocks: { select: { qty: true } } },
@@ -68,6 +71,10 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
     }),
     // the items this person logged most recently (offered first in the item picker)
     prisma.inventoryMovement.findMany({ where: { actorId: user.id }, orderBy: { createdAt: "desc" }, take: 60, select: { itemId: true } }),
+    // every applied issue out of the warehouse, for the "taken out" totals (only read when the person may see prices)
+    canSeeStockPrices(user)
+      ? prisma.inventoryMovement.findMany({ where: { type: "WAREHOUSE_TO_SITE", status: "APPLIED" }, select: { type: true, status: true, qty: true, unitPrice: true, createdAt: true } })
+      : Promise.resolve([]),
   ]);
 
   const actorIds = [...new Set([...movements, ...toolMovements, ...pendingStock, ...pendingTools].map((m) => m.actorId))];
@@ -85,8 +92,11 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
   const waitingText = (m: { type: string; actorId: string }) => `${REQUEST_LABEL[m.type] ?? "Request"} requested by ${actorNames.get(m.actorId) ?? "—"} — waiting for approval`;
   const pendingCount = pendingStock.length + pendingTools.length;
   const categoryCounts = summarizeByCategory(items);
+  const showPrices = canSeeStockPrices(user);
+  const stockValue = summarizeValue(items);
+  const issued = issuedFromWarehouse(issuedRows, new Date(`${manilaDayKey(new Date()).slice(0, 7)}-01T00:00:00+08:00`));
   const recentIds = [...new Set(myRecent.map((m) => m.itemId))].slice(0, 8);
-  const pickerItems = items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, category: i.category, qty: Number(i.currentQty) }));
+  const pickerItems = items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, category: i.category, qty: Number(i.currentQty), price: showPrices && i.unitPrice !== null ? Number(i.unitPrice) : null }));
 
   // tools: narrow by where it is / needs attention, and by typing
   const toolFilter = isToolFilter(searchParams.tool) ? searchParams.tool : "all";
@@ -143,7 +153,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
         <Card>
           <CardHeader
             title={`Warehouse stock (${items.length})`}
-            subtitle="By category — open one to see its items"
+            subtitle={showPrices ? `By category — total value ${php(stockValue.total)}${stockValue.unpriced > 0 ? ` (${stockValue.unpriced} item${stockValue.unpriced === 1 ? "" : "s"} without a price)` : ""}` : "By category — open one to see its items"}
             action={
               <Link href="/inventory/stock" className="text-sm font-medium text-brand-600 hover:underline">
                 View all items →
@@ -167,6 +177,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                       <div className="text-sm text-ink-600">
                         {categoryCounts[c.value].items} item{categoryCounts[c.value].items === 1 ? "" : "s"}
                       </div>
+                      {showPrices && <div className="text-sm font-semibold tabular-nums text-ink-900">{php(stockValue.byCategory[c.value].value)}</div>}
                       {categoryCounts[c.value].outOfStock > 0 && <div className="text-xs font-medium text-red-600">{categoryCounts[c.value].outOfStock} out of stock</div>}
                     </div>
                   </div>
@@ -176,7 +187,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
           </CardBody>
           {canAddCatalog && (
             <CardBody className="border-t border-ink-100">
-              <AddItemForm />
+              <AddItemForm withPrice={showPrices} />
             </CardBody>
           )}
         </Card>
@@ -189,7 +200,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
           <CardBody>
             {canMove ? (
               items.length > 0 && projectOptions.length > 0 ? (
-                <MovementForm items={pickerItems} projects={projectOptions} recentIds={recentIds} instant={isOwner} />
+                <MovementForm items={pickerItems} projects={projectOptions} recentIds={recentIds} instant={isOwner} showValue={showPrices} />
               ) : (
                 <p className="text-sm text-ink-400">Add a stock item and an active project first.</p>
               )
@@ -389,6 +400,25 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
 
       <Card>
         <CardHeader title="Material movement log" subtitle="Every movement, with actor and timestamp" />
+        {showPrices && (
+          <CardBody className="border-b border-ink-100">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg bg-ink-100 px-4 py-3">
+                <div className="text-xs font-medium uppercase tracking-wide text-ink-500">Taken out of the warehouse this month</div>
+                <div className="text-xl font-bold tabular-nums text-ink-900">{php(issued.monthValue)}</div>
+                <div className="text-xs text-ink-500">{issued.monthCount} issue{issued.monthCount === 1 ? "" : "s"} to project sites</div>
+              </div>
+              <div className="rounded-lg bg-ink-100 px-4 py-3">
+                <div className="text-xs font-medium uppercase tracking-wide text-ink-500">Taken out, all logged so far</div>
+                <div className="text-xl font-bold tabular-nums text-ink-900">{php(issued.allValue)}</div>
+                <div className="text-xs text-ink-500">
+                  {issued.allCount} issue{issued.allCount === 1 ? "" : "s"}
+                  {issued.unpriced > 0 ? ` · ${issued.unpriced} had no price (not counted)` : ""}
+                </div>
+              </div>
+            </div>
+          </CardBody>
+        )}
         <Table>
           <thead>
             <tr>
@@ -397,6 +427,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
               <Th>Item</Th>
               <Th className="text-right">Qty</Th>
               <Th>From → To</Th>
+              {showPrices && <Th className="text-right">Value</Th>}
               <Th>Requested / logged by</Th>
               <Th>Approval</Th>
             </tr>
@@ -413,13 +444,14 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                 <Td className="text-xs">
                   {m.fromLoc} → {m.toLoc}
                 </Td>
+                {showPrices && <Td className="text-right text-xs tabular-nums">{lineValue(m.qty, m.unitPrice) === null ? "—" : php(lineValue(m.qty, m.unitPrice) ?? 0)}</Td>}
                 <Td className="text-xs">{actorNames.get(m.actorId) ?? "—"}</Td>
                 <Td className="text-xs">{decisionText(m, fmtDateTime) ?? "—"}</Td>
               </tr>
             ))}
             {movements.length === 0 && (
               <tr>
-                <Td colSpan={7} className="py-6 text-center text-ink-400">
+                <Td colSpan={showPrices ? 8 : 7} className="py-6 text-center text-ink-400">
                   No movements logged yet.
                 </Td>
               </tr>

@@ -82,6 +82,7 @@ export function ItemPicker({
     }
   }
 
+  const peso = (n: number) => `₱${n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const qtyText = (i: PickItem) => (i.qty <= 0 ? <span className="font-medium text-red-600">none {qtyNote}</span> : <span>{`${i.qty} ${i.unit} ${qtyNote}`}</span>);
 
   const row = (i: PickItem, index: number) => (
@@ -122,7 +123,12 @@ export function ItemPicker({
           ▾
         </span>
       </button>
-      {selected && <p className="mt-1 text-xs text-ink-500">{qtyText(selected)}</p>}
+      {selected && (
+        <p className="mt-1 text-xs text-ink-500">
+          {qtyText(selected)}
+          {selected.price != null && ` · ${peso(selected.price)} each`}
+        </p>
+      )}
 
       {open && (
         <>
