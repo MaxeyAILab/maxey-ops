@@ -7,6 +7,7 @@ import { Badge, Card, CardBody, CardHeader, Table, Td, Th } from "@/components/u
 import { AddItemForm, MovementForm, ProjectMaterialQuickActions } from "@/components/inventory-forms";
 import { AddToolForm, DeleteToolButton, ToolActions, ToolConditionControl } from "@/components/tool-forms";
 import { TOOL_CONDITION_LABEL } from "@/lib/tool-condition";
+import { TOOL_FILTERS, filterTools, isToolFilter, toolFilterCounts } from "@/lib/tool-filter";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
 import { canAccess, canAddInventoryCatalog, canApproveInventoryRequest, canDeleteTool, canLogInventoryMovement } from "@/lib/access";
 import { RequestDecision } from "@/components/inventory-requests-ui";
@@ -17,14 +18,14 @@ import { REQUEST_LABEL, decisionText } from "@/lib/inventory-labels";
 export const metadata = { title: "Inventory" };
 export const dynamic = "force-dynamic";
 
-export default async function InventoryPage() {
+export default async function InventoryPage({ searchParams }: { searchParams: { tool?: string; toolq?: string } }) {
   const user = await getSessionUser();
   // Drivers don't have the tab by default (owner's rule) unless it is ticked on their account; with it they can log movements.
   if (!user || !canAccess(user.role, user.department, "/inventory", user.customMenus, user.useCustomMenus)) {
     redirect("/attendance");
   }
 
-  const [items, movements, projects, tools, toolMovements, pendingStock, pendingTools] = await Promise.all([
+  const [items, movements, projects, tools, toolMovements, pendingStock, pendingTools, myRecent] = await Promise.all([
     prisma.warehouseItem.findMany({
       orderBy: { name: "asc" },
       include: { _count: { select: { movements: true } }, projectStocks: { select: { qty: true } } },
@@ -40,7 +41,7 @@ export default async function InventoryPage() {
       include: {
         materialStocks: {
           where: { qty: { gt: 0 } },
-          include: { item: { select: { id: true, name: true, unit: true } } },
+          include: { item: { select: { id: true, name: true, unit: true, category: true } } },
         },
         toolAssets: true,
       },
@@ -65,6 +66,8 @@ export default async function InventoryPage() {
       orderBy: { createdAt: "asc" },
       include: { tool: { select: { name: true, assetTag: true } }, fromProject: { select: { name: true } }, toProject: { select: { name: true } } },
     }),
+    // the items this person logged most recently (offered first in the item picker)
+    prisma.inventoryMovement.findMany({ where: { actorId: user.id }, orderBy: { createdAt: "desc" }, take: 60, select: { itemId: true } }),
   ]);
 
   const actorIds = [...new Set([...movements, ...toolMovements, ...pendingStock, ...pendingTools].map((m) => m.actorId))];
@@ -82,6 +85,15 @@ export default async function InventoryPage() {
   const waitingText = (m: { type: string; actorId: string }) => `${REQUEST_LABEL[m.type] ?? "Request"} requested by ${actorNames.get(m.actorId) ?? "—"} — waiting for approval`;
   const pendingCount = pendingStock.length + pendingTools.length;
   const categoryCounts = summarizeByCategory(items);
+  const recentIds = [...new Set(myRecent.map((m) => m.itemId))].slice(0, 8);
+  const pickerItems = items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, category: i.category, qty: Number(i.currentQty) }));
+
+  // tools: narrow by where it is / needs attention, and by typing
+  const toolFilter = isToolFilter(searchParams.tool) ? searchParams.tool : "all";
+  const toolQuery = (searchParams.toolq ?? "").trim().slice(0, 80);
+  const toolRows = tools.map((t) => ({ ...t, location: t.currentProject?.name ?? "Warehouse" }));
+  const toolCounts = toolFilterCounts(toolRows);
+  const visibleTools = filterTools(toolRows, toolFilter, toolQuery);
   const projectOptions = projects.map((p) => ({ id: p.id, name: p.name }));
 
   return (
@@ -177,7 +189,7 @@ export default async function InventoryPage() {
           <CardBody>
             {canMove ? (
               items.length > 0 && projectOptions.length > 0 ? (
-                <MovementForm items={items} projects={projectOptions} instant={isOwner} />
+                <MovementForm items={pickerItems} projects={projectOptions} recentIds={recentIds} instant={isOwner} />
               ) : (
                 <p className="text-sm text-ink-400">Add a stock item and an active project first.</p>
               )
@@ -188,11 +200,50 @@ export default async function InventoryPage() {
         </Card>
       </div>
 
-      <Card>
+      <Card id="tools" className="scroll-mt-16">
         <CardHeader
-          title={`Tools & Equipment (${tools.length})`}
+          title={`Tools & Equipment (${toolFilter === "all" && !toolQuery ? tools.length : `${visibleTools.length} of ${tools.length}`})`}
           subtitle="Individually tracked — each unit checked out to a project and returned to the warehouse"
         />
+        <CardBody className="space-y-3 border-b border-ink-100">
+          <div className="flex flex-wrap items-center gap-2">
+            {TOOL_FILTERS.map((f) => {
+              const qs = new URLSearchParams();
+              if (f.key !== "all") qs.set("tool", f.key);
+              if (toolQuery) qs.set("toolq", toolQuery);
+              const on = toolFilter === f.key;
+              return (
+                <Link
+                  key={f.key}
+                  href={`/inventory${qs.toString() ? `?${qs}` : ""}#tools`}
+                  aria-current={on ? "true" : undefined}
+                  className={`rounded-full border px-3 py-1.5 text-sm font-medium ${on ? "border-[#8a1a28] bg-[#8a1a28] text-white" : "border-ink-200 text-ink-700 hover:bg-ink-100"}`}
+                >
+                  {f.label} <span className={on ? "text-white/80" : "text-ink-400"}>({toolCounts[f.key]})</span>
+                </Link>
+              );
+            })}
+          </div>
+          <form method="get" action="/inventory#tools" className="flex flex-wrap items-center gap-2">
+            {toolFilter !== "all" && <input type="hidden" name="tool" value={toolFilter} />}
+            <input
+              type="search"
+              name="toolq"
+              defaultValue={toolQuery}
+              placeholder="Search a tool — name, tag, category or location…"
+              aria-label="Search tools"
+              className="min-h-[40px] w-full max-w-sm rounded-lg border border-ink-200 bg-ink-50 px-3 text-sm text-ink-900 placeholder:text-ink-400 focus:border-[#8a1a28] focus:outline-none"
+            />
+            <button type="submit" className="min-h-[40px] rounded-lg bg-[#8a1a28] px-4 text-sm font-semibold text-white hover:bg-[#741522]">
+              Search
+            </button>
+            {toolQuery && (
+              <Link href={`/inventory${toolFilter !== "all" ? `?tool=${toolFilter}` : ""}#tools`} className="text-sm text-ink-500 hover:underline">
+                Clear
+              </Link>
+            )}
+          </form>
+        </CardBody>
         <Table>
           <thead>
             <tr>
@@ -206,7 +257,7 @@ export default async function InventoryPage() {
             </tr>
           </thead>
           <tbody>
-            {tools.map((t) => (
+            {visibleTools.map((t) => (
               <tr key={t.id}>
                 <Td className="font-medium">{t.name}</Td>
                 <Td className="text-ink-500">{t.assetTag ?? "—"}</Td>
@@ -234,10 +285,10 @@ export default async function InventoryPage() {
                 )}
               </tr>
             ))}
-            {tools.length === 0 && (
+            {visibleTools.length === 0 && (
               <tr>
                 <Td colSpan={canMove ? 7 : 6} className="py-6 text-center text-ink-400">
-                  No tools registered yet.
+                  {tools.length === 0 ? "No tools registered yet." : "No tools match — try another filter or fewer words."}
                 </Td>
               </tr>
             )}
@@ -292,6 +343,7 @@ export default async function InventoryPage() {
                       name: s.item.name,
                       unit: s.item.unit,
                       qty: Number(s.qty),
+                      category: s.item.category,
                     }))}
                     otherProjects={otherProjects}
                     instant={isOwner}

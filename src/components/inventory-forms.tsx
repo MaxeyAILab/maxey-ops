@@ -5,12 +5,15 @@ import { useRouter } from "next/navigation";
 import { submitOrQueue } from "@/lib/outbox";
 import { Button, Input, Label, Select } from "@/components/ui";
 import { MATERIAL_CATEGORIES } from "@/lib/material-category";
+import { ItemPicker } from "@/components/item-picker";
 
 interface ItemOption {
   id: string;
   name: string;
   unit: string;
   category?: string;
+  /** how many are in the warehouse */
+  qty?: number;
 }
 
 interface ProjectOption {
@@ -100,15 +103,20 @@ const MOVEMENT_TYPES = [
 export function MovementForm({
   items,
   projects,
+  recentIds = [],
   instant = false,
 }: {
   items: ItemOption[];
   projects: ProjectOption[];
+  /** the items this person logged most recently, newest first */
+  recentIds?: string[];
   /** the Owner's returns and transfers are approved on the spot */
   instant?: boolean;
 }) {
   const router = useRouter();
   const [type, setType] = useState<(typeof MOVEMENT_TYPES)[number]["value"]>("WAREHOUSE_TO_SITE");
+  const [pickerKey, setPickerKey] = useState(0); // a new key clears the chosen item after each movement is logged
+  const pickItems = items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, category: i.category ?? "OTHERS", qty: i.qty ?? 0 }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
@@ -121,6 +129,11 @@ export function MovementForm({
     setError("");
     setMsg("");
     const fd = new FormData(e.currentTarget);
+    if (!fd.get("itemId")) {
+      setError("Choose an item first.");
+      setBusy(false);
+      return;
+    }
     const result = await submitOrQueue({
       url: "/api/inventory/movements",
       label: "Inventory movement",
@@ -142,6 +155,7 @@ export function MovementForm({
       setMsg("No signal — movement saved on this device and will sync automatically.");
     } else {
       (e.target as HTMLFormElement).reset?.();
+      setPickerKey((k) => k + 1);
       if ((type === "SITE_TO_WAREHOUSE" || type === "SITE_TO_SITE") && !instant) {
         setMsg("Request sent — nothing moves until office staff approve it. See “Requests waiting for approval” at the top.");
       }
@@ -154,20 +168,7 @@ export function MovementForm({
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <Label htmlFor="mvItem">Item</Label>
-          <Select id="mvItem" name="itemId" required>
-            {MATERIAL_CATEGORIES.map((c) => {
-              const group = items.filter((i) => (i.category ?? "OTHERS") === c.value);
-              return group.length === 0 ? null : (
-                <optgroup key={c.value} label={c.label}>
-                  {group.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name} ({i.unit})
-                    </option>
-                  ))}
-                </optgroup>
-              );
-            })}
-          </Select>
+          <ItemPicker key={pickerKey} id="mvItem" items={pickItems} recentIds={recentIds} qtyNote="in warehouse" />
         </div>
         <div>
           <Label htmlFor="mvType">Movement type</Label>
@@ -232,6 +233,7 @@ export interface OnSiteStockRow {
   name: string;
   unit: string;
   qty: number;
+  category?: string;
 }
 
 /**
@@ -253,6 +255,8 @@ export function ProjectMaterialQuickActions({
 }) {
   const router = useRouter();
   const [action, setAction] = useState<"usage" | "return" | "transfer">("usage");
+  const [pickerKey, setPickerKey] = useState(0);
+  const pickItems = stocks.map((st) => ({ id: st.itemId, name: st.name, unit: st.unit, category: st.category ?? "OTHERS", qty: st.qty }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
@@ -265,6 +269,11 @@ export function ProjectMaterialQuickActions({
     setError("");
     setMsg("");
     const fd = new FormData(e.currentTarget);
+    if (!fd.get("itemId")) {
+      setError("Choose an item first.");
+      setBusy(false);
+      return;
+    }
     const result = await submitOrQueue({
       url: "/api/inventory/movements",
       label: `Material ${action}`,
@@ -285,6 +294,7 @@ export function ProjectMaterialQuickActions({
     if (result.queued) setMsg("Saved offline — will sync automatically.");
     else {
       (e.target as HTMLFormElement).reset?.();
+      setPickerKey((k) => k + 1);
       if (action !== "usage" && !instant) setMsg("Request sent — nothing moves until office staff approve it.");
       router.refresh();
     }
@@ -296,13 +306,7 @@ export function ProjectMaterialQuickActions({
     <form onSubmit={onSubmit} className="mt-3 grid gap-2 rounded-lg border border-dashed border-ink-200 p-3 sm:grid-cols-5">
       <div className="sm:col-span-2">
         <Label>Item</Label>
-        <Select name="itemId" required>
-          {stocks.map((s) => (
-            <option key={s.itemId} value={s.itemId}>
-              {s.name} — {s.qty} {s.unit} on site
-            </option>
-          ))}
-        </Select>
+        <ItemPicker key={pickerKey} id={`qa-${projectId}`} items={pickItems} qtyNote="on site" />
       </div>
       <div>
         <Label>Action</Label>
