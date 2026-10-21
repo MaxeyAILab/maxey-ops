@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { compressImage } from "@/lib/photos";
 import { toast } from "@/components/feedback-provider";
+import { Modal } from "@/components/modal";
 import { NO_PROJECT, PETTY_CASH_CATEGORIES, PETTY_CASH_STATUS_LABEL, advanceDeleteWarning } from "@/lib/cash-expense";
 
 const fieldCls =
@@ -859,5 +860,183 @@ export function AdvanceActions({ id, status, canApprove, repaid, deleteInfo }: {
       <div className="flex flex-wrap gap-1.5">{b}</div>
       {error && <p className="mt-1 max-w-xs text-xs text-red-700 dark:text-red-300">{error}</p>}
     </div>
+  );
+}
+
+export interface EditableReport {
+  id: string;
+  no: string;
+  purpose: string;
+  category: string;
+  projectId: string | null;
+  released: number;
+  status: string;
+  note: string | null;
+  items: { description: string; amount: number }[];
+  receipts: string[];
+}
+
+/**
+ * Owner only: correct a petty cash report that was already submitted — or already verified and posted. The lines, purpose,
+ * category, project, note and receipts can all be fixed; a reason is required and the change is recorded with what it was
+ * before. The posted expense, the project's committed cost and the fund follow the corrected amounts.
+ */
+export function EditReportButton({ report, projectGroups }: { report: EditableReport; projectGroups: { group: string; options: { value: string; label: string }[] }[] }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState(report.items.map((i) => ({ description: i.description, amount: String(i.amount) })));
+  const [purpose, setPurpose] = useState(report.purpose);
+  const [category, setCategory] = useState(report.category);
+  const [projectId, setProjectId] = useState(report.projectId ?? NO_PROJECT);
+  const [note, setNote] = useState(report.note ?? "");
+  const [removed, setRemoved] = useState<string[]>([]);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const spent = Math.round(items.reduce((s, i) => s + (Number(i.amount.replace(/,/g, "")) || 0), 0) * 100) / 100;
+  const change = Math.round((report.released - spent) * 100) / 100;
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    const clean = items.filter((i) => i.description.trim() || i.amount.trim());
+    if (clean.length === 0 || clean.some((i) => !i.description.trim() || !(Number(i.amount.replace(/,/g, "")) >= 0))) return setError("Each line needs a description and an amount");
+    setBusy(true);
+    setError("");
+    const err = await send(`/api/petty-cash/${report.id}`, "PATCH", {
+      action: "edit_report",
+      items: clean.map((i) => ({ description: i.description.trim(), amount: i.amount.replace(/,/g, "") })),
+      purpose: purpose.trim(),
+      category,
+      projectId: projectId === NO_PROJECT ? null : projectId,
+      note: note.trim() || undefined,
+      removeReceipts: removed,
+      reason: reason.trim(),
+    });
+    setBusy(false);
+    if (err) return setError(err);
+    setOpen(false);
+    router.refresh();
+  }
+
+  return (
+    <>
+      <button type="button" className={smallBtn} onClick={() => setOpen(true)} aria-label={`Edit report ${report.no}`}>
+        ✎ Edit report
+      </button>
+      {open && (
+        <Modal title={`Edit ${report.no} — expense report`} onClose={() => setOpen(false)} wide>
+          <form onSubmit={save} className="space-y-4">
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
+              {report.status === "LIQUIDATED"
+                ? "This report is already verified and posted. Correcting it changes the posted expense, the project's cost and the petty cash fund. The change is recorded with what it was before."
+                : "This report is waiting for verification. The change is recorded with what it was before."}
+            </p>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <label htmlFor={`ep-${report.id}`} className={labelCls}>
+                  Purpose
+                </label>
+                <input id={`ep-${report.id}`} value={purpose} onChange={(e) => setPurpose(e.target.value)} required minLength={3} className={fieldCls} />
+              </div>
+              <div>
+                <label htmlFor={`ec-${report.id}`} className={labelCls}>
+                  Category
+                </label>
+                <select id={`ec-${report.id}`} value={category} onChange={(e) => setCategory(e.target.value)} className={fieldCls}>
+                  {PETTY_CASH_CATEGORIES.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor={`ej-${report.id}`} className={labelCls}>
+                  Charged to
+                </label>
+                <select id={`ej-${report.id}`} value={projectId} onChange={(e) => setProjectId(e.target.value)} className={fieldCls}>
+                  {projectGroups.map((g) => (
+                    <optgroup key={g.group} label={g.group}>
+                      {g.options.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className={labelCls}>What it was spent on</div>
+              {items.map((it, i) => (
+                <div key={i} className="grid grid-cols-[minmax(0,1fr)_8rem_auto] gap-2">
+                  <input aria-label={`Item ${i + 1}`} value={it.description} onChange={(e) => setItems(items.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))} placeholder="What was bought / paid" className={fieldCls} />
+                  <input aria-label={`Amount ${i + 1}`} value={it.amount} inputMode="decimal" onChange={(e) => setItems(items.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x)))} placeholder="₱ 0.00" className={`${fieldCls} text-right`} />
+                  <button type="button" onClick={() => setItems(items.length > 1 ? items.filter((_, j) => j !== i) : [{ description: "", amount: "" }])} className="px-2 text-ink-400 hover:text-red-600" aria-label={`Remove item ${i + 1}`}>
+                    ×
+                  </button>
+                </div>
+              ))}
+              <button type="button" onClick={() => setItems([...items, { description: "", amount: "" }])} className={smallBtn}>
+                + Add line
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-ink-100 px-3 py-2 text-sm">
+              <span>
+                Released <b className="tabular-nums">{peso(report.released)}</b> · Spent <b className="tabular-nums">{peso(spent)}</b>
+              </span>
+              <span className={change < 0 ? "font-semibold text-red-700 dark:text-red-300" : "font-semibold text-emerald-700 dark:text-emerald-300"}>{change < 0 ? `Reimburse requester ${peso(-change)}` : `Change to return ${peso(change)}`}</span>
+            </div>
+
+            <div>
+              <label htmlFor={`en-${report.id}`} className={labelCls}>
+                Note (optional)
+              </label>
+              <input id={`en-${report.id}`} value={note} onChange={(e) => setNote(e.target.value)} className={fieldCls} />
+            </div>
+
+            {report.receipts.length > 0 && (
+              <div>
+                <div className={labelCls}>Receipts — tick any that are wrong to remove them</div>
+                <div className="flex flex-wrap gap-3">
+                  {report.receipts.map((src, i) => (
+                    <label key={src} className="flex cursor-pointer flex-col items-center gap-1 text-xs text-ink-600">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={src} alt={`Receipt ${i + 1}`} className={`h-16 w-16 rounded-md border object-cover ${removed.includes(src) ? "border-red-400 opacity-40" : "border-ink-200"}`} />
+                      <span className="flex items-center gap-1">
+                        <input type="checkbox" checked={removed.includes(src)} onChange={(e) => setRemoved(e.target.checked ? [...removed, src] : removed.filter((u) => u !== src))} />
+                        Remove
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label htmlFor={`er-${report.id}`} className={labelCls}>
+                Why is this being corrected?
+              </label>
+              <input id={`er-${report.id}`} value={reason} onChange={(e) => setReason(e.target.value)} required minLength={3} placeholder="e.g., wrong amount typed for the tire" className={fieldCls} />
+            </div>
+
+            {error && <p className="text-sm text-red-700 dark:text-red-300">{error}</p>}
+            <div className="flex gap-2">
+              <button type="submit" disabled={busy || reason.trim().length < 3} className={primaryBtn}>
+                {busy ? "Saving…" : "Save correction"}
+              </button>
+              <button type="button" onClick={() => setOpen(false)} className="rounded-md border border-ink-200 px-4 py-2 text-sm font-medium text-ink-700 hover:bg-ink-100">
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </>
   );
 }

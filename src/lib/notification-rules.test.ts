@@ -172,6 +172,13 @@ describe("cash expense follows the approver / releaser / custodian switches", ()
     expect(pick("PETTY_CASH_RECEIPT_ADDED")).toEqual(["acct", "arlene", "owner"]);
   });
 
+  it("a corrected report tells the custodians, and the requester in their own words", () => {
+    const c = ctx({ explicit: ["foremanA"] });
+    expect(pick("PETTY_CASH_REPORT_EDITED", c)).toEqual(["acct", "arlene", "foremanA", "owner"]);
+    expect(eventTitle(eventFor("PETTY_CASH_REPORT_EDITED")!, c)).toBe("Expense report corrected by the Owner");
+    expect(eventExplicitTitle(eventFor("PETTY_CASH_REPORT_EDITED")!, c)).toBe("Your expense report was corrected by the Owner");
+  });
+
   it("a rejected request reaches only its requester (and the Owner)", () => {
     expect(pick("PETTY_CASH_REJECTED", ctx({ explicit: ["foremanA"] }))).toEqual(["foremanA", "owner"]);
   });

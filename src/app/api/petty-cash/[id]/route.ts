@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { savePhotos } from "@/lib/storage";
 import { php } from "@/lib/format";
 import { ApiError, handleApi } from "@/lib/rbac";
-import { MAX_LIQUIDATION_RECEIPTS, canApproveCash, canApprovePettyCash, canAttachReceipts, canReleasePettyCash, formatPettyCashNo, fundBalance, isCashCustodian, itemsTotal, receiptCount, seesAllPettyCash } from "@/lib/cash-expense";
+import { MAX_LIQUIDATION_RECEIPTS, PETTY_CASH_CATEGORIES, PETTY_CASH_CATEGORY_LABEL, canApproveCash, canApprovePettyCash, canAttachReceipts, canReleasePettyCash, formatPettyCashNo, fundBalance, isCashCustodian, itemsTotal, receiptCount, seesAllPettyCash } from "@/lib/cash-expense";
 import { requireCashExpenseUser } from "@/lib/cash-expense-db";
 
 const itemSchema = z.object({ description: z.string().trim().min(1).max(200), amount: z.coerce.number().min(0).max(1_000_000) });
@@ -26,6 +27,17 @@ const patchSchema = z.discriminatedUnion("action", [
   }),
   // Receipts forgotten at the time can be added afterwards — while it waits for verification and after it is posted.
   z.object({ action: z.literal("add_receipts"), receipts: z.array(z.string()).min(1).max(6) }),
+  // The Owner can correct a report that was already submitted (or already verified and posted).
+  z.object({
+    action: z.literal("edit_report"),
+    items: z.array(itemSchema).min(1).max(30),
+    purpose: z.string().trim().min(3).max(500),
+    category: z.enum(PETTY_CASH_CATEGORIES.map((c) => c.value) as [string, ...string[]]),
+    projectId: z.string().min(1).nullable(), // null = General & Administrative (no project)
+    note: z.string().trim().max(500).optional(),
+    removeReceipts: z.array(z.string()).max(12).optional(),
+    reason: z.string().trim().min(3).max(300),
+  }),
   z.object({ action: z.literal("verify") }),
   z.object({ action: z.literal("send_back"), reason: z.string().trim().min(3).max(300) }),
 ]);
@@ -42,7 +54,7 @@ const patchSchema = z.discriminatedUnion("action", [
 export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { id: string } }) => {
   const user = await requireCashExpenseUser();
   const body = patchSchema.parse(await req.json());
-  const r = await prisma.pettyCashRequest.findUnique({ where: { id: params.id }, include: { requestedBy: { select: { name: true } } } });
+  const r = await prisma.pettyCashRequest.findUnique({ where: { id: params.id }, include: { requestedBy: { select: { name: true } }, project: { select: { name: true } } } });
   if (!r) throw new ApiError(404, "Request not found");
   const custodian = isCashCustodian(user);
   const own = r.requestedById === user.id || r.createdById === user.id;
@@ -145,6 +157,40 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
       data = { liquidationReceipts: [...((r.liquidationReceipts as string[] | null) ?? []), ...added] };
       action = "PETTY_CASH_RECEIPT_ADDED";
       diff = { ...diff, added: added.length, total: have + added.length, status: r.status, hadNone: have === 0 };
+      break;
+    }
+    case "edit_report": {
+      // Only the Owner: a correction changes the posted expense, the project's committed cost and the fund.
+      if (!canApproveCash(user)) throw new ApiError(403, "Only the Owner edits a submitted report");
+      expect("FOR_LIQUIDATION", "LIQUIDATED");
+      const project = body.projectId ? await prisma.project.findUnique({ where: { id: body.projectId }, select: { name: true } }) : null;
+      if (body.projectId && !project) throw new ApiError(400, "Unknown project");
+      const spent = itemsTotal(body.items);
+      const had = (r.liquidationReceipts as string[] | null) ?? [];
+      const drop = new Set((body.removeReceipts ?? []).filter((u) => had.includes(u)));
+      const keep = had.filter((u) => !drop.has(u));
+      data = {
+        spentAmount: spent,
+        liquidationItems: body.items,
+        liquidationNote: body.note || null,
+        purpose: body.purpose,
+        category: body.category,
+        projectId: body.projectId,
+        liquidationReceipts: keep.length > 0 ? keep : Prisma.DbNull,
+      };
+      action = "PETTY_CASH_REPORT_EDITED";
+      diff = {
+        ...diff,
+        status: r.status,
+        reason: body.reason,
+        spent: { from: Number(r.spentAmount ?? 0), to: spent },
+        items: { from: r.liquidationItems, to: body.items },
+        purpose: { from: r.purpose, to: body.purpose },
+        category: { from: PETTY_CASH_CATEGORY_LABEL[r.category], to: PETTY_CASH_CATEGORY_LABEL[body.category] },
+        project: { from: r.project?.name ?? null, to: project?.name ?? null },
+        note: { from: r.liquidationNote, to: body.note || null },
+        receiptsRemoved: Array.from(drop),
+      };
       break;
     }
     case "verify":

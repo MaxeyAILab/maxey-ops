@@ -19,7 +19,7 @@ import {
   missingReceipt,
 } from "@/lib/cash-expense";
 import { CashExpenseHeader, CashIcons, CashStat, CashStatus, Panel } from "@/components/cash-expense-header";
-import { AddReceipts, LiquidationForm, NoReceiptFlag, RequestActions, VerifyActions } from "@/components/cash-expense-actions";
+import { AddReceipts, EditReportButton, LiquidationForm, NoReceiptFlag, RequestActions, VerifyActions, type EditableReport } from "@/components/cash-expense-actions";
 import { PrintButton } from "@/components/print-button";
 
 export const metadata = { title: "Petty Cash Report" };
@@ -90,6 +90,26 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
     }),
   ]);
   const missing = turnedIn.filter(missingReceipt);
+
+  // The Owner's "Edit report" dialog needs every project to choose from.
+  const editProjects = canDelete ? await prisma.project.findMany({ where: { status: { not: "NOT_ACTIVE" } }, select: { id: true, name: true, isNonCorporate: true }, orderBy: { name: "asc" } }) : [];
+  const projectGroups = [
+    { group: "Projects", options: editProjects.filter((p) => !p.isNonCorporate).map((p) => ({ value: p.id, label: p.name })) },
+    { group: "Non-corporate jobs", options: editProjects.filter((p) => p.isNonCorporate).map((p) => ({ value: p.id, label: p.name })) },
+    { group: "No project", options: [{ value: NO_PROJECT, label: `${NO_PROJECT_LABEL} (no project)` }] },
+  ].filter((g) => g.options.length > 0);
+  const editable = (r: (typeof turnedIn)[number]): EditableReport => ({
+    id: r.id,
+    no: formatPettyCashNo(r.number),
+    purpose: r.purpose,
+    category: r.category,
+    projectId: r.projectId,
+    released: Number(r.amount),
+    status: r.status,
+    note: r.liquidationNote && !r.liquidationNote.startsWith("Sent back") ? r.liquidationNote : null,
+    items: ((r.liquidationItems as { description: string; amount: number }[] | null) ?? []).map((i) => ({ description: i.description, amount: Number(i.amount) })),
+    receipts: Array.isArray(r.liquidationReceipts) ? (r.liquidationReceipts as string[]) : [],
+  });
 
   const toLiquidate = open.filter((r) => r.status === "RELEASED");
   // Only the person the cash went to reports what it was spent on; everyone else just sees who still owes a report.
@@ -259,6 +279,11 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
                       <AddReceipts id={r.id} hasNone={missingReceipt(r)} />
                     </div>
                   )}
+                  {canDelete && (
+                    <div className="mt-2">
+                      <EditReportButton report={editable(r)} projectGroups={projectGroups} />
+                    </div>
+                  )}
                   <div className="mt-3 flex flex-wrap items-start justify-between gap-2">
                     {custodian ? <VerifyActions id={r.id} noReceipt={missingReceipt(r)} /> : <p className="text-xs text-ink-500">Waiting for Accounting or the Owner to verify.</p>}
                     <RequestActions id={r.id} status={r.status} canApprove={false} canRelease={false} canDelete={canDelete} custodian={custodian} own={false} isRequester={false} received={!!r.receivedAt} />
@@ -334,6 +359,11 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
                         <div className="no-print">
                           <Receipts urls={r.liquidationReceipts} />
                         </div>
+                        {canDelete && (
+                          <div className="no-print mt-1">
+                            <EditReportButton report={editable(r)} projectGroups={projectGroups} />
+                          </div>
+                        )}
                         {missingReceipt(r) && (
                           <div className="mt-1 flex flex-wrap items-center gap-2">
                             <NoReceiptFlag />
