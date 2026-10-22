@@ -142,7 +142,9 @@ export default async function PurchaseOrderDetailPage({ params }: { params: { id
                   <Td>{d.driverName ?? "—"}</Td>
                   <Td>{d.recipientName ?? "—"}</Td>
                   <Td>
-                    {d.discrepancies ? (
+                    {d.acceptedAt ? (
+                      <span className="text-xs font-medium text-emerald-700">✓ Accepted by the Owner — {d.acceptedNote}</span>
+                    ) : d.discrepancies ? (
                       <span className="text-xs font-medium text-amber-700">⚠ {d.discrepancies}</span>
                     ) : (
                       <span className="text-xs font-medium text-emerald-600">✓ Complete</span>

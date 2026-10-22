@@ -7,6 +7,7 @@ import { savePhotos } from "@/lib/storage";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
 import { canVerifyDelivery } from "@/lib/access";
+import { discrepancyLines as listDiscrepancies } from "@/lib/delivery-adjust";
 
 const checkItemSchema = z.object({
   item: z.string().min(1),
@@ -49,12 +50,7 @@ export const POST = handleApi(async (req: NextRequest) => {
   if (!po) throw new ApiError(404, "Purchase order not found");
   if (po.status === "CANCELLED") throw new ApiError(400, "PO is cancelled");
 
-  const discrepancyLines = body.checklist
-    .filter((c) => !c.ok || c.receivedQty < c.orderedQty)
-    .map(
-      (c) =>
-        `${c.item}: ordered ${c.orderedQty}, received ${c.receivedQty}${c.remarks ? ` — ${c.remarks}` : ""}`
-    );
+  const discrepancyLines = listDiscrepancies(body.checklist);
   const complete = discrepancyLines.length === 0;
   const photoUrls = await savePhotos(body.photos);
 

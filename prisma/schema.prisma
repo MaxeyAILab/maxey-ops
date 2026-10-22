@@ -737,6 +737,16 @@ model Delivery {
   photos        Json?
   gps           String?
   createdAt     DateTime      @default(now())
+
+  // Owner corrections: the Owner can fix what was recorded on the delivery, and can accept a delivery that does not match the
+  // PO as final (with a reason) — which also adjusts the PO and requisition to what was delivered.
+  editedAt       DateTime?
+  editedByName   String?
+  acceptedAt     DateTime?
+  acceptedById   String?
+  acceptedByName String?
+  acceptedNote   String? // the Owner's justification
+  adjustment     Json? // what acceptance changed (PO and requisition before/after), kept so it can be undone
 }
 
 /// The four groups warehouse materials are sorted into.

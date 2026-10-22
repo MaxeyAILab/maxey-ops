@@ -142,6 +142,9 @@ export const EVENTS: Record<string, EventDef> = {
   PO_CANCELLED: { category: "PURCHASING", roles: DESK, title: "Purchase order cancelled", explicitTitle: "The purchase order for your requisition was cancelled", body: bodyOf },
   DELIVERY_VERIFIED: { category: "DELIVERIES", roles: [...DESK, "DRIVER"], projectCrew: true, title: "Delivery received and verified", explicitTitle: "Your ordered materials were delivered", body: bodyOf },
   DELIVERY_VERIFIED_WITH_DISCREPANCIES: { category: "DELIVERIES", roles: [...DESK, "DRIVER"], projectCrew: true, title: "Delivery received WITH discrepancies", explicitTitle: "Your delivery arrived with discrepancies", body: bodyOf },
+  DELIVERY_EDITED: { category: "DELIVERIES", roles: DESK, title: "Delivery record corrected by the Owner", body: bodyOf },
+  DELIVERY_ACCEPTED_BY_OWNER: { category: "DELIVERIES", roles: DESK, title: "Delivery accepted by the Owner — PO and requisition adjusted", body: bodyOf },
+  DELIVERY_ACCEPTANCE_UNDONE: { category: "DELIVERIES", roles: DESK, title: "Owner's delivery acceptance was undone", body: bodyOf },
   DELIVERY_DELETED: { category: "DELIVERIES", roles: [], title: "A delivery record was deleted", body: bodyOf },
 
   // ----- inventory & tools (Owner always; others only if given the role below) -----

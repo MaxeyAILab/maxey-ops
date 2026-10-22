@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { fmtDate, fmtDateTime, php } from "@/lib/format";
 import { Badge, Card, CardBody, CardHeader, Table, Td, Th } from "@/components/ui";
 import { DeleteDeliveryButton } from "@/components/delivery-actions";
+import { OwnerDeliveryActions, type OwnerDelivery } from "@/components/delivery-owner-actions";
+import { type AdjustLine, type ChecklistRow, type PoLine } from "@/lib/delivery-adjust";
 import { ShareButton } from "@/components/share-button";
 import { LocationPin } from "@/components/location-pin";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
@@ -35,6 +37,27 @@ function deliveredCost(poItems: unknown, checklist: unknown): number {
   const costByName = new Map(items.map((i) => [i.name, Number(i.unitCost)]));
   const rows = (checklist as ChecklistItemJson[]) ?? [];
   return rows.reduce((sum, c) => sum + (costByName.get(c.item) ?? 0) * Number(c.receivedQty), 0);
+}
+
+/** "PO changed: Cement 5 → 2 bags. Committed cost ₱1,250.00 → ₱500.00" — what the Owner's acceptance did, from the stored record. */
+function adjustmentText(adj: unknown): string | null {
+  const a = adj as { lines?: AdjustLine[]; poTotalBefore?: number; poTotalAfter?: number } | null;
+  if (!a?.lines?.length) return null;
+  return `PO and requisition changed to what was delivered: ${a.lines.map((l) => `${l.item} ${l.from} → ${l.to} ${l.unit}`).join(", ")}. Committed cost ${php(a.poTotalBefore ?? 0)} → ${php(a.poTotalAfter ?? 0)}.`;
+}
+
+/** What the Owner's buttons on a delivery need: its checklist, whether it tallies, whether it was accepted, and the PO's lines. */
+function ownerData(d: { id: string; driverName: string | null; recipientName: string | null; checklist: unknown; discrepancies: string | null; acceptedAt: Date | null; po: { poNumber: string; items: unknown } }): OwnerDelivery {
+  return {
+    id: d.id,
+    poNumber: d.po.poNumber,
+    driverName: d.driverName,
+    recipientName: d.recipientName,
+    checklist: ((d.checklist as ChecklistRow[]) ?? []).map((c) => ({ item: c.item, orderedQty: Number(c.orderedQty), receivedQty: Number(c.receivedQty), ok: !!c.ok, remarks: c.remarks ?? "" })),
+    hasDiscrepancy: !!d.discrepancies,
+    accepted: !!d.acceptedAt,
+    poItems: ((d.po.items as PoLine[]) ?? []).map((i) => ({ name: i.name, qty: Number(i.qty), unit: i.unit, unitCost: Number(i.unitCost) })),
+  };
 }
 
 export default async function DeliveriesPage() {
@@ -205,6 +228,7 @@ export default async function DeliveriesPage() {
                     ⬇ Download
                   </a>
                   <ShareButton src={`/api/deliveries/${d.id}/pdf`} filename={`Delivery-${d.po.poNumber}.pdf`} title={`Delivery ${d.po.poNumber}`} />
+                  {isOwner && <OwnerDeliveryActions d={ownerData(d)} />}
                   {isOwner && <DeleteDeliveryButton deliveryId={d.id} poNumber={d.po.poNumber} />}
                 </div>
               </div>
@@ -220,13 +244,22 @@ export default async function DeliveriesPage() {
                   <LocationPin gps={d.gps} label="Where it was checked" />
                 </div>
               )}
-              {d.discrepancies ? (
+              {d.acceptedAt ? (
+                <div className="mt-1 space-y-1">
+                  <p className="rounded bg-emerald-50 p-2 text-xs text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
+                    ✓ Accepted as complete by the Owner ({d.acceptedByName ?? "—"}, {fmtDateTime(d.acceptedAt)}) — {d.acceptedNote}
+                  </p>
+                  {d.discrepancies && <p className="whitespace-pre-wrap text-xs text-ink-500">What did not tally: {d.discrepancies}</p>}
+                  {adjustmentText(d.adjustment) && <p className="text-xs text-ink-600">{adjustmentText(d.adjustment)}</p>}
+                </div>
+              ) : d.discrepancies ? (
                 <p className="mt-1 whitespace-pre-wrap rounded bg-amber-50 p-2 text-xs text-amber-700">
                   ⚠ {d.discrepancies}
                 </p>
               ) : (
                 <p className="mt-1 text-xs text-emerald-600">✓ Complete — no discrepancies</p>
               )}
+              {d.editedAt && <p className="mt-1 text-[11px] text-ink-400">Corrected by {d.editedByName ?? "the Owner"} · {fmtDateTime(d.editedAt)}</p>}
             </div>
           ))}
           {deliveries.length === 0 && (
@@ -283,7 +316,9 @@ export default async function DeliveriesPage() {
                           <Td>{verifierNames.get(d.verifiedById) ?? "—"}</Td>
                           <Td className="text-right tabular-nums">{php(cost)}</Td>
                           <Td>
-                            {d.discrepancies ? (
+                            {d.acceptedAt ? (
+                              <span className="text-xs font-medium text-emerald-700">✓ Accepted by Owner</span>
+                            ) : d.discrepancies ? (
                               <span className="text-xs font-medium text-amber-700">⚠ Discrepancy</span>
                             ) : (
                               <span className="text-xs font-medium text-emerald-600">✓ Complete</span>
@@ -300,7 +335,8 @@ export default async function DeliveriesPage() {
                               <ShareButton src={`/api/deliveries/${d.id}/pdf`} filename={`Delivery-${d.po.poNumber}.pdf`} title={`Delivery ${d.po.poNumber}`} />
                             </span>
                             {isOwner && (
-                              <span className="ml-2">
+                              <span className="ml-2 inline-flex flex-wrap items-center gap-x-3">
+                                <OwnerDeliveryActions d={ownerData(d)} />
                                 <DeleteDeliveryButton deliveryId={d.id} poNumber={d.po.poNumber} />
                               </span>
                             )}
