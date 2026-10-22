@@ -226,14 +226,23 @@ export function Table({
   );
 }
 
+/**
+ * A column that stays in view while the table is scrolled sideways (on a phone), so the row's name is always visible next to
+ * whatever is being read or tapped on the right. Use it on the first column's header and cells, inside a Card (it takes the
+ * card's background so the scrolling cells slide underneath it).
+ */
+const STICKY = "sticky left-0 z-[1] bg-ink-50 shadow-[1px_0_0_rgb(var(--ink-200))]";
+
 export function Th({
   className,
+  sticky = false,
   ...props
-}: React.ThHTMLAttributes<HTMLTableCellElement>) {
+}: React.ThHTMLAttributes<HTMLTableCellElement> & { sticky?: boolean }) {
   return (
     <th
       className={cx(
         "border-b border-ink-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-ink-500",
+        sticky && STICKY,
         className
       )}
       {...props}
@@ -243,11 +252,12 @@ export function Th({
 
 export function Td({
   className,
+  sticky = false,
   ...props
-}: React.TdHTMLAttributes<HTMLTableCellElement>) {
+}: React.TdHTMLAttributes<HTMLTableCellElement> & { sticky?: boolean }) {
   return (
     <td
-      className={cx("border-b border-ink-50 px-3 py-2.5 align-top text-ink-800", className)}
+      className={cx("border-b border-ink-50 px-3 py-2.5 align-top text-ink-800", sticky && STICKY, className)}
       {...props}
     />
   );

@@ -160,7 +160,7 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
         <Table>
           <thead>
             <tr>
-              <Th>Item</Th>
+              <Th sticky>Item</Th>
               {!category && <Th>Category</Th>}
               <Th className="text-right">Qty</Th>
               <Th>Unit</Th>
@@ -174,7 +174,7 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
               const cat = isMaterialCategory(i.category) ? i.category : "OTHERS";
               return (
                 <tr key={i.id} className={Number(i.currentQty) === 0 ? "opacity-60" : ""}>
-                  <Td className="font-medium">{i.name}</Td>
+                  <Td sticky className="min-w-[7rem] max-w-[10rem] font-medium sm:max-w-none">{i.name}</Td>
                   {!category && <Td className="text-ink-500">{MATERIAL_CATEGORY_LABEL[cat]}</Td>}
                   <Td className={`text-right tabular-nums ${Number(i.currentQty) === 0 ? "text-red-600" : ""}`}>{Number(i.currentQty)}</Td>
                   <Td>{i.unit}</Td>

@@ -51,11 +51,11 @@ export function PriceEditor({ rows, doneHref }: { rows: PriceRow[]; doneHref: st
 
   return (
     <div className="space-y-4">
-      <div className="overflow-x-auto rounded-lg border border-ink-200">
+      <div className="overflow-x-auto rounded-lg border border-ink-200 bg-ink-50">
         <table className="w-full min-w-[560px] text-left text-sm">
-          <thead className="bg-ink-100/70 text-ink-700">
+          <thead className="bg-ink-100 text-ink-700">
             <tr>
-              <th className="px-3 py-2.5 font-semibold">Item</th>
+              <th className="sticky left-0 z-[1] bg-ink-100 px-3 py-2.5 font-semibold shadow-[1px_0_0_rgb(var(--ink-200))]">Item</th>
               <th className="px-3 py-2.5 text-right font-semibold">Qty</th>
               <th className="px-3 py-2.5 font-semibold">Unit</th>
               <th className="w-40 px-3 py-2.5 text-right font-semibold">Price per unit (₱)</th>
@@ -65,7 +65,7 @@ export function PriceEditor({ rows, doneHref }: { rows: PriceRow[]; doneHref: st
           <tbody>
             {parsed.map(({ row, price }) => (
               <tr key={row.id} className="border-t border-ink-100">
-                <td className="px-3 py-1.5 font-medium text-ink-900">{row.name}</td>
+                <td className="sticky left-0 z-[1] min-w-[7rem] max-w-[10rem] bg-ink-50 px-3 py-1.5 font-medium text-ink-900 shadow-[1px_0_0_rgb(var(--ink-200))] sm:max-w-none">{row.name}</td>
                 <td className="px-3 py-1.5 text-right tabular-nums">{row.qty}</td>
                 <td className="px-3 py-1.5">{row.unit}</td>
                 <td className="px-3 py-1.5">

@@ -307,8 +307,8 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
         <Table>
           <thead>
             <tr>
-              <Th>Tool</Th>
-              <Th>Tag</Th>
+              <Th sticky>Tool</Th>
+              <Th className="hidden sm:table-cell">Tag</Th>
               <Th>Category</Th>
               <Th>Status</Th>
               <Th>Condition</Th>
@@ -319,8 +319,11 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
           <tbody>
             {visibleTools.map((t) => (
               <tr key={t.id}>
-                <Td className="font-medium">{t.name}</Td>
-                <Td className="text-ink-500">{t.assetTag ?? "—"}</Td>
+                <Td sticky className="min-w-[7rem] max-w-[9.5rem] font-medium sm:max-w-none">
+                  {t.name}
+                  {t.assetTag && <div className="text-xs font-semibold text-ink-500 sm:hidden">{t.assetTag}</div>}
+                </Td>
+                <Td className="hidden text-ink-500 sm:table-cell">{t.assetTag ?? "—"}</Td>
                 <Td className="text-ink-500">{t.category ?? "—"}</Td>
                 <Td>
                   <Badge value={t.status} />
@@ -377,7 +380,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                   <Table>
                     <thead>
                       <tr>
-                        <Th>Item</Th>
+                        <Th sticky>Item</Th>
                         <Th className="text-right">Qty on site</Th>
                         <Th>Unit</Th>
                       </tr>
@@ -385,7 +388,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                     <tbody>
                       {p.materialStocks.map((s) => (
                         <tr key={s.id}>
-                          <Td className="font-medium">
+                          <Td sticky className="font-medium">
                             {s.item.name}
                             {s.item.warehouse !== DEFAULT_WAREHOUSE && <span className="ml-1.5 rounded bg-ink-100 px-1.5 py-0.5 text-[11px] font-medium text-ink-600">{warehouseLabel(s.item.warehouse)}</span>}
                           </Td>
