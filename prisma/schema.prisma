@@ -747,6 +747,16 @@ model Delivery {
   acceptedByName String?
   acceptedNote   String? // the Owner's justification
   adjustment     Json? // what acceptance changed (PO and requisition before/after), kept so it can be undone
+
+  // Two-step verification: the driver verifies the count, then the person receiving it confirms they received it. Deliveries made
+  // before this existed have needsConfirmation = false and count as fully verified.
+  needsConfirmation Boolean   @default(false)
+  receiverId        String? // the staff member who has to confirm (null = the receiver is not in the app; office confirms)
+  confirmedAt       DateTime?
+  confirmedById     String?
+  confirmedByName   String?
+  disputedAt        DateTime? // the receiver reported a problem instead of confirming
+  disputeNote       String?
 }
 
 /// The four groups warehouse materials are sorted into.

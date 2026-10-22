@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/modal";
+import { PhotoThumbnails } from "@/components/photo-viewer";
 import { discrepancyLines, planAdjustment, type ChecklistRow, type PoLine } from "@/lib/delivery-adjust";
 
 const peso = (n: number) => `₱${n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -25,6 +26,9 @@ export interface OwnerDelivery {
   checklist: ChecklistRow[];
   hasDiscrepancy: boolean;
   accepted: boolean;
+  /** verified by the driver but not yet confirmed by the receiver */
+  awaiting: boolean;
+  photos: string[];
   poItems: PoLine[];
 }
 
@@ -36,7 +40,7 @@ export function OwnerDeliveryActions({ d }: { d: OwnerDelivery }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
       <EditDelivery d={d} />
-      {d.hasDiscrepancy && !d.accepted && <AcceptDelivery d={d} />}
+      {d.hasDiscrepancy && !d.accepted && !d.awaiting && <AcceptDelivery d={d} />}
       {d.accepted && <UndoAccept d={d} />}
     </span>
   );
@@ -83,6 +87,12 @@ function EditDelivery({ d }: { d: OwnerDelivery }) {
         <Modal title={`Edit delivery — ${d.poNumber}`} onClose={() => setOpen(false)} wide>
           <form onSubmit={save} className="space-y-4">
             {d.accepted && <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">You accepted this delivery before. Saving a change takes that acceptance back — the PO and requisition return to what they were — and you can accept again afterwards.</p>}
+            {d.photos.length > 0 && (
+              <div>
+                <div className="mb-1 text-xs font-medium text-ink-600">Photos attached to this delivery</div>
+                <PhotoThumbnails photos={d.photos.map((src) => ({ src, label: d.poNumber }))} />
+              </div>
+            )}
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="text-xs font-medium text-ink-600">
                 Driver
@@ -183,6 +193,8 @@ function AcceptDelivery({ d }: { d: OwnerDelivery }) {
                 ))}
               </ul>
             </div>
+
+            {d.photos.length > 0 && <PhotoThumbnails photos={d.photos.map((src) => ({ src, label: d.poNumber }))} />}
 
             {plan.unchanged ? (
               <p className="text-sm text-ink-700">The PO quantities already match what was delivered, so nothing on the PO or requisition changes — this only marks the delivery as complete.</p>

@@ -47,9 +47,11 @@ export async function resolveContext(entityType: string, entityId: string, actio
         return { url: `/purchasing/${entityId}`, label: [po.poNumber, po.requisition.project?.name].filter(Boolean).join(" · "), projectId: po.requisition.projectId, explicit: ids(po.requisition.submittedById) };
       }
       case "Delivery": {
-        const dv = await prisma.delivery.findUnique({ where: { id: entityId }, select: { projectId: true, project: { select: { name: true } }, po: { select: { poNumber: true, requisition: { select: { submittedById: true } } } } } });
+        const dv = await prisma.delivery.findUnique({ where: { id: entityId }, select: { projectId: true, receiverId: true, verifiedById: true, project: { select: { name: true } }, po: { select: { poNumber: true, requisition: { select: { submittedById: true } } } } } });
         if (!dv) return { url: "/deliveries" };
-        return { url: "/deliveries", label: [dv.po.poNumber, dv.project?.name].filter(Boolean).join(" · "), projectId: dv.projectId, explicit: ids(dv.po.requisition.submittedById) };
+        // waiting for the receiver: only the receiver is told; a problem report goes to the driver (and the office); otherwise the requisition's requester
+        const explicit = action === "DELIVERY_AWAITING_CONFIRMATION" ? ids(dv.receiverId) : action === "DELIVERY_DISPUTED" ? ids(dv.verifiedById) : ids(dv.po.requisition.submittedById);
+        return { url: "/deliveries", label: [dv.po.poNumber, dv.project?.name].filter(Boolean).join(" · "), projectId: dv.projectId, explicit };
       }
       case "ProgressEntry": {
         const p = await prisma.progressEntry.findUnique({ where: { id: entityId }, select: { projectId: true, submittedById: true, project: { select: { name: true } } } });

@@ -116,6 +116,7 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
 
   // ---------------------------------------------------------------- accept
   if (body.action === "accept") {
+    if (d.needsConfirmation && !d.confirmedAt) throw new ApiError(400, "This delivery is still waiting for the receiver's confirmation — it can be accepted once that is done");
     if (d.acceptedAt) throw new ApiError(409, "This delivery was already accepted");
     if (!d.discrepancies) throw new ApiError(400, "This delivery already tallies with the PO — there is nothing to accept");
     const poItems = (po.items as unknown as PoLine[]).map((i) => ({ name: i.name, qty: Number(i.qty), unit: i.unit, unitCost: Number(i.unitCost) }));

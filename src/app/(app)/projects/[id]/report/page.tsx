@@ -193,7 +193,9 @@ export default async function ProjectReportPage({ params }: { params: { id: stri
             <li key={d.id} className="text-sm">
               <span className="text-xs text-ink-400">{fmtDateTime(d.verifiedAt ?? d.createdAt)}</span>{" "}
               <span className="font-medium text-ink-800">{d.po.poNumber}</span>
-              {d.acceptedAt ? (
+              {d.needsConfirmation && !d.confirmedAt ? (
+                <span className="text-amber-700"> — ⏳ waiting for the receiver to confirm</span>
+              ) : d.acceptedAt ? (
                 <span className="text-emerald-700"> — accepted as complete by the Owner ({d.acceptedNote})</span>
               ) : d.discrepancies ? (
                 <span className="text-amber-700"> — ⚠ {d.discrepancies}</span>

@@ -20,6 +20,12 @@ export default async function VerifyDeliveryPage({ params }: { params: { poId: s
   });
   if (!po) notFound();
 
+  // the person receiving the delivery is chosen from the staff; they confirm it afterwards
+  const [staff, waiting] = await Promise.all([
+    prisma.user.findMany({ where: { active: true, role: { not: "CLIENT" } }, orderBy: { name: "asc" }, select: { id: true, name: true, position: true } }),
+    prisma.delivery.findFirst({ where: { poId: po.id, needsConfirmation: true, confirmedAt: null }, select: { recipientName: true } }),
+  ]);
+
   // PO items are stored as JSON; foremen see qty/spec but not unit costs
   const items = (po.items as { name: string; qty: number; unit: string }[]).map((i) => ({
     name: i.name,
@@ -43,7 +49,13 @@ export default async function VerifyDeliveryPage({ params }: { params: { poId: s
           Supplier: {po.supplier} · expected {fmtDate(po.deliveryDate)}
         </p>
       </div>
-      <DeliveryChecklistForm poId={po.id} items={items} />
+      {waiting ? (
+        <p className="rounded-lg bg-amber-50 p-4 text-sm text-amber-800">
+          A delivery for this PO was already verified and is waiting for {waiting.recipientName ?? "the receiver"} to confirm it. It can be verified again once that is done.
+        </p>
+      ) : (
+        <DeliveryChecklistForm poId={po.id} items={items} receivers={staff} meId={user.id} />
+      )}
     </div>
   );
 }

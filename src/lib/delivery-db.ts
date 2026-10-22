@@ -13,14 +13,19 @@ export interface StoredAdjustment {
 }
 
 /**
- * Brings the PO's (and its requisition's) status in line with the deliveries that exist: the latest delivery decides — complete
+ * Brings the PO's (and its requisition's) status in line with the fully verified deliveries: the latest one decides — complete
  * (tallied, or accepted by the Owner) means Delivered, otherwise Partially delivered, and no delivery means Open again. A
  * cancelled PO is left as it is.
  */
 export async function syncPoStatus(db: Db, poId: string): Promise<void> {
   const po = await db.purchaseOrder.findUnique({ where: { id: poId }, select: { status: true, requisitionId: true } });
   if (!po || po.status === "CANCELLED") return;
-  const latest = await db.delivery.findFirst({ where: { poId }, orderBy: { createdAt: "desc" }, select: { discrepancies: true, acceptedAt: true } });
+  // only fully verified deliveries count — one still waiting for the receiver's confirmation changes nothing yet
+  const latest = await db.delivery.findFirst({
+    where: { poId, OR: [{ needsConfirmation: false }, { confirmedAt: { not: null } }] },
+    orderBy: { createdAt: "desc" },
+    select: { discrepancies: true, acceptedAt: true },
+  });
   const status = !latest ? "OPEN" : isDeliveryComplete(latest) ? "DELIVERED" : "PARTIALLY_DELIVERED";
   await db.purchaseOrder.update({ where: { id: poId }, data: { status } });
   if (status === "DELIVERED") await db.requisition.updateMany({ where: { id: po.requisitionId, status: "PO_ISSUED" }, data: { status: "DELIVERED" } });

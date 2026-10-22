@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { submitOrQueue } from "@/lib/outbox";
-import { Button, Card, CardBody, Input, Label } from "@/components/ui";
+import { Button, Card, CardBody, Input, Label, Select } from "@/components/ui";
+import { missingNames } from "@/lib/delivery-confirm";
 import { PhotoInput } from "@/components/photo-input";
 import { useT } from "@/components/lang-provider";
 
@@ -45,7 +46,7 @@ function getGps(): Promise<string> {
  * flag shortages/damage with photos. Offline-capable; GPS + device timestamp
  * are captured for verification.
  */
-export function DeliveryChecklistForm({ poId, items }: { poId: string; items: PoItem[] }) {
+export function DeliveryChecklistForm({ poId, items, receivers, meId }: { poId: string; items: PoItem[]; receivers: { id: string; name: string; position: string | null }[]; meId: string }) {
   const t = useT();
   const router = useRouter();
   const [rows, setRows] = useState<CheckRow[]>(
@@ -60,7 +61,11 @@ export function DeliveryChecklistForm({ poId, items }: { poId: string; items: Po
   );
   const [photos, setPhotos] = useState<string[]>([]);
   const [driverName, setDriverName] = useState("");
-  const [recipientName, setRecipientName] = useState("");
+  const NOT_LISTED = "__other";
+  const [receiverChoice, setReceiverChoice] = useState(""); // a staff member's id, NOT_LISTED, or "" (not chosen yet)
+  const [recipientName, setRecipientName] = useState(""); // typed name when the receiver is not in the app
+  const receiverId = receiverChoice && receiverChoice !== NOT_LISTED ? receiverChoice : "";
+  const missing = missingNames({ driverName, receiverId, recipientName: receiverChoice === NOT_LISTED ? recipientName : "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [queuedMsg, setQueuedMsg] = useState("");
@@ -72,6 +77,7 @@ export function DeliveryChecklistForm({ poId, items }: { poId: string; items: Po
   const hasDiscrepancy = rows.some((r) => !r.ok || Number(r.receivedQty) < r.orderedQty);
 
   async function submit() {
+    if (missing) return setError(missing);
     setBusy(true);
     setError("");
     const gps = await getGps();
@@ -82,8 +88,9 @@ export function DeliveryChecklistForm({ poId, items }: { poId: string; items: Po
         poId,
         gps,
         photos,
-        driverName,
-        recipientName,
+        driverName: driverName.trim(),
+        receiverId,
+        recipientName: receiverChoice === NOT_LISTED ? recipientName.trim() : "",
         checklist: rows.map((r) => ({
           item: r.item,
           orderedQty: r.orderedQty,
@@ -122,23 +129,38 @@ export function DeliveryChecklistForm({ poId, items }: { poId: string; items: Po
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <Label htmlFor="driverName">{t("del.driver")}</Label>
+          <Label htmlFor="driverName">{t("del.driver")} *</Label>
           <Input
             id="driverName"
+            required
             placeholder={t("del.driverPh")}
             value={driverName}
             onChange={(e) => setDriverName(e.target.value)}
           />
         </div>
         <div>
-          <Label htmlFor="recipientName">{t("del.receivedBy")}</Label>
-          <Input
-            id="recipientName"
-            placeholder={t("del.receivedByPh")}
-            value={recipientName}
-            onChange={(e) => setRecipientName(e.target.value)}
-          />
+          <Label htmlFor="receiverChoice">{t("del.receivedBy")} *</Label>
+          <Select id="receiverChoice" required value={receiverChoice} onChange={(e) => setReceiverChoice(e.target.value)}>
+            <option value="" disabled>
+              Choose who is receiving it…
+            </option>
+            {receivers.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+                {r.id === meId ? " (me)" : r.position ? ` — ${r.position}` : ""}
+              </option>
+            ))}
+            <option value={NOT_LISTED}>Someone not in the app (type the name)</option>
+          </Select>
+          {receiverChoice === NOT_LISTED && (
+            <Input className="mt-2" aria-label="Name of the person receiving" placeholder={t("del.receivedByPh")} value={recipientName} onChange={(e) => setRecipientName(e.target.value)} />
+          )}
         </div>
+        <p className="text-xs text-ink-500 sm:col-span-2">
+          {receiverId === meId
+            ? "You are the one receiving it, so it is fully verified as soon as you send it."
+            : "The delivery is fully verified only when the person receiving it confirms in the app. Until then the PO stays as it is."}
+        </p>
       </div>
 
       <div className="space-y-3">
@@ -196,8 +218,9 @@ export function DeliveryChecklistForm({ poId, items }: { poId: string; items: Po
           {t("del.discrepancy")}
         </p>
       )}
+      {missing && <p className="text-sm font-medium text-amber-700">{missing} before you can verify this delivery.</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}
-      <Button onClick={submit} disabled={busy} className="w-full">
+      <Button onClick={submit} disabled={busy || !!missing} className="w-full">
         {busy ? t("del.submitting") : t("del.submit")}
       </Button>
       <p className="text-center text-xs text-ink-400">{t("del.footer")}</p>

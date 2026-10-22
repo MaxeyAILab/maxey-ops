@@ -8,6 +8,9 @@ import { DeleteDeliveryButton } from "@/components/delivery-actions";
 import { OwnerDeliveryActions, type OwnerDelivery } from "@/components/delivery-owner-actions";
 import { type AdjustLine, type ChecklistRow, type PoLine } from "@/lib/delivery-adjust";
 import { ShareButton } from "@/components/share-button";
+import { PhotoThumbnails } from "@/components/photo-viewer";
+import { ConfirmDeliveryButtons } from "@/components/delivery-confirm-actions";
+import { canConfirmDelivery, deliveryStage, isAwaitingConfirmation } from "@/lib/delivery-confirm";
 import { LocationPin } from "@/components/location-pin";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
 import { canAccess, canVerifyDelivery } from "@/lib/access";
@@ -47,7 +50,7 @@ function adjustmentText(adj: unknown): string | null {
 }
 
 /** What the Owner's buttons on a delivery need: its checklist, whether it tallies, whether it was accepted, and the PO's lines. */
-function ownerData(d: { id: string; driverName: string | null; recipientName: string | null; checklist: unknown; discrepancies: string | null; acceptedAt: Date | null; po: { poNumber: string; items: unknown } }): OwnerDelivery {
+function ownerData(d: { id: string; driverName: string | null; recipientName: string | null; checklist: unknown; discrepancies: string | null; acceptedAt: Date | null; needsConfirmation: boolean; confirmedAt: Date | null; photos: unknown; po: { poNumber: string; items: unknown } }): OwnerDelivery {
   return {
     id: d.id,
     poNumber: d.po.poNumber,
@@ -56,15 +59,16 @@ function ownerData(d: { id: string; driverName: string | null; recipientName: st
     checklist: ((d.checklist as ChecklistRow[]) ?? []).map((c) => ({ item: c.item, orderedQty: Number(c.orderedQty), receivedQty: Number(c.receivedQty), ok: !!c.ok, remarks: c.remarks ?? "" })),
     hasDiscrepancy: !!d.discrepancies,
     accepted: !!d.acceptedAt,
+    awaiting: d.needsConfirmation && !d.confirmedAt,
+    photos: Array.isArray(d.photos) ? (d.photos as string[]) : [],
     poItems: ((d.po.items as PoLine[]) ?? []).map((i) => ({ name: i.name, qty: Number(i.qty), unit: i.unit, unitCost: Number(i.unitCost) })),
   };
 }
 
 export default async function DeliveriesPage() {
   const user = await getSessionUser();
-  if (!user || !canAccess(user.role, user.department, "/deliveries", user.customMenus, user.useCustomMenus)) {
-    redirect("/attendance");
-  }
+  if (!user) redirect("/attendance");
+  const hasTab = canAccess(user.role, user.department, "/deliveries", user.customMenus, user.useCustomMenus);
 
   const [pendingPos, deliveries] = await Promise.all([
     prisma.purchaseOrder.findMany({
@@ -88,8 +92,14 @@ export default async function DeliveriesPage() {
     }),
   ]);
 
-  const canVerify = canVerifyDelivery(user.role, user.department);
+  // The person named as receiving a delivery can open this page even without the Deliveries tab — to confirm it, and only that.
+  const awaiting = deliveries.filter(isAwaitingConfirmation);
+  const forMe = awaiting.filter((d) => d.receiverId === user.id);
+  if (!hasTab && forMe.length === 0) redirect("/attendance");
+  const limited = !hasTab;
+  const canVerify = hasTab && canVerifyDelivery(user.role, user.department);
   const isOwner = user.role === "OWNER";
+  const awaitingByPo = new Map(awaiting.map((d) => [d.poId, d]));
   const verifierNames = new Map(
     (
       await prisma.user.findMany({
@@ -101,6 +111,9 @@ export default async function DeliveriesPage() {
 
   const pendingTotal = pendingPos.reduce((s, po) => s + Number(po.totalCost), 0);
   const recentDeliveries = deliveries.slice(0, 20);
+  const shownAwaiting = limited ? forMe : awaiting;
+  const checklistOf = (d: { checklist: unknown }) => ((d.checklist as ChecklistRow[]) ?? []).map((c) => ({ ...c, receivedQty: Number(c.receivedQty), orderedQty: Number(c.orderedQty) }));
+  const photosOf = (d: { photos: unknown }) => (Array.isArray(d.photos) ? (d.photos as string[]) : []);
 
   // Archive every verified delivery into monthly folders, each showing how
   // much material value was received that month.
@@ -114,7 +127,7 @@ export default async function DeliveriesPage() {
   }
   const folderMap = new Map<string, Folder>();
   let deliveredTotal = 0;
-  for (const d of deliveries) {
+  for (const d of deliveries.filter((x) => !isAwaitingConfirmation(x))) {
     const cost = deliveredCost(d.po.items, d.checklist);
     deliveredTotal += cost;
     const at = d.verifiedAt ?? d.createdAt;
@@ -130,9 +143,83 @@ export default async function DeliveriesPage() {
   }
   const folders = Array.from(folderMap.values()).sort((a, b) => (a.key < b.key ? 1 : -1));
 
+  const confirmationCard =
+    shownAwaiting.length > 0 ? (
+      <Card className={forMe.length > 0 ? "border-amber-400" : undefined}>
+        <CardHeader
+          title={forMe.length > 0 ? `Waiting for your confirmation (${forMe.length})` : `Waiting for the receiver to confirm (${shownAwaiting.length})`}
+          subtitle="The driver verified the count. A delivery is fully verified only when the person receiving it confirms they received it — check the count and the photos first."
+        />
+        <CardBody className="space-y-3">
+          {shownAwaiting.map((d) => {
+            const rows = checklistOf(d);
+            const shots = photosOf(d);
+            const mine = d.receiverId === user.id;
+            const label = d.project?.name ?? projectOrCategoryLabel({ project: null, category: d.po.requisition?.category });
+            return (
+              <div key={d.id} className="space-y-2 rounded-lg border border-ink-200 p-3 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <span className="font-semibold text-ink-900">{d.po.poNumber}</span>
+                    <span className="text-ink-500"> · {label} · {d.po.supplier}</span>
+                  </div>
+                  <span className="text-xs text-ink-400">Verified {fmtDateTime(d.verifiedAt ?? d.createdAt)}</span>
+                </div>
+                <p className="text-xs text-ink-600">
+                  Driver: <b>{d.driverName ?? "—"}</b> · Receiver: <b>{d.recipientName ?? "—"}</b>
+                  {d.receiverId === null && " (not in the app — the office confirms for them)"}
+                </p>
+                <div className="overflow-x-auto rounded-lg border border-ink-100">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-ink-100 uppercase tracking-wide text-ink-600">
+                      <tr>
+                        <th className="px-2 py-1.5">Item</th>
+                        <th className="px-2 py-1.5 text-right text-[10px]">Ordered</th>
+                        <th className="px-2 py-1.5 text-right text-[10px]">Received</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((r) => (
+                        <tr key={r.item} className={`border-t border-ink-100 ${r.receivedQty < r.orderedQty || !r.ok ? "bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200" : ""}`}>
+                          <td className="px-2 py-1.5 font-medium">
+                            {r.item}
+                            {(!r.ok || r.remarks) && <div className="font-normal opacity-80">{!r.ok ? "Not in good order. " : ""}{r.remarks}</div>}
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{r.orderedQty}</td>
+                          <td className="px-2 py-1.5 text-right font-semibold tabular-nums">{r.receivedQty}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {shots.length > 0 ? <PhotoThumbnails photos={shots.map((src) => ({ src, label: `${d.po.poNumber} · ${fmtDateTime(d.verifiedAt ?? d.createdAt)}` }))} /> : <p className="text-xs font-medium text-amber-700">No photos were attached to this delivery</p>}
+                {d.disputedAt && d.disputeNote && <p className="rounded bg-red-50 p-2 text-xs text-red-800 dark:bg-red-900/30 dark:text-red-200">Problem reported by the receiver ({fmtDateTime(d.disputedAt)}): {d.disputeNote}</p>}
+                {canConfirmDelivery(user, d) ? (
+                  <ConfirmDeliveryButtons id={d.id} poNumber={d.po.poNumber} onBehalfOf={mine ? null : d.recipientName} />
+                ) : (
+                  <p className="text-xs font-medium text-amber-700">⏳ Waiting for {d.recipientName ?? "the receiver"} to confirm</p>
+                )}
+              </div>
+            );
+          })}
+        </CardBody>
+      </Card>
+    ) : null;
+
+  if (limited) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-xl font-bold text-ink-900">Deliveries</h1>
+        {confirmationCard}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold text-ink-900">Deliveries</h1>
+
+      {confirmationCard}
 
       <Card>
         <CardHeader
@@ -176,15 +263,17 @@ export default async function DeliveriesPage() {
                 <Td>{fmtDate(po.deliveryDate)}</Td>
                 <Td>
                   <Badge value={po.status} />
+                  {awaitingByPo.get(po.id) && <div className="mt-0.5 text-[11px] font-medium text-amber-700">⏳ Verified by the driver — waiting for {awaitingByPo.get(po.id)!.recipientName ?? "the receiver"}</div>}
                 </Td>
                 {canVerify && (
                   <Td>
-                    <Link
-                      href={`/deliveries/${po.id}`}
-                      className="font-medium text-brand-600 hover:underline"
-                    >
-                      Verify delivery →
-                    </Link>
+                    {awaitingByPo.get(po.id) ? (
+                      <span className="text-xs text-ink-400">Waiting for confirmation</span>
+                    ) : (
+                      <Link href={`/deliveries/${po.id}`} className="font-medium text-brand-600 hover:underline">
+                        Verify delivery →
+                      </Link>
+                    )}
                   </Td>
                 )}
               </tr>
@@ -244,6 +333,21 @@ export default async function DeliveriesPage() {
                   <LocationPin gps={d.gps} label="Where it was checked" />
                 </div>
               )}
+              {isAwaitingConfirmation(d) ? (
+                <p className="mt-1 rounded bg-amber-50 p-2 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+                  {deliveryStage(d) === "DISPUTED" ? `⚠ The receiver reported a problem: ${d.disputeNote ?? ""}` : `⏳ Verified by the driver — waiting for ${d.recipientName ?? "the receiver"} to confirm`}
+                </p>
+              ) : d.needsConfirmation && d.confirmedAt ? (
+                <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">
+                  ✓ Received and confirmed by {d.confirmedByName ?? d.recipientName ?? "the receiver"} · {fmtDateTime(d.confirmedAt)}
+                  {d.confirmedById && d.receiverId && d.confirmedById !== d.receiverId ? ` (on behalf of ${d.recipientName})` : ""}
+                </p>
+              ) : null}
+              {photosOf(d).length > 0 && (
+                <div className="mt-2">
+                  <PhotoThumbnails photos={photosOf(d).map((src) => ({ src, label: `${d.po.poNumber} · ${fmtDateTime(d.verifiedAt ?? d.createdAt)}` }))} />
+                </div>
+              )}
               {d.acceptedAt ? (
                 <div className="mt-1 space-y-1">
                   <p className="rounded bg-emerald-50 p-2 text-xs text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
@@ -256,7 +360,7 @@ export default async function DeliveriesPage() {
                 <p className="mt-1 whitespace-pre-wrap rounded bg-amber-50 p-2 text-xs text-amber-700">
                   ⚠ {d.discrepancies}
                 </p>
-              ) : (
+              ) : isAwaitingConfirmation(d) ? null : (
                 <p className="mt-1 text-xs text-emerald-600">✓ Complete — no discrepancies</p>
               )}
               {d.editedAt && <p className="mt-1 text-[11px] text-ink-400">Corrected by {d.editedByName ?? "the Owner"} · {fmtDateTime(d.editedAt)}</p>}
