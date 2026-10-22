@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { canLogInventoryMovement } from "@/lib/access";
+import { savePhotos } from "@/lib/storage";
+import { MAX_NEW_REQUEST_PHOTOS } from "@/lib/request-photos";
 import { warehouseLabel } from "@/lib/warehouses";
 import { MATERIAL_RULES, applyMaterialMove, assertMaterialAvailable, materialNeedsApproval } from "@/lib/inventory-requests";
 
@@ -25,13 +27,15 @@ const createSchema = z.object({
   fromProjectId: z.string().optional().or(z.literal("")),
   toProjectId: z.string().optional().or(z.literal("")),
   note: z.string().max(300).optional().or(z.literal("")), // e.g. usage note: "poured column C4"
+  photos: z.array(z.string()).max(MAX_NEW_REQUEST_PHOTOS).optional(), // compressed data URLs: what is being returned / transferred
 });
 
 /**
  * POST /api/inventory/movements — log a materials movement, offline-capable (the foreman logs transfers/usage from the
  * phone). Issuing to a site, usage and supplier deliveries are applied at once. A RETURN to the warehouse and a TRANSFER to
  * another project are requests (status PENDING): nothing moves until office staff approve them (PATCH /[id]) — the
- * Owner's own requests are approved on the spot. Either way the movement records who logged it.
+ * Owner's own requests are approved on the spot. Either way the movement records who logged it. Photos of the items can be sent
+ * with it (up to 4) so the approver can see what is coming back.
  */
 export const POST = handleApi(async (req: NextRequest) => {
   const user = await requireUser();
@@ -84,6 +88,7 @@ export const POST = handleApi(async (req: NextRequest) => {
   const isRequest = materialNeedsApproval(body.type) && user.role !== "OWNER";
   const decided = !isRequest && materialNeedsApproval(body.type) ? { decidedById: user.id, decidedByName: user.name, decidedAt: new Date() } : {};
 
+  const photoUrls = await savePhotos(body.photos);
   const movement = await prisma.$transaction(async (db) => {
     const movement = await db.inventoryMovement.create({
       data: {
@@ -97,6 +102,7 @@ export const POST = handleApi(async (req: NextRequest) => {
         toProjectId,
         note: body.note || null,
         unitPrice: item.unitPrice,
+        photos: photoUrls.length ? photoUrls : undefined,
         actorId: user.id,
         createdAt: body.submittedAt,
         status: isRequest ? "PENDING" : "APPLIED",
@@ -113,7 +119,7 @@ export const POST = handleApi(async (req: NextRequest) => {
     actorId: user.id,
     actorName: user.name,
     action: isRequest ? "INVENTORY_REQUEST_SUBMITTED" : `STOCK_${body.type}`,
-    diff: { item: item.name, qty: body.qty, unit: item.unit, type: body.type, from: fromLoc, to: toLoc, note: body.note || null },
+    diff: { item: item.name, qty: body.qty, unit: item.unit, type: body.type, from: fromLoc, to: toLoc, note: body.note || null, photos: photoUrls.length },
   });
 
   return NextResponse.json(movement, { status: 201 });

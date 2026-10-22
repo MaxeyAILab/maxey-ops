@@ -6,6 +6,7 @@ import { submitOrQueue } from "@/lib/outbox";
 import { Button, Input, Label, Select } from "@/components/ui";
 import { MATERIAL_CATEGORIES } from "@/lib/material-category";
 import { ItemPicker } from "@/components/item-picker";
+import { PhotoInput } from "@/components/photo-input";
 import { WAREHOUSES, type WarehouseValue } from "@/lib/warehouses";
 import { lineValue, parsePrice } from "@/lib/warehouse-value";
 import type { PickItem } from "@/lib/item-search";
@@ -149,6 +150,8 @@ export function MovementForm({
   const pickItems: PickItem[] = items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, category: i.category ?? "OTHERS", qty: i.qty ?? 0, price: i.price ?? null }));
   const [chosen, setChosen] = useState<PickItem | null>(null);
   const [qtyText, setQtyText] = useState("");
+  const [proof, setProof] = useState<string[]>([]); // photos of the items being returned / transferred
+  const [proofKey, setProofKey] = useState(0);
   const entryValue = chosen ? lineValue(qtyText, chosen.price) : null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -177,6 +180,7 @@ export function MovementForm({
         fromProjectId: rule.from ? fd.get("fromProjectId") : undefined,
         toProjectId: rule.to ? fd.get("toProjectId") : undefined,
         note: fd.get("note"),
+        ...(type === "SITE_TO_WAREHOUSE" || type === "SITE_TO_SITE" ? { photos: proof } : {}),
       },
     });
     setBusy(false);
@@ -191,6 +195,8 @@ export function MovementForm({
       setPickerKey((k) => k + 1);
       setChosen(null);
       setQtyText("");
+      setProof([]);
+      setProofKey((k) => k + 1);
       if ((type === "SITE_TO_WAREHOUSE" || type === "SITE_TO_SITE") && !instant) {
         setMsg("Request sent — nothing moves until office staff approve it. See “Requests waiting for approval” at the top.");
       }
@@ -268,6 +274,11 @@ export function MovementForm({
           )}
         </p>
       )}
+      {(type === "SITE_TO_WAREHOUSE" || type === "SITE_TO_SITE") && (
+        <div>
+          <PhotoInput key={proofKey} label="Photo of the items being moved (recommended — the approver sees it)" max={4} onChange={setProof} />
+        </div>
+      )}
       <div>
         <Label htmlFor="mvNote">Note (optional)</Label>
         <Input id="mvNote" name="note" placeholder="e.g., poured column C4" />
@@ -310,6 +321,8 @@ export function ProjectMaterialQuickActions({
   const [action, setAction] = useState<"usage" | "return" | "transfer">("usage");
   const [pickerKey, setPickerKey] = useState(0);
   const pickItems = stocks.map((st) => ({ id: st.itemId, name: st.name, unit: st.unit, category: st.category ?? "OTHERS", qty: st.qty }));
+  const [proof, setProof] = useState<string[]>([]);
+  const [proofKey, setProofKey] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
@@ -337,6 +350,7 @@ export function ProjectMaterialQuickActions({
         fromProjectId: projectId,
         toProjectId: action === "transfer" ? fd.get("toProjectId") : undefined,
         note: fd.get("note"),
+        ...(action !== "usage" ? { photos: proof } : {}),
       },
     });
     setBusy(false);
@@ -348,6 +362,8 @@ export function ProjectMaterialQuickActions({
     else {
       (e.target as HTMLFormElement).reset?.();
       setPickerKey((k) => k + 1);
+      setProof([]);
+      setProofKey((k) => k + 1);
       if (action !== "usage" && !instant) setMsg("Request sent — nothing moves until office staff approve it.");
       router.refresh();
     }
@@ -388,6 +404,11 @@ export function ProjectMaterialQuickActions({
         <div>
           <Label>Note (optional)</Label>
           <Input name="note" placeholder="e.g., poured column C4" />
+        </div>
+      )}
+      {action !== "usage" && (
+        <div className="sm:col-span-5">
+          <PhotoInput key={proofKey} label="Photo of the items being moved (recommended — the approver sees it)" max={4} onChange={setProof} />
         </div>
       )}
       <div className="sm:col-span-5 flex items-center gap-3">

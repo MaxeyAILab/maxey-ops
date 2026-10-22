@@ -808,6 +808,7 @@ model InventoryMovement {
   decidedByName  String?
   decidedAt      DateTime?
   rejectedReason String?
+  photos         Json? // photos of the items moved (urls) — attached to a return/transfer request so the approver can see what is coming
 
   @@index([status])
 }
@@ -875,6 +876,7 @@ model ToolMovement {
   decidedByName  String?
   decidedAt      DateTime?
   rejectedReason String?
+  photos         Json? // photos of the tool(s) moved (urls), for a return/transfer request; photoUrl above is the damage/condition photo
 
   @@index([status])
 }

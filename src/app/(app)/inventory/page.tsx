@@ -18,6 +18,9 @@ import { EditToolButton } from "@/components/inventory-edit";
 import { MATERIAL_CATEGORIES, summarizeByCategory } from "@/lib/material-category";
 import { REQUEST_LABEL, decisionText } from "@/lib/inventory-labels";
 import { WarehouseTabs } from "@/components/warehouse-tabs";
+import { RequestPhotos } from "@/components/request-photos-ui";
+import { PhotoThumbnails } from "@/components/photo-viewer";
+import { photoList } from "@/lib/request-photos";
 import { DEFAULT_WAREHOUSE, countByWarehouse, warehouseFromSlug, warehouseLabel, warehouseSlug } from "@/lib/warehouses";
 
 export const metadata = { title: "Inventory" };
@@ -104,6 +107,8 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
   const pendingByTool = new Map(pendingTools.map((m) => [m.toolId, m]));
   const waitingText = (m: { type: string; actorId: string }) => `${REQUEST_LABEL[m.type] ?? "Request"} requested by ${actorNames.get(m.actorId) ?? "—"} — waiting for approval`;
   const pendingCount = pendingStock.length + pendingTools.length;
+  // every photo of a movement: the ones sent with a return/transfer request, and a tool's damage/condition photo
+  const shots = (m: { photos: unknown; photoUrl?: string | null }) => [...photoList(m.photos), ...(m.photoUrl ? [m.photoUrl] : [])];
   const categoryCounts = summarizeByCategory(items);
   const showPrices = canSeeStockPrices(user);
   const stockValue = summarizeValue(items);
@@ -148,6 +153,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                     {m.fromLoc} → {m.toLoc} · requested by <b>{actorNames.get(m.actorId) ?? "—"}</b> · {fmtDateTime(m.createdAt)}
                     {m.note ? ` · ${m.note}` : ""}
                   </div>
+                  <RequestPhotos kind="stock" id={m.id} photos={photoList(m.photos)} label={fmtDateTime(m.createdAt)} canAdd={m.actorId === user.id || canApprove} />
                 </div>
                 <RequestDecision kind="stock" id={m.id} canDecide={canApprove && (isOwner || m.actorId !== user.id)} mine={m.actorId === user.id} />
               </div>
@@ -163,6 +169,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                   <div className="text-xs text-ink-500">
                     {m.fromProject?.name ?? warehouseLabel(m.tool.warehouse)} → {m.toProject?.name ?? warehouseLabel(m.tool.warehouse)} · requested by <b>{actorNames.get(m.actorId) ?? "—"}</b> · {fmtDateTime(m.createdAt)}
                   </div>
+                  <RequestPhotos kind="tool" id={m.id} photos={photoList(m.photos)} label={fmtDateTime(m.createdAt)} canAdd={m.actorId === user.id || canApprove} />
                 </div>
                 <RequestDecision kind="tool" id={m.id} canDecide={canApprove && (isOwner || m.actorId !== user.id)} mine={m.actorId === user.id} />
               </div>
@@ -476,6 +483,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
               {showPrices && <Th className="text-right">Value</Th>}
               <Th>Requested / logged by</Th>
               <Th>Approval</Th>
+              <Th>Photos</Th>
             </tr>
           </thead>
           <tbody>
@@ -493,11 +501,12 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                 {showPrices && <Td className="text-right text-xs tabular-nums">{lineValue(m.qty, m.unitPrice) === null ? "—" : php(lineValue(m.qty, m.unitPrice) ?? 0)}</Td>}
                 <Td className="text-xs">{actorNames.get(m.actorId) ?? "—"}</Td>
                 <Td className="text-xs">{decisionText(m, fmtDateTime) ?? "—"}</Td>
+                <Td>{shots(m).length > 0 ? <PhotoThumbnails photos={shots(m).map((src) => ({ src, label: fmtDateTime(m.createdAt) }))} /> : <span className="text-xs text-ink-400">—</span>}</Td>
               </tr>
             ))}
             {movements.length === 0 && (
               <tr>
-                <Td colSpan={showPrices ? 8 : 7} className="py-6 text-center text-ink-400">
+                <Td colSpan={showPrices ? 9 : 8} className="py-6 text-center text-ink-400">
                   No movements logged for the {whName} yet.
                 </Td>
               </tr>
@@ -517,6 +526,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
               <Th>From → To</Th>
               <Th>Requested / logged by</Th>
               <Th>Approval</Th>
+              <Th>Photos</Th>
             </tr>
           </thead>
           <tbody>
@@ -533,11 +543,12 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                 </Td>
                 <Td className="text-xs">{actorNames.get(m.actorId) ?? "—"}</Td>
                 <Td className="text-xs">{decisionText(m, fmtDateTime) ?? "—"}</Td>
+                <Td>{shots(m).length > 0 ? <PhotoThumbnails photos={shots(m).map((src) => ({ src, label: fmtDateTime(m.createdAt) }))} /> : <span className="text-xs text-ink-400">—</span>}</Td>
               </tr>
             ))}
             {toolMovements.length === 0 && (
               <tr>
-                <Td colSpan={6} className="py-6 text-center text-ink-400">
+                <Td colSpan={7} className="py-6 text-center text-ink-400">
                   No tool movements logged for the {whName} yet.
                 </Td>
               </tr>

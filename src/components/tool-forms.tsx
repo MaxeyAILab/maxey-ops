@@ -92,7 +92,7 @@ export function AddToolForm({ warehouse = "MAIN" }: { warehouse?: WarehouseValue
   );
 }
 
-type Mode = "idle" | "checkout" | "transfer" | "repair" | "lost";
+type Mode = "idle" | "checkout" | "transfer" | "return" | "repair" | "lost";
 
 /**
  * Per-tool action row — checkout/return/transfer, or flag under repair/lost
@@ -118,6 +118,7 @@ export function ToolActions({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [photos, setPhotos] = useState<string[]>([]);
+  const [proof, setProof] = useState<string[]>([]); // photos of the tool being returned / transferred
 
   const transferTargets = projects.filter((p) => p.id !== currentProjectId);
 
@@ -139,6 +140,7 @@ export function ToolActions({
     }
     setMode("idle");
     setPhotos([]);
+    setProof([]);
     router.refresh();
   }
 
@@ -150,24 +152,51 @@ export function ToolActions({
           const fd = new FormData(e.currentTarget);
           act(mode === "checkout" ? "CHECKOUT_TO_SITE" : "TRANSFER_SITE_TO_SITE", {
             toProjectId: fd.get("toProjectId"),
+            ...(mode === "transfer" ? { photos: proof } : {}),
           });
         }}
-        className="flex items-center gap-2"
+        className={mode === "transfer" ? "space-y-2 rounded-lg bg-ink-50 p-2" : "flex items-center gap-2"}
       >
-        <Select name="toProjectId" required className="min-h-[32px] py-0 text-xs">
-          {(mode === "checkout" ? projects : transferTargets).map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </Select>
-        <button type="submit" disabled={busy} className="text-xs font-medium text-brand-600 hover:underline">
-          {busy ? "…" : mode === "checkout" ? "Confirm" : "Send request"}
-        </button>
-        <button type="button" onClick={() => setMode("idle")} className="text-xs text-ink-400 hover:text-ink-600">
-          Cancel
-        </button>
-        {error && <span className="text-xs text-red-600">{error}</span>}
+        <div className="flex flex-wrap items-center gap-2">
+          <Select name="toProjectId" required className="min-h-[32px] py-0 text-xs">
+            {(mode === "checkout" ? projects : transferTargets).map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </Select>
+          <button type="submit" disabled={busy} className="text-xs font-medium text-brand-600 hover:underline">
+            {busy ? "…" : mode === "checkout" ? "Confirm" : "Send request"}
+          </button>
+          <button type="button" onClick={() => setMode("idle")} className="text-xs text-ink-400 hover:text-ink-600">
+            Cancel
+          </button>
+          {error && <span className="text-xs text-red-600">{error}</span>}
+        </div>
+        {mode === "transfer" && <PhotoInput label="Photo of the tool (recommended — the approver sees it)" max={4} onChange={setProof} />}
+      </form>
+    );
+  }
+
+  if (mode === "return") {
+    return (
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          act("RETURN_TO_WAREHOUSE", { photos: proof });
+        }}
+        className="space-y-2 rounded-lg bg-ink-50 p-2"
+      >
+        <PhotoInput label="Photo of the tool being returned (recommended — the approver sees it)" max={4} onChange={setProof} />
+        <div className="flex items-center gap-3">
+          <button type="submit" disabled={busy} className="text-xs font-medium text-emerald-600 hover:underline">
+            {busy ? "…" : "Send return request"}
+          </button>
+          <button type="button" onClick={() => setMode("idle")} className="text-xs text-ink-400 hover:text-ink-600">
+            Cancel
+          </button>
+          {error && <span className="text-xs text-red-600">{error}</span>}
+        </div>
       </form>
     );
   }
@@ -209,7 +238,7 @@ export function ToolActions({
       )}
       {status === "ON_SITE" && (
         <>
-          <button onClick={() => act("RETURN_TO_WAREHOUSE")} disabled={busy} title="Office staff approve it before the tool is back in the warehouse" className="text-xs font-medium text-emerald-600 hover:underline">
+          <button onClick={() => setMode("return")} title="Office staff approve it before the tool is back in the warehouse" className="text-xs font-medium text-emerald-600 hover:underline">
             Return to warehouse (request)
           </button>
           <button onClick={() => setMode("transfer")} title="Office staff approve it before the tool moves" className="text-xs font-medium text-brand-600 hover:underline">

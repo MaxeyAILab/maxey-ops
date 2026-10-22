@@ -5,11 +5,14 @@ import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { canApproveInventoryRequest } from "@/lib/access";
 import { toolNeedsApproval } from "@/lib/inventory-requests";
+import { savePhotos } from "@/lib/storage";
+import { MAX_NEW_REQUEST_PHOTOS, photoRoom, withPhotos } from "@/lib/request-photos";
 
 const patchSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("approve") }),
   z.object({ action: z.literal("reject"), reason: z.string().trim().min(3).max(300) }),
   z.object({ action: z.literal("cancel") }),
+  z.object({ action: z.literal("add_photos"), photos: z.array(z.string()).min(1).max(MAX_NEW_REQUEST_PHOTOS) }),
 ]);
 
 /**
@@ -24,6 +27,18 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
   if (m.status !== "PENDING") throw new ApiError(409, `This request was already ${m.status === "APPLIED" ? "approved" : "rejected"}`);
   const mine = m.actorId === user.id;
   const now = new Date();
+
+  // Photos of the tool can be added while the request waits — by the person who asked, or by whoever approves it.
+  if (body.action === "add_photos") {
+    if (!mine && !canApproveInventoryRequest(user)) throw new ApiError(403, "Not authorized for this action");
+    if (photoRoom(m.photos) === 0) throw new ApiError(400, "This request already has the most photos it can hold");
+    const urls = await savePhotos(body.photos.slice(0, photoRoom(m.photos)));
+    if (urls.length === 0) throw new ApiError(400, "The photo could not be read — try taking it again");
+    const done = await prisma.toolMovement.updateMany({ where: { id: m.id, status: "PENDING" }, data: { photos: withPhotos(m.photos, urls) } });
+    if (done.count === 0) throw new ApiError(409, "This request was just decided by someone else");
+    await audit({ entityType: "ToolMovement", entityId: m.id, actorId: user.id, actorName: user.name, action: "TOOL_REQUEST_PHOTOS_ADDED", diff: { tool: m.tool.name, added: urls.length } });
+    return NextResponse.json({ ok: true, photos: withPhotos(m.photos, urls) });
+  }
 
   if (body.action === "cancel") {
     if (!mine) throw new ApiError(403, "Only the person who made the request can cancel it");

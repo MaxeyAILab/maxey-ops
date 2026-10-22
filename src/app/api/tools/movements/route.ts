@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
-import { savePhoto } from "@/lib/storage";
+import { savePhoto, savePhotos } from "@/lib/storage";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { canLogInventoryMovement } from "@/lib/access";
 import { toolNeedsApproval } from "@/lib/inventory-requests";
+import { MAX_NEW_REQUEST_PHOTOS } from "@/lib/request-photos";
 import { TOOL_CONDITION_LABEL, blocksCheckout, conditionAfterMovement } from "@/lib/tool-condition";
 import type { ToolStatus } from "@prisma/client";
 
@@ -26,6 +27,7 @@ const createSchema = z.object({
   toProjectId: z.string().optional().or(z.literal("")), // required for checkout/transfer
   condition: z.string().max(300).optional().or(z.literal("")),
   photo: z.string().optional(), // single compressed data URL (damage/condition proof)
+  photos: z.array(z.string()).max(MAX_NEW_REQUEST_PHOTOS).optional(), // compressed data URLs: the tool being returned / transferred
 });
 
 /**
@@ -107,6 +109,7 @@ export const POST = handleApi(async (req: NextRequest) => {
   }
 
   const photoUrl = body.photo ? await savePhoto(body.photo).catch(() => null) : null;
+  const photoUrls = await savePhotos(body.photos);
   const isRequest = toolNeedsApproval(body.type) && user.role !== "OWNER";
   const decided = !isRequest && toolNeedsApproval(body.type) ? { decidedById: user.id, decidedByName: user.name, decidedAt: new Date() } : {};
 
@@ -122,6 +125,7 @@ export const POST = handleApi(async (req: NextRequest) => {
           : null,
         condition: body.condition || null,
         photoUrl,
+        photos: photoUrls.length ? photoUrls : undefined,
         actorId: user.id,
         createdAt: body.submittedAt,
         status: isRequest ? "PENDING" : "APPLIED",
@@ -148,7 +152,7 @@ export const POST = handleApi(async (req: NextRequest) => {
     actorId: user.id,
     actorName: user.name,
     action: isRequest ? "TOOL_REQUEST_SUBMITTED" : `TOOL_${body.type}`,
-    diff: { tool: tool.name, type: body.type, condition: body.condition || null },
+    diff: { tool: tool.name, type: body.type, condition: body.condition || null, photos: photoUrls.length },
   });
 
   return NextResponse.json(movement, { status: 201 });
