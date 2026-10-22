@@ -747,11 +747,20 @@ enum MaterialCategory {
   OTHERS
 }
 
+/// The company's four warehouses. Everything registered before they were separated is in the Main Warehouse.
+enum Warehouse {
+  MAIN
+  ALUA
+  VENTUS
+  BARANGAY
+}
+
 model WarehouseItem {
   id         String           @id @default(cuid())
   name       String
   unit       String
   category   MaterialCategory @default(OTHERS)
+  warehouse  Warehouse        @default(MAIN) // which warehouse keeps this item (and its balance)
   unitPrice  Decimal?         @db.Decimal(12, 2) // price per unit, to value the stock in the warehouse (optional until entered)
   currentQty Decimal          @default(0) @db.Decimal(12, 2) // company-wide warehouse balance
   createdAt  DateTime         @default(now())
@@ -839,7 +848,8 @@ model ToolAsset {
   condition        String? // latest condition note
   status           ToolStatus    @default(IN_WAREHOUSE)
   workingStatus    ToolCondition @default(WORKING)
-  currentProjectId String? // null = in warehouse
+  warehouse        Warehouse     @default(MAIN) // its home warehouse — where it sits when not on a project, and where it returns to
+  currentProjectId String? // null = in its warehouse
   currentProject   Project?      @relation("ToolCurrentProject", fields: [currentProjectId], references: [id])
   createdAt        DateTime      @default(now())
 

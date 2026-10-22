@@ -17,23 +17,30 @@ import { RequestDecision } from "@/components/inventory-requests-ui";
 import { EditToolButton } from "@/components/inventory-edit";
 import { MATERIAL_CATEGORIES, summarizeByCategory } from "@/lib/material-category";
 import { REQUEST_LABEL, decisionText } from "@/lib/inventory-labels";
+import { WarehouseTabs } from "@/components/warehouse-tabs";
+import { DEFAULT_WAREHOUSE, countByWarehouse, warehouseFromSlug, warehouseLabel, warehouseSlug } from "@/lib/warehouses";
 
 export const metadata = { title: "Inventory" };
 export const dynamic = "force-dynamic";
 
-export default async function InventoryPage({ searchParams }: { searchParams: { tool?: string; toolq?: string } }) {
+export default async function InventoryPage({ searchParams }: { searchParams: { tool?: string; toolq?: string; wh?: string } }) {
   const user = await getSessionUser();
   // Drivers don't have the tab by default (owner's rule) unless it is ticked on their account; with it they can log movements.
   if (!user || !canAccess(user.role, user.department, "/inventory", user.customMenus, user.useCustomMenus)) {
     redirect("/attendance");
   }
 
-  const [items, movements, projects, tools, toolMovements, pendingStock, pendingTools, myRecent, issuedRows] = await Promise.all([
+  // The four warehouses are tabs on this page: the one chosen (?wh=alua) decides which stock, tools and logs are shown.
+  const wh = warehouseFromSlug(searchParams.wh);
+  const whName = warehouseLabel(wh);
+
+  const [allItems, movements, projects, allTools, toolMovements, pendingStock, pendingTools, myRecent, issuedRows] = await Promise.all([
     prisma.warehouseItem.findMany({
       orderBy: { name: "asc" },
       include: { _count: { select: { movements: true } }, projectStocks: { select: { qty: true } } },
     }),
     prisma.inventoryMovement.findMany({
+      where: { item: { warehouse: wh } },
       orderBy: { createdAt: "desc" },
       take: 30,
       include: { item: { select: { name: true, unit: true } } },
@@ -44,7 +51,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
       include: {
         materialStocks: {
           where: { qty: { gt: 0 } },
-          include: { item: { select: { id: true, name: true, unit: true, category: true } } },
+          include: { item: { select: { id: true, name: true, unit: true, category: true, warehouse: true } } },
         },
         toolAssets: true,
       },
@@ -54,26 +61,27 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
       include: { currentProject: { select: { name: true } }, _count: { select: { movements: true } } },
     }),
     prisma.toolMovement.findMany({
+      where: { tool: { warehouse: wh } },
       orderBy: { createdAt: "desc" },
       take: 20,
       include: {
-        tool: { select: { name: true } },
+        tool: { select: { name: true, warehouse: true } },
         fromProject: { select: { name: true } },
         toProject: { select: { name: true } },
       },
     }),
     // requests waiting for office staff (every one, however old)
-    prisma.inventoryMovement.findMany({ where: { status: "PENDING" }, orderBy: { createdAt: "asc" }, include: { item: { select: { name: true, unit: true } } } }),
+    prisma.inventoryMovement.findMany({ where: { status: "PENDING" }, orderBy: { createdAt: "asc" }, include: { item: { select: { name: true, unit: true, warehouse: true } } } }),
     prisma.toolMovement.findMany({
       where: { status: "PENDING" },
       orderBy: { createdAt: "asc" },
-      include: { tool: { select: { name: true, assetTag: true } }, fromProject: { select: { name: true } }, toProject: { select: { name: true } } },
+      include: { tool: { select: { name: true, assetTag: true, warehouse: true } }, fromProject: { select: { name: true } }, toProject: { select: { name: true } } },
     }),
     // the items this person logged most recently (offered first in the item picker)
     prisma.inventoryMovement.findMany({ where: { actorId: user.id }, orderBy: { createdAt: "desc" }, take: 60, select: { itemId: true } }),
     // every applied issue out of the warehouse, for the "taken out" totals (only read when the person may see prices)
     canSeeStockPrices(user)
-      ? prisma.inventoryMovement.findMany({ where: { type: "WAREHOUSE_TO_SITE", status: "APPLIED" }, select: { type: true, status: true, qty: true, unitPrice: true, createdAt: true } })
+      ? prisma.inventoryMovement.findMany({ where: { type: "WAREHOUSE_TO_SITE", status: "APPLIED", item: { warehouse: wh } }, select: { type: true, status: true, qty: true, unitPrice: true, createdAt: true } })
       : Promise.resolve([]),
   ]);
 
@@ -83,6 +91,11 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
       (u) => [u.id, u.name]
     )
   );
+
+  const items = allItems.filter((i) => i.warehouse === wh);
+  const tools = allTools.filter((t) => t.warehouse === wh);
+  const itemCounts = countByWarehouse(allItems);
+  const toolWarehouseCounts = countByWarehouse(allTools);
 
   const canAddCatalog = canAddInventoryCatalog(user);
   const canMove = canLogInventoryMovement(user);
@@ -94,6 +107,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
   const categoryCounts = summarizeByCategory(items);
   const showPrices = canSeeStockPrices(user);
   const stockValue = summarizeValue(items);
+  const allWarehousesValue = summarizeValue(allItems);
   const issued = issuedFromWarehouse(issuedRows, new Date(`${manilaDayKey(new Date()).slice(0, 7)}-01T00:00:00+08:00`));
   const recentIds = [...new Set(myRecent.map((m) => m.itemId))].slice(0, 8);
   const pickerItems = items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, category: i.category, qty: Number(i.currentQty), price: showPrices && i.unitPrice !== null ? Number(i.unitPrice) : null }));
@@ -101,10 +115,16 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
   // tools: narrow by where it is / needs attention, and by typing
   const toolFilter = isToolFilter(searchParams.tool) ? searchParams.tool : "all";
   const toolQuery = (searchParams.toolq ?? "").trim().slice(0, 80);
-  const toolRows = tools.map((t) => ({ ...t, location: t.currentProject?.name ?? "Warehouse" }));
+  const toolRows = tools.map((t) => ({ ...t, location: t.currentProject?.name ?? warehouseLabel(t.warehouse) }));
   const toolCounts = toolFilterCounts(toolRows);
   const visibleTools = filterTools(toolRows, toolFilter, toolQuery);
   const projectOptions = projects.map((p) => ({ id: p.id, name: p.name }));
+  const whQuery: Record<string, string> = wh === DEFAULT_WAREHOUSE ? {} : { wh: warehouseSlug(wh) };
+  const clearToolSearch = new URLSearchParams({ ...whQuery, ...(toolFilter !== "all" ? { tool: toolFilter } : {}) });
+  const stockHref = (category?: string) => {
+    const qs = new URLSearchParams({ ...(category ? { category } : {}), ...whQuery });
+    return `/inventory/stock${qs.toString() ? `?${qs}` : ""}`;
+  };
 
   return (
     <div className="space-y-6">
@@ -122,6 +142,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                 <div>
                   <div className="font-medium text-ink-900">
                     {REQUEST_LABEL[m.type]} · {Number(m.qty)} {m.item.unit} {m.item.name}
+                    <span className="ml-1.5 rounded bg-ink-100 px-1.5 py-0.5 text-[11px] font-medium text-ink-600">{warehouseLabel(m.item.warehouse)}</span>
                   </div>
                   <div className="text-xs text-ink-500">
                     {m.fromLoc} → {m.toLoc} · requested by <b>{actorNames.get(m.actorId) ?? "—"}</b> · {fmtDateTime(m.createdAt)}
@@ -137,9 +158,10 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                   <div className="font-medium text-ink-900">
                     {REQUEST_LABEL[m.type]} · {m.tool.name}
                     {m.tool.assetTag ? ` (${m.tool.assetTag})` : ""}
+                    <span className="ml-1.5 rounded bg-ink-100 px-1.5 py-0.5 text-[11px] font-medium text-ink-600">{warehouseLabel(m.tool.warehouse)}</span>
                   </div>
                   <div className="text-xs text-ink-500">
-                    {m.fromProject?.name ?? "Warehouse"} → {m.toProject?.name ?? "Warehouse"} · requested by <b>{actorNames.get(m.actorId) ?? "—"}</b> · {fmtDateTime(m.createdAt)}
+                    {m.fromProject?.name ?? warehouseLabel(m.tool.warehouse)} → {m.toProject?.name ?? warehouseLabel(m.tool.warehouse)} · requested by <b>{actorNames.get(m.actorId) ?? "—"}</b> · {fmtDateTime(m.createdAt)}
                   </div>
                 </div>
                 <RequestDecision kind="tool" id={m.id} canDecide={canApprove && (isOwner || m.actorId !== user.id)} mine={m.actorId === user.id} />
@@ -153,19 +175,37 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
         <Card>
           <CardHeader
             title={`Warehouse stock (${items.length})`}
-            subtitle={showPrices ? `By category — total value ${php(stockValue.total)}${stockValue.unpriced > 0 ? ` (${stockValue.unpriced} item${stockValue.unpriced === 1 ? "" : "s"} without a price)` : ""}` : "By category — open one to see its items"}
+            subtitle={
+              showPrices
+                ? `${whName} — total value ${php(stockValue.total)}${stockValue.unpriced > 0 ? ` (${stockValue.unpriced} item${stockValue.unpriced === 1 ? "" : "s"} without a price)` : ""}`
+                : `${whName} — open a category to see its items`
+            }
             action={
-              <Link href="/inventory/stock" className="text-sm font-medium text-brand-600 hover:underline">
+              <Link href={stockHref()} className="text-sm font-medium text-brand-600 hover:underline">
                 View all items →
               </Link>
             }
           />
+          <CardBody className="space-y-1.5 border-b border-ink-100 pb-3">
+            <WarehouseTabs current={wh} counts={itemCounts} path="/inventory" params={{ tool: toolFilter !== "all" ? toolFilter : undefined, toolq: toolQuery || undefined }} noun="items" />
+            {showPrices && (
+              <p className="text-xs text-ink-500">
+                All four warehouses together: <b className="tabular-nums text-ink-700">{php(allWarehousesValue.total)}</b>
+                {allWarehousesValue.unpriced > 0 ? ` (${allWarehousesValue.unpriced} item${allWarehousesValue.unpriced === 1 ? "" : "s"} without a price)` : ""}
+              </p>
+            )}
+          </CardBody>
           <CardBody>
+            {items.length === 0 && (
+              <p className="mb-3 rounded-lg border border-dashed border-ink-200 px-3 py-2 text-sm text-ink-500">
+                Nothing is kept in the {whName} yet.{canAddCatalog ? " Add its first item below." : ""}
+              </p>
+            )}
             <div className="grid gap-3 sm:grid-cols-2">
               {MATERIAL_CATEGORIES.map((c) => (
                 <Link
                   key={c.value}
-                  href={`/inventory/stock?category=${c.slug}`}
+                  href={stockHref(c.slug)}
                   className="group rounded-xl border border-ink-200 p-4 transition hover:border-[#8a1a28] hover:bg-ink-100/50"
                 >
                   <div className="flex items-start gap-3">
@@ -187,7 +227,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
           </CardBody>
           {canAddCatalog && (
             <CardBody className="border-t border-ink-100">
-              <AddItemForm withPrice={showPrices} />
+              <AddItemForm withPrice={showPrices} warehouse={wh} />
             </CardBody>
           )}
         </Card>
@@ -195,14 +235,14 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
         <Card>
           <CardHeader
             title="Log a movement"
-            subtitle="Issue to a project, return, transfer, or log usage — works offline"
+            subtitle={`From and back to the ${whName} — issue to a project, return, transfer, or log usage. Works offline`}
           />
           <CardBody>
             {canMove ? (
               items.length > 0 && projectOptions.length > 0 ? (
-                <MovementForm items={pickerItems} projects={projectOptions} recentIds={recentIds} instant={isOwner} showValue={showPrices} />
+                <MovementForm key={wh} warehouseName={whName} items={pickerItems} projects={projectOptions} recentIds={recentIds} instant={isOwner} showValue={showPrices} />
               ) : (
-                <p className="text-sm text-ink-400">Add a stock item and an active project first.</p>
+                <p className="text-sm text-ink-400">Add a stock item to the {whName} and have an active project first.</p>
               )
             ) : (
               <p className="text-sm text-ink-400">View-only for your role.</p>
@@ -214,12 +254,13 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
       <Card id="tools" className="scroll-mt-16">
         <CardHeader
           title={`Tools & Equipment (${toolFilter === "all" && !toolQuery ? tools.length : `${visibleTools.length} of ${tools.length}`})`}
-          subtitle="Individually tracked — each unit checked out to a project and returned to the warehouse"
+          subtitle={`${whName} — individually tracked, each unit checked out to a project and returned to its warehouse`}
         />
         <CardBody className="space-y-3 border-b border-ink-100">
+          <WarehouseTabs current={wh} counts={toolWarehouseCounts} path="/inventory" params={{ tool: toolFilter !== "all" ? toolFilter : undefined, toolq: toolQuery || undefined }} noun="tools" />
           <div className="flex flex-wrap items-center gap-2">
             {TOOL_FILTERS.map((f) => {
-              const qs = new URLSearchParams();
+              const qs = new URLSearchParams(whQuery);
               if (f.key !== "all") qs.set("tool", f.key);
               if (toolQuery) qs.set("toolq", toolQuery);
               const on = toolFilter === f.key;
@@ -236,6 +277,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
             })}
           </div>
           <form method="get" action="/inventory#tools" className="flex flex-wrap items-center gap-2">
+            {wh !== DEFAULT_WAREHOUSE && <input type="hidden" name="wh" value={warehouseSlug(wh)} />}
             {toolFilter !== "all" && <input type="hidden" name="tool" value={toolFilter} />}
             <input
               type="search"
@@ -249,7 +291,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
               Search
             </button>
             {toolQuery && (
-              <Link href={`/inventory${toolFilter !== "all" ? `?tool=${toolFilter}` : ""}#tools`} className="text-sm text-ink-500 hover:underline">
+              <Link href={`/inventory${clearToolSearch.toString() ? `?${clearToolSearch}` : ""}#tools`} className="text-sm text-ink-500 hover:underline">
                 Clear
               </Link>
             )}
@@ -278,7 +320,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                   {t.condition && <div className="mt-0.5 text-[11px] text-ink-400">{t.condition}</div>}
                 </Td>
                 <Td>{canMove ? <ToolConditionControl toolId={t.id} value={t.workingStatus} /> : <Badge value={t.workingStatus} label={TOOL_CONDITION_LABEL[t.workingStatus]} />}</Td>
-                <Td className="text-ink-600">{t.currentProject?.name ?? "Warehouse"}</Td>
+                <Td className="text-ink-600">{t.currentProject?.name ?? warehouseLabel(t.warehouse)}</Td>
                 {canMove && (
                   <Td>
                     <div className="flex flex-wrap items-center gap-3">
@@ -289,7 +331,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                         projects={projectOptions}
                         pending={pendingByTool.get(t.id) ? waitingText(pendingByTool.get(t.id)!) : undefined}
                       />
-                      {canAddCatalog && <EditToolButton id={t.id} name={t.name} assetTag={t.assetTag} category={t.category} />}
+                      {canAddCatalog && <EditToolButton id={t.id} name={t.name} assetTag={t.assetTag} category={t.category} warehouse={t.warehouse} />}
                       {canDeleteTool(user, t._count.movements) && <DeleteToolButton toolId={t.id} name={t.name} movements={t._count.movements} />}
                     </div>
                   </Td>
@@ -299,7 +341,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
             {visibleTools.length === 0 && (
               <tr>
                 <Td colSpan={canMove ? 7 : 6} className="py-6 text-center text-ink-400">
-                  {tools.length === 0 ? "No tools registered yet." : "No tools match — try another filter or fewer words."}
+                  {tools.length === 0 ? `No tools are kept in the ${whName} yet.` : "No tools match — try another filter or fewer words."}
                 </Td>
               </tr>
             )}
@@ -307,7 +349,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
         </Table>
         {canAddCatalog && (
           <CardBody className="border-t border-ink-100">
-            <AddToolForm />
+            <AddToolForm warehouse={wh} />
           </CardBody>
         )}
       </Card>
@@ -336,7 +378,10 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                     <tbody>
                       {p.materialStocks.map((s) => (
                         <tr key={s.id}>
-                          <Td className="font-medium">{s.item.name}</Td>
+                          <Td className="font-medium">
+                            {s.item.name}
+                            {s.item.warehouse !== DEFAULT_WAREHOUSE && <span className="ml-1.5 rounded bg-ink-100 px-1.5 py-0.5 text-[11px] font-medium text-ink-600">{warehouseLabel(s.item.warehouse)}</span>}
+                          </Td>
                           <Td className="text-right tabular-nums">{Number(s.qty)}</Td>
                           <Td>{s.item.unit}</Td>
                         </tr>
@@ -374,6 +419,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                         <div>
                           <span className="font-medium text-ink-800">{t.name}</span>
                           {t.assetTag && <span className="ml-1 text-xs text-ink-400">({t.assetTag})</span>}
+                          {t.warehouse !== DEFAULT_WAREHOUSE && <span className="ml-1.5 rounded bg-ink-100 px-1.5 py-0.5 text-[11px] font-medium text-ink-600">{warehouseLabel(t.warehouse)}</span>}
                           <Badge value={t.status} />
                           {t.workingStatus !== "WORKING" && <Badge value={t.workingStatus} label={TOOL_CONDITION_LABEL[t.workingStatus]} />}
                         </div>
@@ -399,14 +445,14 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
       })}
 
       <Card>
-        <CardHeader title="Material movement log" subtitle="Every movement, with actor and timestamp" />
+        <CardHeader title="Material movement log" subtitle={`${whName} — every movement, with actor and timestamp`} />
         {showPrices && (
           <CardBody className="border-b border-ink-100">
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-lg bg-ink-100 px-4 py-3">
-                <div className="text-xs font-medium uppercase tracking-wide text-ink-500">Taken out of the warehouse this month</div>
+                <div className="text-xs font-medium uppercase tracking-wide text-ink-500">Taken out of the {whName} this month</div>
                 <div className="text-xl font-bold tabular-nums text-ink-900">{php(issued.monthValue)}</div>
-                <div className="text-xs text-ink-500">{issued.monthCount} issue{issued.monthCount === 1 ? "" : "s"} to project sites</div>
+                <div className="text-xs text-ink-500">{issued.monthCount} issue{issued.monthCount === 1 ? "" : "s"} to project sites from the {whName}</div>
               </div>
               <div className="rounded-lg bg-ink-100 px-4 py-3">
                 <div className="text-xs font-medium uppercase tracking-wide text-ink-500">Taken out, all logged so far</div>
@@ -452,7 +498,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
             {movements.length === 0 && (
               <tr>
                 <Td colSpan={showPrices ? 8 : 7} className="py-6 text-center text-ink-400">
-                  No movements logged yet.
+                  No movements logged for the {whName} yet.
                 </Td>
               </tr>
             )}
@@ -461,7 +507,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
       </Card>
 
       <Card>
-        <CardHeader title="Tool movement log" subtitle="Checkouts, returns, transfers, and condition flags" />
+        <CardHeader title="Tool movement log" subtitle={`${whName} — checkouts, returns, transfers, and condition flags`} />
         <Table>
           <thead>
             <tr>
@@ -483,7 +529,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                   {m.condition && <div className="text-[11px] text-ink-400">{m.condition}</div>}
                 </Td>
                 <Td className="text-xs">
-                  {m.fromProject?.name ?? "Warehouse"} → {m.toProject?.name ?? "Warehouse"}
+                  {m.fromProject?.name ?? warehouseLabel(m.tool.warehouse)} → {m.toProject?.name ?? warehouseLabel(m.tool.warehouse)}
                 </Td>
                 <Td className="text-xs">{actorNames.get(m.actorId) ?? "—"}</Td>
                 <Td className="text-xs">{decisionText(m, fmtDateTime) ?? "—"}</Td>
@@ -492,7 +538,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
             {toolMovements.length === 0 && (
               <tr>
                 <Td colSpan={6} className="py-6 text-center text-ink-400">
-                  No tool movements logged yet.
+                  No tool movements logged for the {whName} yet.
                 </Td>
               </tr>
             )}

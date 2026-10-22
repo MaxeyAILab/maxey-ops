@@ -6,6 +6,7 @@ import { submitOrQueue } from "@/lib/outbox";
 import { Button, Input, Label, Select } from "@/components/ui";
 import { MATERIAL_CATEGORIES } from "@/lib/material-category";
 import { ItemPicker } from "@/components/item-picker";
+import { WAREHOUSES, type WarehouseValue } from "@/lib/warehouses";
 import { lineValue, parsePrice } from "@/lib/warehouse-value";
 import type { PickItem } from "@/lib/item-search";
 
@@ -25,8 +26,8 @@ interface ProjectOption {
   name: string;
 }
 
-/** Register a new warehouse stock item (Spec 6.4). */
-export function AddItemForm({ withPrice = false }: { withPrice?: boolean }) {
+/** Register a new warehouse stock item (Spec 6.4) in one of the four warehouses — the one being looked at is pre-selected. */
+export function AddItemForm({ withPrice = false, warehouse = "MAIN" }: { withPrice?: boolean; warehouse?: WarehouseValue }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -44,6 +45,7 @@ export function AddItemForm({ withPrice = false }: { withPrice?: boolean }) {
         unit: fd.get("unit"),
         currentQty: fd.get("currentQty"),
         category: fd.get("category"),
+        warehouse: fd.get("warehouse"),
         unitPrice: parsePrice(String(fd.get("unitPrice") ?? "")) ?? null,
       }),
     });
@@ -55,7 +57,17 @@ export function AddItemForm({ withPrice = false }: { withPrice?: boolean }) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-4">
+    <form key={warehouse} onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-4">
+      <div className="sm:col-span-4">
+        <Label htmlFor="itemWarehouse">Add it to</Label>
+        <Select id="itemWarehouse" name="warehouse" defaultValue={warehouse}>
+          {WAREHOUSES.map((w) => (
+            <option key={w.value} value={w.value}>
+              {w.label}
+            </option>
+          ))}
+        </Select>
+      </div>
       <div className="sm:col-span-2">
         <Label htmlFor="itemName">Item name</Label>
         <Input id="itemName" name="name" required placeholder="e.g., GI pipe 2 inch" />
@@ -117,8 +129,12 @@ export function MovementForm({
   recentIds = [],
   instant = false,
   showValue = false,
+  warehouseName = "the warehouse",
 }: {
+  /** the items of the warehouse being looked at */
   items: ItemOption[];
+  /** its name, e.g. "Alua Warehouse" — shown next to the quantities */
+  warehouseName?: string;
   projects: ProjectOption[];
   /** show the value (quantity × price) of what is being logged — for people who may see prices */
   showValue?: boolean;
@@ -187,7 +203,7 @@ export function MovementForm({
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <Label htmlFor="mvItem">Item</Label>
-          <ItemPicker key={pickerKey} id="mvItem" items={pickItems} recentIds={recentIds} qtyNote="in warehouse" onChange={setChosen} />
+          <ItemPicker key={pickerKey} id="mvItem" items={pickItems} recentIds={recentIds} qtyNote={`in ${warehouseName}`} onChange={setChosen} />
         </div>
         <div>
           <Label htmlFor="mvType">Movement type</Label>

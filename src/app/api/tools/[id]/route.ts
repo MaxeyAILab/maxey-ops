@@ -5,6 +5,7 @@ import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { canAddInventoryCatalog, canDeleteTool, canLogInventoryMovement } from "@/lib/access";
 import { TOOL_CONDITIONS, TOOL_CONDITION_LABEL } from "@/lib/tool-condition";
+import { WAREHOUSE_VALUES, warehouseLabel, type WarehouseValue } from "@/lib/warehouses";
 
 const patchSchema = z
   .object({
@@ -12,8 +13,9 @@ const patchSchema = z
     name: z.string().trim().min(1).max(200).optional(),
     assetTag: z.string().trim().max(50).optional(),
     category: z.string().trim().max(100).optional(),
+    warehouse: z.enum(WAREHOUSE_VALUES).optional(),
   })
-  .refine((b) => b.workingStatus !== undefined || b.name !== undefined || b.assetTag !== undefined || b.category !== undefined, { message: "Nothing to change" });
+  .refine((b) => b.workingStatus !== undefined || b.name !== undefined || b.assetTag !== undefined || b.category !== undefined || b.warehouse !== undefined, { message: "Nothing to change" });
 
 /**
  * PATCH /api/tools/[id] — change a tool or piece of equipment after it was added:
@@ -26,13 +28,13 @@ const patchSchema = z
 export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { id: string } }) => {
   const user = await requireUser();
   const body = patchSchema.parse(await req.json());
-  const editsDetails = body.name !== undefined || body.assetTag !== undefined || body.category !== undefined;
+  const editsDetails = body.name !== undefined || body.assetTag !== undefined || body.category !== undefined || body.warehouse !== undefined;
   if (body.workingStatus !== undefined && !canLogInventoryMovement(user)) throw new ApiError(403, "Not authorized for this action");
   if (editsDetails && !canAddInventoryCatalog(user)) throw new ApiError(403, "Only office staff can edit a tool's name, tag or category");
   const tool = await prisma.toolAsset.findUnique({ where: { id: params.id } });
   if (!tool) throw new ApiError(404, "Tool not found");
 
-  const data: { workingStatus?: typeof tool.workingStatus; name?: string; assetTag?: string | null; category?: string | null } = {};
+  const data: { workingStatus?: typeof tool.workingStatus; name?: string; assetTag?: string | null; category?: string | null; warehouse?: WarehouseValue } = {};
   const changes: Record<string, { from: unknown; to: unknown }> = {};
   if (body.name !== undefined && body.name !== tool.name) {
     data.name = body.name;
@@ -45,6 +47,10 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
   if (body.category !== undefined && (body.category || null) !== tool.category) {
     data.category = body.category || null;
     changes.category = { from: tool.category, to: body.category || null };
+  }
+  if (body.warehouse !== undefined && body.warehouse !== tool.warehouse) {
+    data.warehouse = body.warehouse;
+    changes.warehouse = { from: warehouseLabel(tool.warehouse), to: warehouseLabel(body.warehouse) };
   }
   const conditionChanged = body.workingStatus !== undefined && body.workingStatus !== tool.workingStatus;
   if (conditionChanged) data.workingStatus = body.workingStatus;
@@ -99,7 +105,7 @@ export const DELETE = handleApi(async (_req: Request, { params }: { params: { id
       category: tool.category,
       status: tool.status,
       condition: TOOL_CONDITION_LABEL[tool.workingStatus],
-      location: tool.currentProject?.name ?? "Warehouse",
+      location: tool.currentProject?.name ?? warehouseLabel(tool.warehouse),
       movementsRemoved: tool._count.movements,
     },
   });

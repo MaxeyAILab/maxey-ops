@@ -6,14 +6,15 @@ import { submitOrQueue } from "@/lib/outbox";
 import { Button, Input, Label, Select } from "@/components/ui";
 import { PhotoInput } from "@/components/photo-input";
 import { TOOL_CONDITIONS, TOOL_CONDITION_LABEL, type ToolConditionValue } from "@/lib/tool-condition";
+import { WAREHOUSES, type WarehouseValue } from "@/lib/warehouses";
 
 interface ProjectOption {
   id: string;
   name: string;
 }
 
-/** Register a new tool/equipment asset — starts in the warehouse (Spec 6.4). */
-export function AddToolForm() {
+/** Register a new tool/equipment asset — starts in one of the four warehouses, the one being looked at (Spec 6.4). */
+export function AddToolForm({ warehouse = "MAIN" }: { warehouse?: WarehouseValue }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -31,6 +32,7 @@ export function AddToolForm() {
         assetTag: fd.get("assetTag"),
         category: fd.get("category"),
         workingStatus: fd.get("workingStatus"),
+        warehouse: fd.get("warehouse"),
       }),
     });
     setBusy(false);
@@ -41,7 +43,17 @@ export function AddToolForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-5">
+    <form key={warehouse} onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-5">
+      <div className="sm:col-span-5">
+        <Label htmlFor="toolWarehouse">Add it to</Label>
+        <Select id="toolWarehouse" name="warehouse" defaultValue={warehouse}>
+          {WAREHOUSES.map((w) => (
+            <option key={w.value} value={w.value}>
+              {w.label}
+            </option>
+          ))}
+        </Select>
+      </div>
       <div className="sm:col-span-2">
         <Label htmlFor="toolName">Tool / equipment name</Label>
         <Input id="toolName" name="name" required placeholder="e.g., Welding Machine" />

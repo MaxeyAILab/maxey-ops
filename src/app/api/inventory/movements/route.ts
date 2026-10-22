@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { canLogInventoryMovement } from "@/lib/access";
+import { warehouseLabel } from "@/lib/warehouses";
 import { MATERIAL_RULES, applyMaterialMove, assertMaterialAvailable, materialNeedsApproval } from "@/lib/inventory-requests";
 
 const MOVEMENT_TYPES = [
@@ -76,8 +77,8 @@ export const POST = handleApi(async (req: NextRequest) => {
     ? fromProject.name
     : body.type === "SUPPLIER_TO_WAREHOUSE" || body.type === "SUPPLIER_TO_SITE"
       ? "Supplier"
-      : "Warehouse";
-  const toLoc = toProject ? toProject.name : body.type === "CONSUMED_ON_SITE" ? "Used on site" : "Warehouse";
+      : warehouseLabel(item.warehouse);
+  const toLoc = toProject ? toProject.name : body.type === "CONSUMED_ON_SITE" ? "Used on site" : warehouseLabel(item.warehouse);
 
   // A return or transfer waits for approval — except the Owner's own, which is approved right now.
   const isRequest = materialNeedsApproval(body.type) && user.role !== "OWNER";

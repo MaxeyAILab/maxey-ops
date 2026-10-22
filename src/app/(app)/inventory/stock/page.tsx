@@ -10,15 +10,17 @@ import { Card, CardHeader, Table, Td, Th } from "@/components/ui";
 import { DeleteStockItemButton } from "@/components/inventory-requests-ui";
 import { EditStockItemButton } from "@/components/inventory-edit";
 import { MATERIAL_CATEGORIES, MATERIAL_CATEGORY_LABEL, categoryFromSlug, isMaterialCategory, summarizeByCategory } from "@/lib/material-category";
+import { WarehouseTabs } from "@/components/warehouse-tabs";
+import { DEFAULT_WAREHOUSE, countByWarehouse, warehouseFromSlug, warehouseLabel, warehouseSlug } from "@/lib/warehouses";
 
 export const metadata = { title: "Warehouse stock" };
 export const dynamic = "force-dynamic";
 
 /**
- * The items of the warehouse stock, by category. The Inventory tab shows only the four categories; this page lists what is in
+ * The items of one warehouse (chosen with the tabs), by category. The Inventory tab shows only the four categories; this page lists what is in
  * each one, with a search box, and is where an item is edited or (by the Owner) deleted.
  */
-export default async function WarehouseStockPage({ searchParams }: { searchParams: { category?: string; q?: string; edit?: string } }) {
+export default async function WarehouseStockPage({ searchParams }: { searchParams: { category?: string; q?: string; edit?: string; wh?: string } }) {
   const user = await getSessionUser();
   if (!user || !canAccess(user.role, user.department, "/inventory", user.customMenus, user.useCustomMenus)) redirect("/attendance");
 
@@ -29,10 +31,16 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
   const showPrices = canSeeStockPrices(user); // prices and the value of the stock: office staff, Owner, PM, Purchasing
   const editPrices = showPrices && searchParams.edit === "prices";
 
-  const all = await prisma.warehouseItem.findMany({
+  const wh = warehouseFromSlug(searchParams.wh);
+  const whName = warehouseLabel(wh);
+  const whQuery: Record<string, string> = wh === DEFAULT_WAREHOUSE ? {} : { wh: warehouseSlug(wh) };
+
+  const everything = await prisma.warehouseItem.findMany({
     orderBy: { name: "asc" },
     include: { _count: { select: { movements: true } }, projectStocks: { select: { qty: true } } },
   });
+  const itemCounts = countByWarehouse(everything);
+  const all = everything.filter((i) => i.warehouse === wh);
   const counts = summarizeByCategory(all);
   const value = summarizeValue(all);
   const here = category ? value.byCategory[category] : null;
@@ -41,7 +49,7 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
 
   const tab = (slug: string | null, label: string, n: number) => {
     const on = (slug ? categoryFromSlug(slug) : null) === category;
-    const qs = new URLSearchParams();
+    const qs = new URLSearchParams(whQuery);
     if (slug) qs.set("category", slug);
     if (q) qs.set("q", q);
     if (editPrices) qs.set("edit", "prices");
@@ -63,9 +71,11 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
         <Link href="/inventory" className="text-sm font-medium text-brand-600 hover:underline">
           ← Inventory
         </Link>
-        <h1 className="mt-1 text-xl font-bold text-ink-900">Warehouse stock</h1>
-        <p className="text-sm text-ink-500">Every material in the warehouse, by category.</p>
+        <h1 className="mt-1 text-xl font-bold text-ink-900">Warehouse stock — {whName}</h1>
+        <p className="text-sm text-ink-500">Every material kept in the {whName}, by category.</p>
       </div>
+
+      <WarehouseTabs current={wh} counts={itemCounts} path="/inventory/stock" params={{ category: searchParams.category && category ? searchParams.category : undefined, q: q || undefined, edit: editPrices ? "prices" : undefined }} />
 
       <div className="flex flex-wrap items-center gap-2">
         {tab(null, "All", all.length)}
@@ -75,7 +85,7 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
       {showPrices && (
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="rounded-xl border border-ink-200 p-4">
-            <div className="text-xs font-medium uppercase tracking-wide text-ink-500">Total value in the warehouse</div>
+            <div className="text-xs font-medium uppercase tracking-wide text-ink-500">Total value in the {whName}</div>
             <div className="mt-1 text-2xl font-bold tabular-nums text-ink-900">{php(value.total)}</div>
             <div className="text-xs text-ink-500">{value.priced} priced item{value.priced === 1 ? "" : "s"} · quantity × price per unit</div>
           </div>
@@ -111,7 +121,7 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
             <span className="text-sm font-medium text-ink-700">Setting prices for {category ? MATERIAL_CATEGORY_LABEL[category] : "all categories"}{q ? ` matching “${q}”` : ""}</span>
           ) : (
             <Link
-              href={`/inventory/stock?${new URLSearchParams({ ...(category ? { category: searchParams.category! } : {}), ...(q ? { q } : {}), edit: "prices" })}`}
+              href={`/inventory/stock?${new URLSearchParams({ ...whQuery, ...(category ? { category: searchParams.category! } : {}), ...(q ? { q } : {}), edit: "prices" })}`}
               className="rounded-lg border border-ink-200 px-3 py-2 text-sm font-medium text-ink-800 hover:bg-ink-100"
             >
               ✎ Set prices
@@ -122,6 +132,7 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
 
       <form method="get" className="flex flex-wrap items-center gap-2">
         {editPrices && <input type="hidden" name="edit" value="prices" />}
+        {wh !== DEFAULT_WAREHOUSE && <input type="hidden" name="wh" value={warehouseSlug(wh)} />}
         {category && <input type="hidden" name="category" value={searchParams.category} />}
         <input
           type="search"
@@ -135,14 +146,14 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
           Search
         </button>
         {q && (
-          <Link href={`/inventory/stock${category ? `?category=${searchParams.category}` : ""}`} className="text-sm text-ink-500 hover:underline">
+          <Link href={`/inventory/stock${new URLSearchParams({ ...whQuery, ...(category ? { category: searchParams.category! } : {}) }).toString() ? `?${new URLSearchParams({ ...whQuery, ...(category ? { category: searchParams.category! } : {}) })}` : ""}`} className="text-sm text-ink-500 hover:underline">
             Clear
           </Link>
         )}
       </form>
 
       {editPrices ? (
-        <PriceEditor key={`${searchParams.category ?? "all"}|${q}`} rows={items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, qty: Number(i.currentQty), price: i.unitPrice === null ? null : Number(i.unitPrice) }))} doneHref={`/inventory/stock${category ? `?category=${searchParams.category}` : ""}`} />
+        <PriceEditor key={`${wh}|${searchParams.category ?? "all"}|${q}`} rows={items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, qty: Number(i.currentQty), price: i.unitPrice === null ? null : Number(i.unitPrice) }))} doneHref={`/inventory/stock${new URLSearchParams({ ...whQuery, ...(category ? { category: searchParams.category! } : {}) }).toString() ? `?${new URLSearchParams({ ...whQuery, ...(category ? { category: searchParams.category! } : {}) })}` : ""}`} />
       ) : (
       <Card>
         <CardHeader title={`${category ? MATERIAL_CATEGORY_LABEL[category] : "All categories"} (${items.length})`} subtitle="Real-time levels" />
@@ -172,7 +183,7 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
                   {(canEdit || isOwner) && (
                     <Td className="text-right">
                       <span className="inline-flex items-center gap-3">
-                        {canEdit && <EditStockItemButton id={i.id} name={i.name} unit={i.unit} category={cat} qty={Number(i.currentQty)} price={i.unitPrice === null ? null : Number(i.unitPrice)} canPrice={showPrices} />}
+                        {canEdit && <EditStockItemButton id={i.id} name={i.name} unit={i.unit} category={cat} warehouse={i.warehouse} qty={Number(i.currentQty)} price={i.unitPrice === null ? null : Number(i.unitPrice)} canPrice={showPrices} />}
                         {isOwner && (
                           <DeleteStockItemButton
                             id={i.id}
@@ -191,7 +202,7 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
             {items.length === 0 && (
               <tr>
                 <Td colSpan={showPrices ? 7 : 5} className="py-8 text-center text-ink-400">
-                  {q ? `Nothing matches “${q}”.` : "No items in this category yet."}
+                  {q ? `Nothing matches “${q}”.` : `Nothing in this category in the ${whName} yet.`}
                 </Td>
               </tr>
             )}

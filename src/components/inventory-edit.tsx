@@ -6,6 +6,7 @@ import { Button, Input, Label, Select } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { MATERIAL_CATEGORIES, type MaterialCategoryValue } from "@/lib/material-category";
 import { parsePrice } from "@/lib/warehouse-value";
+import { WAREHOUSES, type WarehouseValue } from "@/lib/warehouses";
 
 async function patch(url: string, body: Record<string, unknown>): Promise<string | null> {
   const res = await fetch(url, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -14,7 +15,7 @@ async function patch(url: string, body: Record<string, unknown>): Promise<string
 }
 
 /** Fix a warehouse stock item after it was added: name, unit, category, or the quantity (a quantity change needs a reason). */
-export function EditStockItemButton({ id, name, unit, category, qty, price, canPrice = false }: { id: string; name: string; unit: string; category: MaterialCategoryValue; qty: number; price?: number | null; canPrice?: boolean }) {
+export function EditStockItemButton({ id, name, unit, category, qty, price, canPrice = false, warehouse = "MAIN" }: { id: string; name: string; unit: string; category: MaterialCategoryValue; qty: number; price?: number | null; canPrice?: boolean; warehouse?: WarehouseValue }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -37,6 +38,7 @@ export function EditStockItemButton({ id, name, unit, category, qty, price, canP
       name: fd.get("name"),
       unit: fd.get("unit"),
       category: fd.get("category"),
+      warehouse: fd.get("warehouse"),
       ...(qtyChanged ? { currentQty: Number(newQty), qtyReason: fd.get("qtyReason") } : {}),
     });
     setBusy(false);
@@ -73,6 +75,17 @@ export function EditStockItemButton({ id, name, unit, category, qty, price, canP
                 </Select>
               </div>
             </div>
+            <div>
+              <Label htmlFor={`ew-${id}`}>Kept in</Label>
+              <Select id={`ew-${id}`} name="warehouse" defaultValue={warehouse}>
+                {WAREHOUSES.map((w) => (
+                  <option key={w.value} value={w.value}>
+                    {w.label}
+                  </option>
+                ))}
+              </Select>
+              <p className="mt-1 text-xs text-ink-500">Change this only if the item was entered in the wrong warehouse — its quantity moves with it.</p>
+            </div>
             {canPrice && (
               <div>
                 <Label htmlFor={`ep-${id}`}>Price per unit (₱)</Label>
@@ -107,7 +120,7 @@ export function EditStockItemButton({ id, name, unit, category, qty, price, canP
 }
 
 /** Fix a tool/equipment entry after it was added: name, asset tag, category (e.g. one that was forgotten). */
-export function EditToolButton({ id, name, assetTag, category }: { id: string; name: string; assetTag: string | null; category: string | null }) {
+export function EditToolButton({ id, name, assetTag, category, warehouse = "MAIN" }: { id: string; name: string; assetTag: string | null; category: string | null; warehouse?: WarehouseValue }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -118,7 +131,7 @@ export function EditToolButton({ id, name, assetTag, category }: { id: string; n
     const fd = new FormData(e.currentTarget);
     setBusy(true);
     setError("");
-    const err = await patch(`/api/tools/${id}`, { name: fd.get("name"), assetTag: fd.get("assetTag") ?? "", category: fd.get("category") ?? "" });
+    const err = await patch(`/api/tools/${id}`, { name: fd.get("name"), assetTag: fd.get("assetTag") ?? "", category: fd.get("category") ?? "", warehouse: fd.get("warehouse") });
     setBusy(false);
     if (err) return setError(err);
     setOpen(false);
@@ -136,6 +149,17 @@ export function EditToolButton({ id, name, assetTag, category }: { id: string; n
             <div>
               <Label htmlFor={`tn-${id}`}>Tool / equipment name</Label>
               <Input id={`tn-${id}`} name="name" required defaultValue={name} />
+            </div>
+            <div>
+              <Label htmlFor={`tw-${id}`}>Kept in</Label>
+              <Select id={`tw-${id}`} name="warehouse" defaultValue={warehouse}>
+                {WAREHOUSES.map((w) => (
+                  <option key={w.value} value={w.value}>
+                    {w.label}
+                  </option>
+                ))}
+              </Select>
+              <p className="mt-1 text-xs text-ink-500">Its home warehouse — where it sits when it is not on a project, and where it returns to.</p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
