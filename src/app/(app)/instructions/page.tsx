@@ -223,8 +223,10 @@ export default async function InstructionsPage({
     const details = (
       <>
         {i.photoUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={i.photoUrl} alt="" className="mt-2 max-h-40 rounded-lg object-cover" />
+          <a href={i.photoUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block" title="Tap to view the photo">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={i.photoUrl} alt="Instruction photo" className="max-h-40 rounded-lg object-cover" />
+          </a>
         )}
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-500">
           <span>

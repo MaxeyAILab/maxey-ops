@@ -84,12 +84,10 @@ export default async function InstructionDetailPage({ params }: { params: { id: 
         <CardBody className="space-y-3">
           <p className="whitespace-pre-wrap text-sm text-ink-800">{instruction.text}</p>
           {instruction.photoUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={instruction.photoUrl}
-              alt=""
-              className="max-h-80 rounded-lg border border-ink-100 object-cover"
-            />
+            <a href={instruction.photoUrl} target="_blank" rel="noopener noreferrer" className="inline-block" title="Tap to view the photo">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={instruction.photoUrl} alt="Instruction photo" className="max-h-80 rounded-lg border border-ink-100 object-cover" />
+            </a>
           )}
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-500">
             <span>

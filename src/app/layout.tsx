@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Archivo } from "next/font/google";
 import "./globals.css";
 import { SwRegister } from "@/components/sw-register";
+import { ImageLinkViewer } from "@/components/image-link-viewer";
 import { THEME_INIT_SCRIPT } from "@/components/theme-toggle";
 
 // App-wide typeface (2026-09 retheme, matching the Finance tab). The public
@@ -41,6 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={archivo.className}>
         <SwRegister />
         {children}
+        <ImageLinkViewer />
       </body>
     </html>
   );
