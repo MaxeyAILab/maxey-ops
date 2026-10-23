@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { fmtDateTime, php } from "@/lib/format";
 import { Badge, Button, Card, CardHeader, Table, Td, Th } from "@/components/ui";
 import { DeleteRequisitionButton } from "@/components/requisition-actions";
-import { canRaiseRequisition, projectOrCategoryLabel, requisitionAmount } from "@/lib/requisitions";
+import { canRaiseRequisition, projectOrCategoryLabel, requisitionAmount, seesOnlyOwnRequisitions } from "@/lib/requisitions";
 import { canAccess } from "@/lib/access";
 
 export const metadata = { title: "Requisitions" };
@@ -23,7 +23,7 @@ export default async function RequisitionsPage() {
     redirect("/attendance");
   }
 
-  const where = user.role === "FOREMAN" ? { submittedById: user.id } : {};
+  const where = seesOnlyOwnRequisitions(user) ? { submittedById: user.id } : {};
   const requisitions = await prisma.requisition.findMany({
     where,
     orderBy: { submittedAt: "desc" },

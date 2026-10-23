@@ -61,7 +61,7 @@ export default async function PeoplePage() {
         {u.role === "CLIENT" || u.role === "OWNER" ? (
           <span className="text-xs text-ink-300">{u.role === "OWNER" ? "Yes — owner" : "—"}</span>
         ) : (
-          <RequisitionAccessToggle userId={u.id} name={u.name} byRole={requisitionAllowedByRole(u)} allowed={u.canRequisition} />
+          <RequisitionAccessToggle userId={u.id} name={u.name} byRole={requisitionAllowedByRole(u)} allowed={u.canRequisition} ownOnly={u.ownRequisitionsOnly} isForeman={u.role === "FOREMAN"} />
         )}
       </Td>
       {(["approve", "release", "manage"] as const).map((kind) => (

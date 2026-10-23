@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { notifyOwner } from "@/lib/notify";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
-import { canRaiseRequisition, projectOrCategoryLabel } from "@/lib/requisitions";
+import { canRaiseRequisition, projectOrCategoryLabel, seesOnlyOwnRequisitions } from "@/lib/requisitions";
 
 const itemSchema = z.object({
   name: z.string().min(1).max(200),
@@ -95,7 +95,7 @@ export const POST = handleApi(async (req: NextRequest) => {
 /** GET /api/requisitions — list, scoped by role (drivers view for pickups). */
 export const GET = handleApi(async () => {
   const user = await requireUser(["FOREMAN", "PM", "OWNER", "PURCHASING", "ACCOUNTING", "DRIVER"]);
-  const where = user.role === "FOREMAN" ? { submittedById: user.id } : {};
+  const where = seesOnlyOwnRequisitions(user) ? { submittedById: user.id } : {};
   const requisitions = await prisma.requisition.findMany({
     where,
     orderBy: { submittedAt: "desc" },

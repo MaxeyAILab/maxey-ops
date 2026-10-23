@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { allowedMenus } from "@/lib/access";
-import { projectOrCategoryLabel } from "@/lib/requisitions";
+import { projectOrCategoryLabel, seesOnlyOwnRequisitions } from "@/lib/requisitions";
 import type { SessionUser } from "@/lib/auth";
 
 export interface SearchItem {
@@ -47,7 +47,7 @@ export async function searchEverything(user: SessionUser, q: string): Promise<Se
       ? prisma.requisition.findMany({
           where: {
             AND: [
-              user.role === "FOREMAN" ? { submittedById: user.id } : {},
+              seesOnlyOwnRequisitions(user) ? { submittedById: user.id } : {},
               { OR: [{ items: { some: { name: has } } }, { notes: has }, { project: { name: has } }, { submittedBy: { name: has } }] },
             ],
           } satisfies Prisma.RequisitionWhereInput,

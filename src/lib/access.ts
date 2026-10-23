@@ -102,6 +102,18 @@ function roleDefaultMenus(role: Role): string[] {
 
 const OWNER_ONLY_MENUS = new Set(["/dashboard", "/finance", "/leads", "/people"]);
 
+/**
+ * Someone the Owner switched "Sees only their own requisitions" on for must be able to reach the Requisitions tab (to raise a
+ * requisition and follow it), whatever their tab checklist says — so the switch is all the Owner has to set. Returns the tab
+ * settings to use for that person; anyone without the switch is unchanged.
+ */
+export function withOwnRequisitionsTab(u: { role: Role; department: Department | null; useCustomMenus: boolean; customMenus: string[]; ownRequisitionsOnly?: boolean | null }): { useCustomMenus: boolean; customMenus: string[] } {
+  if (!u.ownRequisitionsOnly || u.role === "CLIENT" || u.role === "OWNER") return { useCustomMenus: u.useCustomMenus, customMenus: u.customMenus };
+  const tabs = allowedMenus(u.role, u.department, u.customMenus, u.useCustomMenus);
+  if (tabs.includes("/requisitions")) return { useCustomMenus: u.useCustomMenus, customMenus: u.customMenus };
+  return { useCustomMenus: true, customMenus: [...tabs, "/requisitions"] };
+}
+
 export function allowedMenus(
   role: Role,
   department: Department | null,

@@ -165,33 +165,41 @@ export function ResetPasswordButton({ userId, name }: { userId: string; name: st
  * People page: the Owner's per-person switch for raising material requisitions. People whose role or department already
  * allows it (Foremen, PMs, drivers, architects and engineers) just show "by role"; for everyone else it can be turned on.
  */
-export function RequisitionAccessToggle({ userId, name, byRole, allowed }: { userId: string; name: string; byRole: boolean; allowed: boolean }) {
+export function RequisitionAccessToggle({ userId, name, byRole, allowed, ownOnly = false, isForeman = false }: { userId: string; name: string; byRole: boolean; allowed: boolean; ownOnly?: boolean; isForeman?: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  if (byRole) return <span className="text-xs text-ink-400">Yes — by role</span>;
-
-  async function change(next: boolean) {
+  async function send(body: Record<string, unknown>) {
     if (busy) return;
     setBusy(true);
     setError("");
-    const res = await fetch(`/api/people/${userId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "set-requisition-access", allowed: next }),
-    });
+    const res = await fetch(`/api/people/${userId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     setBusy(false);
     if (res.ok) router.refresh();
     else setError(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? "Failed");
   }
 
   return (
-    <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-ink-700">
-      <input type="checkbox" checked={allowed} disabled={busy} onChange={(e) => change(e.target.checked)} aria-label={`${name} can raise requisitions`} />
-      {allowed ? "Yes" : "No"}
-      {error && <span className="text-red-600">{error}</span>}
-    </label>
+    <div className="space-y-1">
+      {byRole ? (
+        <span className="block text-xs text-ink-400">Yes — by role</span>
+      ) : (
+        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-ink-700">
+          <input type="checkbox" checked={allowed} disabled={busy} onChange={(e) => send({ action: "set-requisition-access", allowed: e.target.checked })} aria-label={`${name} can raise requisitions`} />
+          {allowed ? "Yes" : "No"}
+        </label>
+      )}
+      {isForeman ? (
+        <span className="block text-[11px] text-ink-400">sees only their own (Foreman)</span>
+      ) : (
+        <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-ink-500" title="They only see the requisitions they raised themselves. They get the Requisitions tab automatically.">
+          <input type="checkbox" checked={ownOnly} disabled={busy} onChange={(e) => send({ action: "set-requisition-scope", allowed: e.target.checked })} aria-label={`${name} sees only their own requisitions`} />
+          sees only their own
+        </label>
+      )}
+      {error && <span className="block text-xs text-red-600">{error}</span>}
+    </div>
   );
 }
 

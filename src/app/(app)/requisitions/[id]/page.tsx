@@ -11,7 +11,7 @@ import {
   DeleteRequisitionButton,
   ItemsCostingTable,
 } from "@/components/requisition-actions";
-import { projectOrCategoryLabel } from "@/lib/requisitions";
+import { projectOrCategoryLabel, seesOnlyOwnRequisitions } from "@/lib/requisitions";
 import { canAccess } from "@/lib/access";
 
 export const dynamic = "force-dynamic";
@@ -40,8 +40,8 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
     },
   });
   if (!r) notFound();
-  // Foremen can only open their own requisitions
-  if (user.role === "FOREMAN" && r.submittedBy.name !== user.name) redirect("/requisitions");
+  // Foremen — and anyone the Owner limited to their own — can only open requisitions they raised themselves
+  if (seesOnlyOwnRequisitions(user) && r.submittedById !== user.id) redirect("/requisitions");
 
   const auditTrail = await prisma.auditLog.findMany({
     where: { entityType: "Requisition", entityId: r.id },

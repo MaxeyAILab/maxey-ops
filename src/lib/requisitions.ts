@@ -8,6 +8,13 @@ export function canRaiseRequisition(u: { role: string; department?: string | nul
   return ["FOREMAN", "PM", "OWNER", "DRIVER"].includes(u.role) || ["ARCHITECT", "ENGINEER"].includes(u.department ?? "") || !!u.canRequisition;
 }
 
+/**
+ * Sees only the requisitions they raised themselves: Foremen always, and anyone the Owner switched "Sees only their own
+ * requisitions" on for (People page). Everyone else with the Requisitions tab sees all of them. One rule for the list, a single
+ * requisition, search and the API.
+ */
+export const seesOnlyOwnRequisitions = (u: { role: string; ownRequisitionsOnly?: boolean | null }): boolean => u.role === "FOREMAN" || !!u.ownRequisitionsOnly;
+
 /** Whether the role/department already allows it, so the Owner's switch isn't needed. */
 export const requisitionAllowedByRole = (u: { role: string; department?: string | null }) => canRaiseRequisition({ ...u, canRequisition: false });
 

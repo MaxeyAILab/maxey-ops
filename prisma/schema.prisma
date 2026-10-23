@@ -302,6 +302,7 @@ model User {
   position            String? // trade/position: Foreman, Mason, Carpenter, Welder, Driver, Office Admin…
   employeeNo          String?            @unique // company employee ID printed on the payslip, e.g. VCDC-016
   canRequisition      Boolean            @default(false) // the Owner lets this person raise material requisitions even though their role doesn't already allow it
+  ownRequisitionsOnly Boolean            @default(false) // sees only the requisitions they raised themselves (Foremen always do); gives them the Requisitions tab
   canApprovePettyCash Boolean            @default(false) // the Owner lets this person approve petty cash requests (the Owner always can)
   canReleasePettyCash Boolean            @default(false) // ...and/or confirm handing out approved petty cash
   canManageCash       Boolean            @default(false) // full Cash Expense access, like Accounting: every request, the fund, verification, cash advances

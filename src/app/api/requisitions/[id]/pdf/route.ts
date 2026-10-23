@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { fmtDate } from "@/lib/format";
-import { projectOrCategoryLabel } from "@/lib/requisitions";
+import { projectOrCategoryLabel, seesOnlyOwnRequisitions } from "@/lib/requisitions";
 import { buildRequisitionPdf } from "@/lib/requisition-pdf";
 
 /**
@@ -12,7 +12,7 @@ import { buildRequisitionPdf } from "@/lib/requisition-pdf";
  */
 export const GET = handleApi(
   async (_req: NextRequest, { params }: { params: { id: string } }) => {
-    const user = await requireUser(["OWNER", "PM", "FOREMAN", "PURCHASING", "ACCOUNTING", "DRIVER"]);
+    const user = await requireUser();
 
     const r = await prisma.requisition.findUnique({
       where: { id: params.id },
@@ -24,7 +24,9 @@ export const GET = handleApi(
       },
     });
     if (!r) throw new ApiError(404, "Requisition not found");
-    if (user.role === "FOREMAN" && r.submittedBy.name !== user.name) {
+    // the usual roles, or anyone looking at a requisition they raised themselves; people limited to their own see nothing else
+    const own = r.submittedById === user.id;
+    if (!own && (!["OWNER", "PM", "FOREMAN", "PURCHASING", "ACCOUNTING", "DRIVER"].includes(user.role) || seesOnlyOwnRequisitions(user))) {
       throw new ApiError(403, "Not authorized to view this requisition");
     }
 

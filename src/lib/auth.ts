@@ -8,6 +8,7 @@ import { clearAttempts, beginAttempt, failAttempt } from "@/lib/login-guard";
 import { clientIp, lockedError } from "@/lib/login-throttle";
 import { newSessionId, readPayload, type LoginTicket } from "@/lib/passkey";
 import type { Department, Role } from "@prisma/client";
+import { withOwnRequisitionsTab } from "@/lib/access";
 
 export interface SessionUser {
   id: string;
@@ -23,6 +24,8 @@ export interface SessionUser {
   customMenus: string[];
   /** The Owner has allowed this person to raise requisitions (see canRaiseRequisition). */
   canRequisition: boolean;
+  /** Sees only the requisitions they raised themselves (see seesOnlyOwnRequisitions). */
+  ownRequisitionsOnly: boolean;
   /** The Owner has switched this person on to approve / to release petty cash (People page). */
   canApprovePettyCash: boolean;
   canReleasePettyCash: boolean;
@@ -156,6 +159,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       useCustomMenus: true,
       customMenus: true,
       canRequisition: true,
+      ownRequisitionsOnly: true,
       canApprovePettyCash: true,
       canReleasePettyCash: true,
       canManageCash: true,
@@ -174,9 +178,9 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     position: dbUser.position,
     clientId: dbUser.clientId,
     mustChangePassword: dbUser.mustChangePassword,
-    useCustomMenus: dbUser.useCustomMenus,
-    customMenus: dbUser.customMenus,
+    ...withOwnRequisitionsTab(dbUser),
     canRequisition: dbUser.canRequisition,
+    ownRequisitionsOnly: dbUser.ownRequisitionsOnly,
     canApprovePettyCash: dbUser.canApprovePettyCash,
     canReleasePettyCash: dbUser.canReleasePettyCash,
     canManageCash: dbUser.canManageCash,
