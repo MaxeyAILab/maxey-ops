@@ -7,6 +7,7 @@ import { Modal } from "@/components/modal";
 import { MATERIAL_CATEGORIES, type MaterialCategoryValue } from "@/lib/material-category";
 import { parsePrice } from "@/lib/warehouse-value";
 import { WAREHOUSES, type WarehouseValue } from "@/lib/warehouses";
+import { NO_TOOL_CATEGORY, TOOL_CATEGORIES, TOOL_CATEGORY_LABEL, toolCategoryKey } from "@/lib/tool-category";
 
 async function patch(url: string, body: Record<string, unknown>): Promise<string | null> {
   const res = await fetch(url, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -168,13 +169,14 @@ export function EditToolButton({ id, name, assetTag, category, warehouse = "MAIN
               </div>
               <div>
                 <Label htmlFor={`tc-${id}`}>Category</Label>
-                <Input id={`tc-${id}`} name="category" defaultValue={category ?? ""} placeholder="Power Tool" list={`tool-cat-${id}`} />
-                <datalist id={`tool-cat-${id}`}>
-                  <option value="Power Tool" />
-                  <option value="Heavy Equipment" />
-                  <option value="Hand Tool" />
-                  <option value="Safety Equipment" />
-                </datalist>
+                <Select id={`tc-${id}`} name="category" defaultValue={toolCategoryKey(category) === NO_TOOL_CATEGORY ? "" : TOOL_CATEGORY_LABEL[toolCategoryKey(category)]}>
+                  <option value="">Not categorized</option>
+                  {TOOL_CATEGORIES.map((c) => (
+                    <option key={c.value} value={c.label}>
+                      {c.label}
+                    </option>
+                  ))}
+                </Select>
               </div>
             </div>
             {error && <p className="text-sm text-red-600">{error}</p>}

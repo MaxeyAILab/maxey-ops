@@ -7,6 +7,7 @@ import { Button, Input, Label, Select } from "@/components/ui";
 import { PhotoInput } from "@/components/photo-input";
 import { TOOL_CONDITIONS, TOOL_CONDITION_LABEL, type ToolConditionValue } from "@/lib/tool-condition";
 import { WAREHOUSES, type WarehouseValue } from "@/lib/warehouses";
+import { TOOL_CATEGORIES } from "@/lib/tool-category";
 
 interface ProjectOption {
   id: string;
@@ -64,13 +65,16 @@ export function AddToolForm({ warehouse = "MAIN" }: { warehouse?: WarehouseValue
       </div>
       <div>
         <Label htmlFor="toolCategory">Category</Label>
-        <Input id="toolCategory" name="category" placeholder="Power Tool" list="tool-categories" />
-        <datalist id="tool-categories">
-          <option value="Power Tool" />
-          <option value="Heavy Equipment" />
-          <option value="Hand Tool" />
-          <option value="Safety Equipment" />
-        </datalist>
+        <Select id="toolCategory" name="category" required defaultValue="">
+          <option value="" disabled>
+            Choose a category…
+          </option>
+          {TOOL_CATEGORIES.map((c) => (
+            <option key={c.value} value={c.label}>
+              {c.label}
+            </option>
+          ))}
+        </Select>
       </div>
       <div>
         <Label htmlFor="toolStatus">Status</Label>

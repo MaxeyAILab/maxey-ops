@@ -6,6 +6,7 @@ import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { canAddInventoryCatalog, canDeleteTool, canLogInventoryMovement } from "@/lib/access";
 import { TOOL_CONDITIONS, TOOL_CONDITION_LABEL } from "@/lib/tool-condition";
 import { WAREHOUSE_VALUES, warehouseLabel, type WarehouseValue } from "@/lib/warehouses";
+import { TOOL_CATEGORIES, normalizeToolCategory } from "@/lib/tool-category";
 
 const patchSchema = z
   .object({
@@ -31,6 +32,9 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
   const editsDetails = body.name !== undefined || body.assetTag !== undefined || body.category !== undefined || body.warehouse !== undefined;
   if (body.workingStatus !== undefined && !canLogInventoryMovement(user)) throw new ApiError(403, "Not authorized for this action");
   if (editsDetails && !canAddInventoryCatalog(user)) throw new ApiError(403, "Only office staff can edit a tool's name, tag or category");
+  // a category must be one of the four groups (empty clears it); older wording is saved under its proper name
+  const newCategory = body.category === undefined ? undefined : normalizeToolCategory(body.category);
+  if (newCategory === undefined && body.category !== undefined) throw new ApiError(400, `Choose a category: ${TOOL_CATEGORIES.map((c) => c.label).join(", ")}`);
   const tool = await prisma.toolAsset.findUnique({ where: { id: params.id } });
   if (!tool) throw new ApiError(404, "Tool not found");
 
@@ -44,9 +48,9 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
     data.assetTag = body.assetTag || null;
     changes.assetTag = { from: tool.assetTag, to: body.assetTag || null };
   }
-  if (body.category !== undefined && (body.category || null) !== tool.category) {
-    data.category = body.category || null;
-    changes.category = { from: tool.category, to: body.category || null };
+  if (newCategory !== undefined && newCategory !== tool.category) {
+    data.category = newCategory;
+    changes.category = { from: tool.category, to: newCategory };
   }
   if (body.warehouse !== undefined && body.warehouse !== tool.warehouse) {
     data.warehouse = body.warehouse;

@@ -5,16 +5,15 @@ import { prisma } from "@/lib/prisma";
 import { fmtDateTime, labelize } from "@/lib/format";
 import { Badge, Card, CardBody, CardHeader, Table, Td, Th } from "@/components/ui";
 import { AddItemForm, MovementForm, ProjectMaterialQuickActions } from "@/components/inventory-forms";
-import { AddToolForm, DeleteToolButton, ToolActions, ToolConditionControl } from "@/components/tool-forms";
+import { AddToolForm, ToolActions } from "@/components/tool-forms";
 import { TOOL_CONDITION_LABEL } from "@/lib/tool-condition";
-import { TOOL_FILTERS, filterTools, isToolFilter, toolFilterCounts } from "@/lib/tool-filter";
+import { NO_TOOL_CATEGORY, TOOL_CATEGORIES, TOOL_CATEGORY_LABEL, summarizeToolCategories, toolCategorySlug, type ToolCategoryKey } from "@/lib/tool-category";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
-import { canAccess, canAddInventoryCatalog, canApproveInventoryRequest, canDeleteTool, canLogInventoryMovement, canSeeStockPrices } from "@/lib/access";
+import { canAccess, canAddInventoryCatalog, canApproveInventoryRequest, canLogInventoryMovement, canSeeStockPrices } from "@/lib/access";
 import { issuedFromWarehouse, lineValue, summarizeValue } from "@/lib/warehouse-value";
 import { php } from "@/lib/format";
 import { manilaDayKey } from "@/lib/time-rules";
 import { RequestDecision } from "@/components/inventory-requests-ui";
-import { EditToolButton } from "@/components/inventory-edit";
 import { MATERIAL_CATEGORIES, summarizeByCategory } from "@/lib/material-category";
 import { REQUEST_LABEL, decisionText } from "@/lib/inventory-labels";
 import { WarehouseTabs } from "@/components/warehouse-tabs";
@@ -26,7 +25,7 @@ import { DEFAULT_WAREHOUSE, countByWarehouse, warehouseFromSlug, warehouseLabel,
 export const metadata = { title: "Inventory" };
 export const dynamic = "force-dynamic";
 
-export default async function InventoryPage({ searchParams }: { searchParams: { tool?: string; toolq?: string; wh?: string } }) {
+export default async function InventoryPage({ searchParams }: { searchParams: { wh?: string } }) {
   const user = await getSessionUser();
   // Drivers don't have the tab by default (owner's rule) unless it is ticked on their account; with it they can log movements.
   if (!user || !canAccess(user.role, user.department, "/inventory", user.customMenus, user.useCustomMenus)) {
@@ -118,15 +117,14 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
   // every warehouse's items go to the form — it filters by the warehouse chosen in it
   const pickerItems = allItems.map((i) => ({ id: i.id, name: i.name, unit: i.unit, category: i.category, qty: Number(i.currentQty), price: showPrices && i.unitPrice !== null ? Number(i.unitPrice) : null, warehouse: i.warehouse }));
 
-  // tools: narrow by where it is / needs attention, and by typing
-  const toolFilter = isToolFilter(searchParams.tool) ? searchParams.tool : "all";
-  const toolQuery = (searchParams.toolq ?? "").trim().slice(0, 80);
-  const toolRows = tools.map((t) => ({ ...t, location: t.currentProject?.name ?? warehouseLabel(t.warehouse) }));
-  const toolCounts = toolFilterCounts(toolRows);
-  const visibleTools = filterTools(toolRows, toolFilter, toolQuery);
+  // tools: only the four category tiles are shown here; the tools themselves are on /inventory/tools
+  const toolTiles = summarizeToolCategories(tools);
   const projectOptions = projects.map((p) => ({ id: p.id, name: p.name }));
   const whQuery: Record<string, string> = wh === DEFAULT_WAREHOUSE ? {} : { wh: warehouseSlug(wh) };
-  const clearToolSearch = new URLSearchParams({ ...whQuery, ...(toolFilter !== "all" ? { tool: toolFilter } : {}) });
+  const toolsHref = (category?: string) => {
+    const qs = new URLSearchParams({ ...(category ? { category } : {}), ...whQuery });
+    return `/inventory/tools${qs.toString() ? `?${qs}` : ""}`;
+  };
   const stockHref = (category?: string) => {
     const qs = new URLSearchParams({ ...(category ? { category } : {}), ...whQuery });
     return `/inventory/stock${qs.toString() ? `?${qs}` : ""}`;
@@ -197,7 +195,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
             }
           />
           <CardBody className="space-y-1.5 border-b border-ink-100 pb-3">
-            <WarehouseTabs current={wh} counts={itemCounts} path="/inventory" params={{ tool: toolFilter !== "all" ? toolFilter : undefined, toolq: toolQuery || undefined }} noun="items" />
+            <WarehouseTabs current={wh} counts={itemCounts} path="/inventory" noun="items" />
             {showPrices && (
               <p className="text-xs text-ink-500">
                 All four warehouses together: <b className="tabular-nums text-ink-700">{php(allWarehousesValue.total)}</b>
@@ -263,103 +261,50 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
 
       <Card id="tools" className="scroll-mt-16">
         <CardHeader
-          title={`Tools & Equipment (${toolFilter === "all" && !toolQuery ? tools.length : `${visibleTools.length} of ${tools.length}`})`}
-          subtitle={`${whName} — individually tracked, each unit checked out to a project and returned to its warehouse`}
+          title={`Tools & Equipment (${tools.length})`}
+          subtitle={`${whName} — by category, open one to see its tools`}
+          action={
+            <Link href={toolsHref()} className="text-sm font-medium text-brand-600 hover:underline">
+              View all tools →
+            </Link>
+          }
         />
-        <CardBody className="space-y-3 border-b border-ink-100">
-          <WarehouseTabs current={wh} counts={toolWarehouseCounts} path="/inventory" params={{ tool: toolFilter !== "all" ? toolFilter : undefined, toolq: toolQuery || undefined }} noun="tools" />
-          <div className="flex flex-wrap items-center gap-2">
-            {TOOL_FILTERS.map((f) => {
-              const qs = new URLSearchParams(whQuery);
-              if (f.key !== "all") qs.set("tool", f.key);
-              if (toolQuery) qs.set("toolq", toolQuery);
-              const on = toolFilter === f.key;
+        <CardBody className="space-y-1.5 border-b border-ink-100 pb-3">
+          <WarehouseTabs current={wh} counts={toolWarehouseCounts} path="/inventory" noun="tools" />
+        </CardBody>
+        <CardBody>
+          {tools.length === 0 && (
+            <p className="mb-3 rounded-lg border border-dashed border-ink-200 px-3 py-2 text-sm text-ink-500">
+              No tools are kept in the {whName} yet.{canAddCatalog ? " Add the first one below." : ""}
+            </p>
+          )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {[...TOOL_CATEGORIES.map((c) => ({ key: c.value as ToolCategoryKey, label: c.label, icon: c.icon, slug: c.slug })), ...(toolTiles[NO_TOOL_CATEGORY].tools > 0 ? [{ key: NO_TOOL_CATEGORY as ToolCategoryKey, label: TOOL_CATEGORY_LABEL[NO_TOOL_CATEGORY], icon: "❔", slug: toolCategorySlug(NO_TOOL_CATEGORY) }] : [])].map((c) => {
+              const n = toolTiles[c.key];
               return (
-                <Link
-                  key={f.key}
-                  href={`/inventory${qs.toString() ? `?${qs}` : ""}#tools`}
-                  aria-current={on ? "true" : undefined}
-                  className={`rounded-full border px-3 py-1.5 text-sm font-medium ${on ? "border-[#8a1a28] bg-[#8a1a28] text-white" : "border-ink-200 text-ink-700 hover:bg-ink-100"}`}
-                >
-                  {f.label} <span className={on ? "text-white/80" : "text-ink-400"}>({toolCounts[f.key]})</span>
+                <Link key={c.key} href={toolsHref(c.slug)} className="group rounded-xl border border-ink-200 p-4 transition hover:border-[#8a1a28] hover:bg-ink-100/50">
+                  <div className="flex items-start gap-3">
+                    <span aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ink-100 text-xl">
+                      {c.icon}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-ink-900">{c.label}</div>
+                      <div className="text-sm text-ink-600">
+                        {n.tools} tool{n.tools === 1 ? "" : "s"}
+                      </div>
+                      {n.tools > 0 && (
+                        <div className="text-xs text-ink-500">
+                          {n.inWarehouse} in the warehouse · {n.onSite} on site
+                        </div>
+                      )}
+                      {n.attention > 0 && <div className="text-xs font-medium text-red-600">{n.attention} need attention</div>}
+                    </div>
+                  </div>
                 </Link>
               );
             })}
           </div>
-          <form method="get" action="/inventory#tools" className="flex flex-wrap items-center gap-2">
-            {wh !== DEFAULT_WAREHOUSE && <input type="hidden" name="wh" value={warehouseSlug(wh)} />}
-            {toolFilter !== "all" && <input type="hidden" name="tool" value={toolFilter} />}
-            <input
-              type="search"
-              name="toolq"
-              defaultValue={toolQuery}
-              placeholder="Search a tool — name, tag, category or location…"
-              aria-label="Search tools"
-              className="min-h-[40px] w-full max-w-sm rounded-lg border border-ink-200 bg-ink-50 px-3 text-sm text-ink-900 placeholder:text-ink-400 focus:border-[#8a1a28] focus:outline-none"
-            />
-            <button type="submit" className="min-h-[40px] rounded-lg bg-[#8a1a28] px-4 text-sm font-semibold text-white hover:bg-[#741522]">
-              Search
-            </button>
-            {toolQuery && (
-              <Link href={`/inventory${clearToolSearch.toString() ? `?${clearToolSearch}` : ""}#tools`} className="text-sm text-ink-500 hover:underline">
-                Clear
-              </Link>
-            )}
-          </form>
         </CardBody>
-        <Table>
-          <thead>
-            <tr>
-              <Th sticky>Tool</Th>
-              <Th className="hidden sm:table-cell">Tag</Th>
-              <Th>Category</Th>
-              <Th>Status</Th>
-              <Th>Condition</Th>
-              <Th>Location</Th>
-              {canMove && <Th>Actions</Th>}
-            </tr>
-          </thead>
-          <tbody>
-            {visibleTools.map((t) => (
-              <tr key={t.id}>
-                <Td sticky className="min-w-[7rem] max-w-[9.5rem] font-medium sm:max-w-none">
-                  {t.name}
-                  {t.assetTag && <div className="text-xs font-semibold text-ink-500 sm:hidden">{t.assetTag}</div>}
-                </Td>
-                <Td className="hidden text-ink-500 sm:table-cell">{t.assetTag ?? "—"}</Td>
-                <Td className="text-ink-500">{t.category ?? "—"}</Td>
-                <Td>
-                  <Badge value={t.status} />
-                  {t.condition && <div className="mt-0.5 text-[11px] text-ink-400">{t.condition}</div>}
-                </Td>
-                <Td>{canMove ? <ToolConditionControl toolId={t.id} value={t.workingStatus} /> : <Badge value={t.workingStatus} label={TOOL_CONDITION_LABEL[t.workingStatus]} />}</Td>
-                <Td className="text-ink-600">{t.currentProject?.name ?? warehouseLabel(t.warehouse)}</Td>
-                {canMove && (
-                  <Td>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <ToolActions
-                        toolId={t.id}
-                        status={t.status}
-                        currentProjectId={t.currentProjectId}
-                        projects={projectOptions}
-                        pending={pendingByTool.get(t.id) ? waitingText(pendingByTool.get(t.id)!) : undefined}
-                      />
-                      {canAddCatalog && <EditToolButton id={t.id} name={t.name} assetTag={t.assetTag} category={t.category} warehouse={t.warehouse} />}
-                      {canDeleteTool(user, t._count.movements) && <DeleteToolButton toolId={t.id} name={t.name} movements={t._count.movements} />}
-                    </div>
-                  </Td>
-                )}
-              </tr>
-            ))}
-            {visibleTools.length === 0 && (
-              <tr>
-                <Td colSpan={canMove ? 7 : 6} className="py-6 text-center text-ink-400">
-                  {tools.length === 0 ? `No tools are kept in the ${whName} yet.` : "No tools match — try another filter or fewer words."}
-                </Td>
-              </tr>
-            )}
-          </tbody>
-        </Table>
         {canAddCatalog && (
           <CardBody className="border-t border-ink-100">
             <AddToolForm warehouse={wh} />
