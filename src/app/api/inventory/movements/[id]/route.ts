@@ -61,7 +61,7 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
   }
 
   // approve: the stock has to still be there; then it moves in one step with the decision
-  const move = { itemId: m.itemId, type: m.type, qty: Number(m.qty), fromProjectId: m.fromProjectId, toProjectId: m.toProjectId };
+  const move = { itemId: m.itemId, type: m.type, qty: Number(m.qty), fromProjectId: m.fromProjectId, toProjectId: m.toProjectId, excess: m.excess };
   await assertMaterialAvailable(move, m.item, { excludeMovementId: m.id });
   await prisma.$transaction(async (db) => {
     const done = await db.inventoryMovement.updateMany({ where: { id: m.id, status: "PENDING" }, data: { status: "APPLIED", decidedById: user.id, decidedByName: user.name, decidedAt: now } });

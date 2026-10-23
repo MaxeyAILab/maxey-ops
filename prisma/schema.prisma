@@ -830,6 +830,8 @@ model InventoryMovement {
   decidedAt      DateTime?
   rejectedReason String?
   photos         Json? // photos of the items moved (urls) — attached to a return/transfer request so the approver can see what is coming
+  excess         Boolean        @default(false) // a return of excess materials that were never logged on that site: the warehouse is added to in full, the site record only goes down as far as it was recorded
+  newItem        Boolean        @default(false) // this movement created the item (it was not in the warehouse yet)
 
   @@index([status])
 }

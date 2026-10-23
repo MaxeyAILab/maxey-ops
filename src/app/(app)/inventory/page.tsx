@@ -115,7 +115,8 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
   const allWarehousesValue = summarizeValue(allItems);
   const issued = issuedFromWarehouse(issuedRows, new Date(`${manilaDayKey(new Date()).slice(0, 7)}-01T00:00:00+08:00`));
   const recentIds = [...new Set(myRecent.map((m) => m.itemId))].slice(0, 8);
-  const pickerItems = items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, category: i.category, qty: Number(i.currentQty), price: showPrices && i.unitPrice !== null ? Number(i.unitPrice) : null }));
+  // every warehouse's items go to the form — it filters by the warehouse chosen in it
+  const pickerItems = allItems.map((i) => ({ id: i.id, name: i.name, unit: i.unit, category: i.category, qty: Number(i.currentQty), price: showPrices && i.unitPrice !== null ? Number(i.unitPrice) : null, warehouse: i.warehouse }));
 
   // tools: narrow by where it is / needs attention, and by typing
   const toolFilter = isToolFilter(searchParams.tool) ? searchParams.tool : "all";
@@ -148,6 +149,8 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                   <div className="font-medium text-ink-900">
                     {REQUEST_LABEL[m.type]} · {Number(m.qty)} {m.item.unit} {m.item.name}
                     <span className="ml-1.5 rounded bg-ink-100 px-1.5 py-0.5 text-[11px] font-medium text-ink-600">{warehouseLabel(m.item.warehouse)}</span>
+                    {m.newItem && <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">new item — added with this return</span>}
+                    {m.excess && !m.newItem && <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">excess — not recorded on site</span>}
                   </div>
                   <div className="text-xs text-ink-500">
                     {m.fromLoc} → {m.toLoc} · requested by <b>{actorNames.get(m.actorId) ?? "—"}</b> · {fmtDateTime(m.createdAt)}
@@ -242,14 +245,14 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
         <Card>
           <CardHeader
             title="Log a movement"
-            subtitle={`From and back to the ${whName} — issue to a project, return, transfer, or log usage. Works offline`}
+            subtitle="Issue to a project, return excess to any warehouse, transfer, or log usage — works offline"
           />
           <CardBody>
             {canMove ? (
-              items.length > 0 && projectOptions.length > 0 ? (
-                <MovementForm key={wh} warehouseName={whName} items={pickerItems} projects={projectOptions} recentIds={recentIds} instant={isOwner} showValue={showPrices} />
+              projectOptions.length > 0 ? (
+                <MovementForm key={wh} defaultWarehouse={wh} items={pickerItems} projects={projectOptions} recentIds={recentIds} instant={isOwner} showValue={showPrices} />
               ) : (
-                <p className="text-sm text-ink-400">Add a stock item to the {whName} and have an active project first.</p>
+                <p className="text-sm text-ink-400">There is no active project to log a movement for yet.</p>
               )
             ) : (
               <p className="text-sm text-ink-400">View-only for your role.</p>

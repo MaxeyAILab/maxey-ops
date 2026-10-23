@@ -7,7 +7,7 @@ import { Button, Input, Label, Select } from "@/components/ui";
 import { MATERIAL_CATEGORIES } from "@/lib/material-category";
 import { ItemPicker } from "@/components/item-picker";
 import { PhotoInput } from "@/components/photo-input";
-import { WAREHOUSES, type WarehouseValue } from "@/lib/warehouses";
+import { WAREHOUSES, warehouseLabel, type WarehouseValue } from "@/lib/warehouses";
 import { lineValue, parsePrice } from "@/lib/warehouse-value";
 import type { PickItem } from "@/lib/item-search";
 
@@ -20,6 +20,8 @@ interface ItemOption {
   qty?: number;
   /** price per unit (only given to people who may see prices) */
   price?: number | null;
+  /** the warehouse that keeps it */
+  warehouse?: string;
 }
 
 interface ProjectOption {
@@ -111,18 +113,20 @@ export function AddItemForm({ withPrice = false, warehouse = "MAIN" }: { withPri
 }
 
 const MOVEMENT_TYPES = [
-  { value: "WAREHOUSE_TO_SITE", label: "Warehouse → Site (issue to project)", from: false, to: true },
-  { value: "SITE_TO_WAREHOUSE", label: "Site → Warehouse (return of unused — needs approval)", from: true, to: false },
-  { value: "SITE_TO_SITE", label: "Site → Site (direct transfer — needs approval)", from: true, to: true },
-  { value: "CONSUMED_ON_SITE", label: "Used on site (consumed)", from: true, to: false },
-  { value: "SUPPLIER_TO_SITE", label: "Supplier → Site (direct delivery)", from: false, to: true },
-  { value: "SUPPLIER_TO_WAREHOUSE", label: "Supplier → Warehouse", from: false, to: false },
+  { value: "WAREHOUSE_TO_SITE", label: "Warehouse → Site (issue to project)", from: false, to: true, warehouse: "Take it from" },
+  { value: "SITE_TO_WAREHOUSE", label: "Site → Warehouse (return of unused / excess — needs approval)", from: true, to: false, warehouse: "Put it into" },
+  { value: "SITE_TO_SITE", label: "Site → Site (direct transfer — needs approval)", from: true, to: true, warehouse: null },
+  { value: "CONSUMED_ON_SITE", label: "Used on site (consumed)", from: true, to: false, warehouse: null },
+  { value: "SUPPLIER_TO_SITE", label: "Supplier → Site (direct delivery)", from: false, to: true, warehouse: null },
+  { value: "SUPPLIER_TO_WAREHOUSE", label: "Supplier → Warehouse", from: false, to: false, warehouse: "Deliver it into" },
 ] as const;
 
 /**
  * Log a materials movement — offline-capable from the field (Spec 6.4).
  * Source/destination are picked from real projects (or Warehouse/Supplier),
  * so on-site balances per project stay accurate — no free-text locations.
+ * Anything that goes into or out of a warehouse asks WHICH of the four warehouses. A return can also be of something the
+ * warehouse does not have yet (it is added as part of the return), and of excess that was never logged on the site.
  */
 export function MovementForm({
   items,
@@ -130,12 +134,10 @@ export function MovementForm({
   recentIds = [],
   instant = false,
   showValue = false,
-  warehouseName = "the warehouse",
+  defaultWarehouse = "MAIN",
 }: {
-  /** the items of the warehouse being looked at */
+  /** every stock item, with the warehouse that keeps it */
   items: ItemOption[];
-  /** its name, e.g. "Alua Warehouse" — shown next to the quantities */
-  warehouseName?: string;
   projects: ProjectOption[];
   /** show the value (quantity × price) of what is being logged — for people who may see prices */
   showValue?: boolean;
@@ -143,21 +145,33 @@ export function MovementForm({
   recentIds?: string[];
   /** the Owner's returns and transfers are approved on the spot */
   instant?: boolean;
+  /** the warehouse being looked at on the page — pre-selected */
+  defaultWarehouse?: WarehouseValue;
 }) {
   const router = useRouter();
   const [type, setType] = useState<(typeof MOVEMENT_TYPES)[number]["value"]>("WAREHOUSE_TO_SITE");
+  const [warehouse, setWarehouse] = useState<WarehouseValue>(defaultWarehouse);
   const [pickerKey, setPickerKey] = useState(0); // a new key clears the chosen item after each movement is logged
-  const pickItems: PickItem[] = items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, category: i.category ?? "OTHERS", qty: i.qty ?? 0, price: i.price ?? null }));
   const [chosen, setChosen] = useState<PickItem | null>(null);
+  const [isNew, setIsNew] = useState(false); // the item is not in the warehouse's list yet (returns only)
+  const [excessChecked, setExcessChecked] = useState(false);
   const [qtyText, setQtyText] = useState("");
   const [proof, setProof] = useState<string[]>([]); // photos of the items being returned / transferred
   const [proofKey, setProofKey] = useState(0);
-  const entryValue = chosen ? lineValue(qtyText, chosen.price) : null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
 
   const rule = MOVEMENT_TYPES.find((t) => t.value === type)!;
+  const usesWarehouse = rule.warehouse !== null;
+  const canBeNew = type === "SITE_TO_WAREHOUSE";
+  const warehouseName = warehouseLabel(warehouse);
+  // into / out of a warehouse: that warehouse's items; between sites or used on site: any item, tagged with where it is kept
+  const pickItems: PickItem[] = items
+    .filter((i) => !usesWarehouse || (i.warehouse ?? "MAIN") === warehouse)
+    .map((i) => ({ id: i.id, name: i.name, unit: i.unit, category: i.category ?? "OTHERS", qty: i.qty ?? 0, price: i.price ?? null, tag: usesWarehouse ? undefined : warehouseLabel(i.warehouse) }));
+  const entryValue = chosen && !isNew ? lineValue(qtyText, chosen.price) : null;
+  const pickerKeyFull = `${pickerKey}-${type}-${usesWarehouse ? warehouse : "any"}`; // the chosen item is cleared when the list changes
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -165,8 +179,9 @@ export function MovementForm({
     setError("");
     setMsg("");
     const fd = new FormData(e.currentTarget);
-    if (!fd.get("itemId")) {
-      setError("Choose an item first.");
+    const newItem = canBeNew && isNew ? { name: String(fd.get("newName") ?? "").trim(), unit: String(fd.get("newUnit") ?? "").trim(), category: String(fd.get("newCategory") ?? "OTHERS") } : null;
+    if (newItem ? !newItem.name || !newItem.unit : !fd.get("itemId")) {
+      setError(newItem ? "Type the item's name and unit." : "Choose an item first.");
       setBusy(false);
       return;
     }
@@ -174,12 +189,14 @@ export function MovementForm({
       url: "/api/inventory/movements",
       label: "Inventory movement",
       body: {
-        itemId: fd.get("itemId"),
+        ...(newItem ? { newItem } : { itemId: fd.get("itemId") }),
+        ...(usesWarehouse ? { warehouse } : {}),
         type,
         qty: Number(fd.get("qty")),
         fromProjectId: rule.from ? fd.get("fromProjectId") : undefined,
         toProjectId: rule.to ? fd.get("toProjectId") : undefined,
         note: fd.get("note"),
+        ...(canBeNew && (excessChecked || isNew) ? { excess: true } : {}),
         ...(type === "SITE_TO_WAREHOUSE" || type === "SITE_TO_SITE" ? { photos: proof } : {}),
       },
     });
@@ -194,6 +211,8 @@ export function MovementForm({
       (e.target as HTMLFormElement).reset?.();
       setPickerKey((k) => k + 1);
       setChosen(null);
+      setIsNew(false);
+      setExcessChecked(false);
       setQtyText("");
       setProof([]);
       setProofKey((k) => k + 1);
@@ -206,26 +225,88 @@ export function MovementForm({
 
   return (
     <form onSubmit={onSubmit} className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div>
+        <Label htmlFor="mvType">Movement type</Label>
+        <Select
+          id="mvType"
+          value={type}
+          onChange={(e) => {
+            setType(e.target.value as typeof type);
+            setChosen(null);
+            setIsNew(false);
+          }}
+        >
+          {MOVEMENT_TYPES.map((t) => (
+            <option key={t.value} value={t.value}>
+              {t.label}
+            </option>
+          ))}
+        </Select>
+      </div>
+
+      {usesWarehouse && (
         <div>
-          <Label htmlFor="mvItem">Item</Label>
-          <ItemPicker key={pickerKey} id="mvItem" items={pickItems} recentIds={recentIds} qtyNote={`in ${warehouseName}`} onChange={setChosen} />
-        </div>
-        <div>
-          <Label htmlFor="mvType">Movement type</Label>
+          <Label htmlFor="mvWarehouse">{rule.warehouse} — which warehouse?</Label>
           <Select
-            id="mvType"
-            value={type}
-            onChange={(e) => setType(e.target.value as typeof type)}
+            id="mvWarehouse"
+            value={warehouse}
+            onChange={(e) => {
+              setWarehouse(e.target.value as WarehouseValue);
+              setChosen(null);
+            }}
           >
-            {MOVEMENT_TYPES.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
+            {WAREHOUSES.map((w) => (
+              <option key={w.value} value={w.value}>
+                {w.label}
               </option>
             ))}
           </Select>
         </div>
+      )}
+
+      <div>
+        <Label htmlFor="mvItem">Item</Label>
+        {canBeNew && isNew ? (
+          <div className="space-y-2 rounded-lg border border-dashed border-ink-200 p-3">
+            <p className="text-xs text-ink-600">
+              This item is not in the <b>{warehouseName}</b> list yet — it will be added there when the return is approved.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <div className="sm:col-span-3">
+                <Label htmlFor="mvNewName">Item name</Label>
+                <Input id="mvNewName" name="newName" placeholder="e.g., Portland cement" required />
+              </div>
+              <div>
+                <Label htmlFor="mvNewUnit">Unit</Label>
+                <Input id="mvNewUnit" name="newUnit" placeholder="bags" required />
+              </div>
+              <div className="sm:col-span-2">
+                <Label htmlFor="mvNewCat">Category</Label>
+                <Select id="mvNewCat" name="newCategory" defaultValue="OTHERS">
+                  {MATERIAL_CATEGORIES.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+            <button type="button" onClick={() => setIsNew(false)} className="text-xs font-medium text-brand-600 hover:underline">
+              ← Choose from the list instead
+            </button>
+          </div>
+        ) : (
+          <>
+            <ItemPicker key={pickerKeyFull} id="mvItem" items={pickItems} recentIds={recentIds} qtyNote={usesWarehouse ? `in ${warehouseName}` : "in its warehouse"} onChange={setChosen} />
+            {canBeNew && (
+              <button type="button" onClick={() => setIsNew(true)} className="mt-1 text-xs font-medium text-brand-600 hover:underline">
+                ＋ The item isn’t in the {warehouseName} list yet — add it
+              </button>
+            )}
+          </>
+        )}
       </div>
+
       <div className="grid gap-3 sm:grid-cols-3">
         <div>
           <Label htmlFor="mvQty">Qty</Label>
@@ -256,7 +337,19 @@ export function MovementForm({
           </div>
         )}
       </div>
-      {showValue && chosen && (
+
+      {canBeNew && !isNew && (
+        <label className="flex cursor-pointer items-start gap-2 rounded-lg bg-ink-100 px-3 py-2 text-sm text-ink-800">
+          <input type="checkbox" checked={excessChecked} onChange={(e) => setExcessChecked(e.target.checked)} className="mt-0.5 h-4 w-4" />
+          <span>
+            <b>Excess materials</b> — these were never logged on this site, so the site has no record of them. Keep them anyway.
+            <span className="block text-xs text-ink-500">Without this, a return can only be as much as the site has on record.</span>
+          </span>
+        </label>
+      )}
+      {canBeNew && isNew && <p className="text-xs text-ink-500">A new item has no site record, so it is logged as excess materials.</p>}
+
+      {showValue && chosen && !isNew && (
         <p className="rounded-lg bg-ink-100 px-3 py-2 text-sm text-ink-800" aria-live="polite">
           {chosen.price == null ? (
             <span className="text-ink-500">No price has been entered for this item yet, so this movement has no value.</span>
@@ -285,7 +378,7 @@ export function MovementForm({
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
       {msg && <p className="text-sm text-amber-600">{msg}</p>}
-      <Button type="submit" disabled={busy || items.length === 0 || projects.length === 0}>
+      <Button type="submit" disabled={busy || projects.length === 0}>
         {busy ? "Logging…" : "Log movement"}
       </Button>
     </form>

@@ -97,6 +97,7 @@ export function ItemPicker({
           <span className="block truncate font-medium text-ink-900">{i.name}</span>
           <span className="block truncate text-xs text-ink-500">
             {isMaterialCategory(i.category) ? MATERIAL_CATEGORY_LABEL[i.category] : "Others"} · {qtyText(i)}
+            {i.tag ? ` · ${i.tag}` : ""}
           </span>
         </span>
         {selected?.id === i.id && <span aria-hidden className="text-[#8a1a28]">✓</span>}
@@ -125,6 +126,7 @@ export function ItemPicker({
       </button>
       {selected && (
         <p className="mt-1 text-xs text-ink-500">
+          {selected.tag ? `${selected.tag} · ` : ""}
           {qtyText(selected)}
           {selected.price != null && ` · ${peso(selected.price)} each`}
         </p>

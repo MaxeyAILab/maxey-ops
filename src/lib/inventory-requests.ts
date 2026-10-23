@@ -32,6 +32,8 @@ export interface MaterialMove {
   qty: number;
   fromProjectId: string | null;
   toProjectId: string | null;
+  /** a return of excess materials that were never logged on that site — see applyMaterialMove */
+  excess?: boolean;
 }
 
 /**
@@ -43,7 +45,7 @@ export async function assertMaterialAvailable(m: MaterialMove, item: { name: str
   if (rule.warehouseDelta === -1 && Number(item.currentQty) < m.qty) {
     throw new ApiError(400, `Insufficient warehouse stock: ${item.name} has ${Number(item.currentQty)} ${item.unit}`);
   }
-  if (m.fromProjectId) {
+  if (m.fromProjectId && !m.excess) {
     const [stock, pending, project] = await Promise.all([
       prisma.projectMaterialStock.findUnique({ where: { projectId_itemId: { projectId: m.fromProjectId, itemId: m.itemId } } }),
       prisma.inventoryMovement.aggregate({
@@ -72,11 +74,20 @@ export async function applyMaterialMove(db: Prisma.TransactionClient, m: Materia
     await db.warehouseItem.update({ where: { id: m.itemId }, data: { currentQty: { increment: rule.warehouseDelta * m.qty } } });
   }
   if (m.fromProjectId) {
-    await db.projectMaterialStock.upsert({
-      where: { projectId_itemId: { projectId: m.fromProjectId, itemId: m.itemId } },
-      create: { projectId: m.fromProjectId, itemId: m.itemId, qty: -m.qty },
-      update: { qty: { decrement: m.qty } },
-    });
+    // Excess that was never logged on the site comes into the warehouse in full, but the site's record only goes down as far
+    // as it was recorded — it never goes below zero because of materials it was never credited with.
+    let take = Number(m.qty);
+    if (m.excess) {
+      const stock = await db.projectMaterialStock.findUnique({ where: { projectId_itemId: { projectId: m.fromProjectId, itemId: m.itemId } } });
+      take = Math.min(Math.max(Number(stock?.qty ?? 0), 0), Number(m.qty));
+    }
+    if (take > 0) {
+      await db.projectMaterialStock.upsert({
+        where: { projectId_itemId: { projectId: m.fromProjectId, itemId: m.itemId } },
+        create: { projectId: m.fromProjectId, itemId: m.itemId, qty: -take },
+        update: { qty: { decrement: take } },
+      });
+    }
   }
   if (m.toProjectId) {
     await db.projectMaterialStock.upsert({
