@@ -168,11 +168,19 @@ export interface PendingTimeAdjustment {
   /** where the shift was clocked in / out ("lat,lng"), when the phone shared it */
   gpsIn?: string | null;
   gpsOut?: string | null;
+  /** early start / overtime: how many hours were clocked beyond the schedule (what is being claimed) */
+  claimedHours?: number | null;
+  /** e.g. "In 7:55 AM → out 8:04 PM" */
+  clockLabel?: string | null;
 }
 
 /** Owner/PM approve/reject controls for one pending request. */
 export function DecideTimeAdjustmentButtons({ request }: { request: PendingTimeAdjustment }) {
   const router = useRouter();
+  const claimed = request.claimedHours && request.claimedHours > 0 && request.type !== "WEEKEND_WORK" ? request.claimedHours : null;
+  const [hoursText, setHoursText] = useState(claimed !== null ? String(claimed) : "");
+  const hours = claimed !== null ? Math.min(claimed, Math.max(0, Number(hoursText) || 0)) : null;
+  const partial = claimed !== null && hours !== null && hours > 0 && hours < claimed;
   const [busy, setBusy] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
@@ -184,7 +192,7 @@ export function DecideTimeAdjustmentButtons({ request }: { request: PendingTimeA
     const res = await fetch(`/api/time-adjustments/${request.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(action === "approve" ? { action } : { action, reason }),
+      body: JSON.stringify(action === "approve" ? (partial ? { action, hours } : { action }) : { action, reason }),
     });
     setBusy(false);
     if (res.ok) {
@@ -225,15 +233,40 @@ export function DecideTimeAdjustmentButtons({ request }: { request: PendingTimeA
   }
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="space-y-2">
+      {claimed !== null && (
+        <div className="rounded-lg bg-ink-100 px-3 py-2 text-xs text-ink-700">
+          {request.clockLabel && <div className="font-medium text-ink-900">{request.clockLabel}</div>}
+          <div>
+            Clocked <b>{claimed} h</b> {request.type === "OVERTIME" ? "after 5:00 PM" : "before the scheduled start"}.
+          </div>
+          <label className="mt-1.5 flex flex-wrap items-center gap-2">
+            Pay only
+            <input
+              type="number"
+              min="0.25"
+              max={claimed}
+              step="0.25"
+              inputMode="decimal"
+              value={hoursText}
+              onChange={(e) => setHoursText(e.target.value)}
+              aria-label="Hours to credit"
+              className="min-h-[34px] w-20 rounded-md border border-ink-200 bg-ink-50 px-2 text-right tabular-nums text-ink-900 focus:border-[#8a1a28] focus:outline-none"
+            />
+            h of it
+            {partial && <span className="font-medium text-amber-700">— the other {Math.round((claimed - (hours ?? 0)) * 100) / 100} h will not be paid</span>}
+          </label>
+        </div>
+      )}
+      <div className="flex items-center gap-3">
       {error && <p className="text-xs text-red-600">{error}</p>}
       <button
         type="button"
         onClick={() => decide("approve")}
-        disabled={busy}
+        disabled={busy || (claimed !== null && !(hours && hours > 0))}
         className="text-xs font-medium text-emerald-600 hover:underline disabled:opacity-50"
       >
-        Approve
+        {partial ? `Approve ${hours} h` : "Approve"}
       </button>
       <button
         type="button"
@@ -243,6 +276,68 @@ export function DecideTimeAdjustmentButtons({ request }: { request: PendingTimeA
       >
         Reject
       </button>
+      </div>
     </div>
+  );
+}
+
+export interface ApprovedHoursRow {
+  id: string;
+  employeeName: string;
+  type: "EARLY_START" | "OVERTIME";
+  shiftLabel: string;
+  clockLabel: string;
+  claimedHours: number;
+  /** what was credited (claimed when the Owner approved all of it) */
+  creditedHours: number;
+}
+
+/** Owner only: change how many hours were credited on a request that was already approved. */
+export function EditApprovedHours({ row }: { row: ApprovedHoursRow }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [hoursText, setHoursText] = useState(String(row.creditedHours));
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const hours = Math.min(row.claimedHours, Math.max(0, Number(hoursText) || 0));
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    const res = await fetch(`/api/time-adjustments/${row.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "edit_hours", hours, reason: reason.trim() }) });
+    setBusy(false);
+    if (res.ok) {
+      setOpen(false);
+      router.refresh();
+    } else setError(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? "Failed to save");
+  }
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="text-xs font-medium text-brand-600 hover:underline">
+        Change hours
+      </button>
+    );
+  }
+  return (
+    <form onSubmit={save} className="mt-2 space-y-2 rounded-lg border border-ink-200 p-2">
+      <label className="flex flex-wrap items-center gap-2 text-xs text-ink-700">
+        Credit
+        <input type="number" min="0.25" max={row.claimedHours} step="0.25" inputMode="decimal" value={hoursText} onChange={(e) => setHoursText(e.target.value)} aria-label="Hours to credit" className="min-h-[34px] w-20 rounded-md border border-ink-200 bg-ink-50 px-2 text-right tabular-nums text-ink-900 focus:border-[#8a1a28] focus:outline-none" />
+        h (of the {row.claimedHours} h clocked)
+      </label>
+      <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why? e.g., was waiting, not working — see photos" className="text-xs" required minLength={3} />
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <div className="flex gap-2">
+        <Button type="submit" disabled={busy || hours <= 0 || reason.trim().length < 3} className="text-xs">
+          {busy ? "Saving…" : "Save"}
+        </Button>
+        <Button type="button" variant="secondary" onClick={() => setOpen(false)} className="text-xs">
+          Cancel
+        </Button>
+      </div>
+    </form>
   );
 }

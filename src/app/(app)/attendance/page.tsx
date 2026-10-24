@@ -12,6 +12,8 @@ import {
 } from "@/components/personnel-actions";
 import {
   DecideTimeAdjustmentButtons,
+  EditApprovedHours,
+  type ApprovedHoursRow,
   RequestTimeAdjustmentButton,
   RequestWeekendWorkButton,
   type PendingTimeAdjustment,
@@ -27,6 +29,7 @@ import {
   manilaDayKey,
   manilaSemiMonthlyPeriod,
   manilaWeeklySitePeriod,
+  claimedExtraHours,
   rulesetForDepartment,
   type AdjustmentFlags,
   type TimeRuleset,
@@ -394,7 +397,7 @@ export default async function AttendancePage() {
       where: { status: "PENDING" },
       orderBy: { createdAt: "asc" },
       include: {
-        user: { select: { name: true } },
+        user: { select: { name: true, department: true } },
         requestedBy: { select: { name: true } },
         attendance: true,
       },
@@ -413,7 +416,36 @@ export default async function AttendancePage() {
       requestedByName: r.requestedBy.name,
       gpsIn: r.attendance?.gpsIn ?? null,
       gpsOut: r.attendance?.gpsOut ?? null,
+      claimedHours: r.attendance && r.type !== "WEEKEND_WORK" ? claimedExtraHours(r.type, r.attendance.timeIn, r.attendance.timeOut, rulesetForDepartment(r.user.department)) : null,
+      clockLabel: r.attendance ? `In ${timeFmt.format(r.attendance.timeIn)} → out ${r.attendance.timeOut ? timeFmt.format(r.attendance.timeOut) : "not yet"}` : null,
     }));
+  }
+
+  // The Owner can still change the hours credited on a request approved in the last 30 days.
+  let approvedHours: ApprovedHoursRow[] = [];
+  if (user.role === "OWNER") {
+    const since = new Date(Date.now() - 30 * 24 * 3600_000);
+    const approved = await prisma.timeAdjustmentRequest.findMany({
+      where: { status: "APPROVED", type: { in: ["OVERTIME", "EARLY_START"] }, decidedAt: { gte: since } },
+      orderBy: { decidedAt: "desc" },
+      include: { user: { select: { name: true, department: true } }, attendance: true },
+    });
+    approvedHours = approved.flatMap((r) => {
+      if (!r.attendance || (r.type !== "OVERTIME" && r.type !== "EARLY_START")) return [];
+      const claimed = claimedExtraHours(r.type, r.attendance.timeIn, r.attendance.timeOut, rulesetForDepartment(r.user.department));
+      if (claimed <= 0) return [];
+      return [
+        {
+          id: r.id,
+          employeeName: r.user.name,
+          type: r.type,
+          shiftLabel: fmtDate(r.attendance.timeIn),
+          clockLabel: `In ${timeFmt.format(r.attendance.timeIn)} → out ${r.attendance.timeOut ? timeFmt.format(r.attendance.timeOut) : "not yet"}`,
+          claimedHours: claimed,
+          creditedHours: r.approvedHours === null ? claimed : Math.min(claimed, Number(r.approvedHours)),
+        },
+      ];
+    });
   }
 
   const myRuleset = rulesetForDepartment(me?.department);
@@ -567,7 +599,7 @@ export default async function AttendancePage() {
         <Card className="border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/30">
           <CardHeader
             title={`${pendingAdjustments.length} time-adjustment request${pendingAdjustments.length === 1 ? "" : "s"} awaiting your decision`}
-            subtitle="Approving lifts the clamp for that shift/day; rejecting leaves it as-is — the original clock-in/out record is never changed either way"
+            subtitle="Approving lifts the clamp for that shift/day — for overtime and early starts you can approve only some of the hours; rejecting leaves it as-is. The original clock-in/out record is never changed either way"
           />
           <CardBody className="space-y-3">
             {pendingAdjustments.map((r) => (
@@ -589,6 +621,33 @@ export default async function AttendancePage() {
                 )}
                 <div className="mt-2">
                   <DecideTimeAdjustmentButtons request={r} />
+                </div>
+              </div>
+            ))}
+          </CardBody>
+        </Card>
+      )}
+
+      {user.role === "OWNER" && approvedHours.length > 0 && (
+        <Card>
+          <CardHeader
+            title="Approved overtime and early starts — last 30 days"
+            subtitle="Change how many hours were credited. Payroll runs that were already generated are not rewritten; the next run uses the new number."
+          />
+          <CardBody className="space-y-3">
+            {approvedHours.map((r) => (
+              <div key={r.id} className="rounded-lg border border-ink-100 p-3 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium text-ink-900">
+                    {r.employeeName} — {r.type === "OVERTIME" ? "Overtime" : "Early start"} · {r.shiftLabel}
+                  </span>
+                  <span className={`text-xs font-semibold tabular-nums ${r.creditedHours < r.claimedHours ? "text-amber-700" : "text-emerald-700"}`}>
+                    {r.creditedHours} h credited{r.creditedHours < r.claimedHours ? ` of ${r.claimedHours} h clocked` : ""}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-xs text-ink-500">{r.clockLabel}</p>
+                <div className="mt-1">
+                  <EditApprovedHours row={r} />
                 </div>
               </div>
             ))}

@@ -967,6 +967,9 @@ model TimeAdjustmentRequest {
   decidedAt     DateTime?
   decisionNote  String?
   createdAt     DateTime             @default(now())
+  // For an approved EARLY_START / OVERTIME: how many extra hours the Owner credited (counting from the 7:30/8:00 start, or after
+  // 5:00 PM). null = all of the clocked time counts (how approvals worked before the Owner could set the number).
+  approvedHours Decimal?             @db.Decimal(5, 2)
 
   @@unique([attendanceId, type])
   @@unique([userId, date, type])

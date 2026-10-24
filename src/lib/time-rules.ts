@@ -24,6 +24,10 @@ export interface AdjustmentFlags {
    * exempts the whole shift from every clamp (start, breaks, 5pm cutoff),
    * since a weekend shift has no scheduled hours to begin with. */
   weekendApproved: boolean;
+  /** Extra hours the Owner credited for an approved overtime (after 5:00 PM). Not set = all the clocked time counts. */
+  overtimeHours?: number | null;
+  /** Extra hours credited for an approved early start (before the scheduled start). Not set = all the clocked time counts. */
+  earlyStartHours?: number | null;
 }
 
 const NO_ADJUSTMENTS: AdjustmentFlags = {
@@ -114,10 +118,16 @@ export function computeEffectiveHours(
   const dayEnd = manilaTime(dayKey, DAY_END.h, DAY_END.m).getTime();
 
   let effStart = timeIn.getTime();
-  if (effStart < scheduledStart && !flags.earlyStartApproved) effStart = scheduledStart;
+  if (effStart < scheduledStart) {
+    if (!flags.earlyStartApproved) effStart = scheduledStart;
+    else if (flags.earlyStartHours != null) effStart = Math.max(effStart, scheduledStart - flags.earlyStartHours * 3_600_000); // only the hours the Owner credited
+  }
 
   let effEnd = timeOut.getTime();
-  if (effEnd > dayEnd && !flags.overtimeApproved) effEnd = dayEnd;
+  if (effEnd > dayEnd) {
+    if (!flags.overtimeApproved) effEnd = dayEnd;
+    else if (flags.overtimeHours != null) effEnd = Math.min(effEnd, dayEnd + flags.overtimeHours * 3_600_000); // only the hours the Owner credited
+  }
 
   if (effEnd <= effStart) return 0;
 
@@ -248,4 +258,20 @@ export function manilaWeeklySitePeriod(now: Date, periodsBack = 0): WeeklySitePe
 
   const fmt = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Manila", month: "short", day: "numeric", year: "numeric" });
   return { start, end, label: `${fmt.format(start)} – ${fmt.format(end)}` };
+}
+
+/**
+ * How many hours an early-start or overtime request is claiming for one shift: the clock time before the scheduled start (early
+ * start) or after 5:00 PM (overtime). What the Owner sees when deciding, and the most that can be credited. Rounded to 2 decimals.
+ */
+export function claimedExtraHours(type: "EARLY_START" | "OVERTIME", timeIn: Date, timeOut: Date | null, ruleset: TimeRuleset): number {
+  const dayKey = manilaDayKey(timeIn);
+  if (type === "EARLY_START") {
+    const start = SCHEDULE_START[ruleset];
+    const ms = manilaTime(dayKey, start.h, start.m).getTime() - timeIn.getTime();
+    return ms > 0 ? Math.round((ms / 3_600_000) * 100) / 100 : 0;
+  }
+  if (!timeOut) return 0;
+  const ms = timeOut.getTime() - manilaTime(dayKey, DAY_END.h, DAY_END.m).getTime();
+  return ms > 0 ? Math.round((ms / 3_600_000) * 100) / 100 : 0;
 }

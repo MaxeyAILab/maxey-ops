@@ -227,6 +227,7 @@ export const EVENTS: Record<string, EventDef> = {
   // ----- time & attendance requests -----
   TIME_ADJUSTMENT_REQUESTED: { category: "ATTENDANCE", roles: ["PM"], title: "A time-adjustment request needs approval", body: () => "Tap to open" },
   TIME_ADJUSTMENT_APPROVED: { category: "ATTENDANCE", roles: [], title: "A time-adjustment request was approved", explicitTitle: "Your time-adjustment request was approved", body: () => "Tap to open" },
+  TIME_ADJUSTMENT_HOURS_CHANGED: { category: "ATTENDANCE", roles: [], title: "Hours credited on a time-adjustment request were changed", explicitTitle: "The hours credited on your request were changed", body: () => "Tap to open" },
   TIME_ADJUSTMENT_REJECTED: { category: "ATTENDANCE", roles: [], title: "A time-adjustment request was rejected", explicitTitle: "Your time-adjustment request was rejected", body: () => "Tap to open" },
 
   // ----- payroll: the admins hear about the run, each person hears about their own payslip -----

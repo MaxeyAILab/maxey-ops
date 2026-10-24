@@ -257,8 +257,16 @@ export async function fetchApprovals(records: Attendance[]): Promise<Map<string,
     if (!r.attendanceId) continue;
     const flags = map.get(r.attendanceId);
     if (!flags) continue;
-    if (r.type === "EARLY_START") flags.earlyStartApproved = true;
-    if (r.type === "OVERTIME") flags.overtimeApproved = true;
+    // approvedHours: the extra hours the Owner credited; not set = all the clocked time counts
+    const credited = r.approvedHours === null ? null : Number(r.approvedHours);
+    if (r.type === "EARLY_START") {
+      flags.earlyStartApproved = true;
+      flags.earlyStartHours = credited;
+    }
+    if (r.type === "OVERTIME") {
+      flags.overtimeApproved = true;
+      flags.overtimeHours = credited;
+    }
   }
   return map;
 }
