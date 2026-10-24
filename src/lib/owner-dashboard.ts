@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { warehouseIssueCosts } from "@/lib/warehouse-issue-cost";
 import { corporateRunGross, getNonCorporateExpenses, getNonProjectExpenses, LIQUIDATED_PETTY_CASH, pettyCashCost } from "@/lib/finance";
 import { getBidPipeline, getCashRunway, type CashRunway } from "@/lib/finance-dashboard";
 import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
@@ -347,12 +348,13 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
   });
   const targetById = new Map(targets.map((t) => [t.id, t]));
 
+  const warehouseIssued = await warehouseIssueCosts(projects.map((p) => p.id));
   const allRows: ProjectRow[] = projects.map((p) => {
     const t = targetById.get(p.id);
     const contract = Number(p.contractValue);
     const received = p.payments.reduce((s, x) => s + Number(x.amount), 0);
     const labor = p.payrollRuns.reduce((s, r) => s + corporateRunGross(r.entries), 0);
-    const committed = labor + pettyCashCost(p.pettyCash) + p.requisitions.reduce((s, r) => s + requisitionAmount(r), 0);
+    const committed = labor + pettyCashCost(p.pettyCash) + (warehouseIssued.get(p.id)?.cost ?? 0) + p.requisitions.reduce((s, r) => s + requisitionAmount(r), 0);
     const pct = weightedAccomplishment(computeWorkItemStatuses(p.progressEntries));
     const lastProgressAt = p.progressEntries[0]?.createdAt ?? null;
     const isCompleted = (COMPLETED_STATUSES as string[]).includes(p.status);

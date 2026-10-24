@@ -19,6 +19,7 @@ import { DailyReportCard, DailyReportForm, type DailyReportDisplay } from "@/com
 import { DAILY_REPORT_LIFETIME_DAYS } from "@/lib/daily-reports";
 import { PhotoThumbnails } from "@/components/photo-viewer";
 import { LIQUIDATED_PETTY_CASH, pettyCashCost, runGross } from "@/lib/finance";
+import { warehouseIssueCosts } from "@/lib/warehouse-issue-cost";
 import { canAccess } from "@/lib/access";
 import { computeWorkItemStatuses, summarizeProgress, weightTotal } from "@/lib/progress";
 import { computeForecast } from "@/lib/forecast";
@@ -189,9 +190,14 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
   const laborCost = p.payrollRuns.reduce((s, r) => s + runGross(r.entries), 0);
   // Same rule as finance and the dashboard (requisitionAmount): a cancelled PO commits nothing.
   const pettyCash = pettyCashCost(p.pettyCash);
+  // what this job took out of the warehouse stock (net of returns), at the price logged — a cost of the job like any purchase
+  const warehouseIssued = (await warehouseIssueCosts([p.id])).get(p.id);
+  const warehouseCost = warehouseIssued?.cost ?? 0;
+  const warehouseUnpriced = warehouseIssued?.unpriced ?? 0;
   const committed =
     laborCost +
     pettyCash +
+    warehouseCost +
     p.requisitions
       .filter((r) => ["APPROVED", "PO_ISSUED", "DELIVERED"].includes(r.status))
       .reduce((s, r) => s + requisitionAmount(r), 0);
@@ -717,7 +723,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                     tone="bad"
                     sub={
                       <>
-                        approved reqs, POs + payroll <Fig>{php(laborCost)}</Fig> · not invoices
+                        approved reqs, POs, warehouse materials + payroll <Fig>{php(laborCost)}</Fig> · not invoices
                       </>
                     }
                   />
@@ -1641,16 +1647,25 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                     <span className="text-ink-700">+ Petty cash (liquidated, {p.pettyCash.length})</span>
                     <span className="tabular-nums"><Fig>{php(pettyCash)}</Fig></span>
                   </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-ink-700">+ Taken from the warehouse (net of returns)</span>
+                    <span className="tabular-nums"><Fig>{php(warehouseCost)}</Fig></span>
+                  </div>
                   <div className="flex justify-between gap-3 border-t border-ink-100 pt-2 font-semibold text-ink-900">
                     <span>= Committed cost</span>
-                    <span className="tabular-nums"><Fig>{php(commitments.committedTotal + laborCost + pettyCash)}</Fig></span>
+                    <span className="tabular-nums"><Fig>{php(commitments.committedTotal + laborCost + pettyCash + warehouseCost)}</Fig></span>
                   </div>
+                  {warehouseUnpriced > 0 && (
+                    <p className="text-xs text-amber-800 dark:text-amber-300">
+                      ● {warehouseUnpriced} movement{warehouseUnpriced === 1 ? "" : "s"} from the warehouse to this job {warehouseUnpriced === 1 ? "has" : "have"} no price yet, so {warehouseUnpriced === 1 ? "it counts" : "they count"} as ₱0 — price {warehouseUnpriced === 1 ? "it" : "them"} in the Inventory movement log.
+                    </p>
+                  )}
                   {commitments.approved.withoutEstimate > 0 && (
                     <p className="text-xs text-amber-800 dark:text-amber-300">
                       ● {commitments.approved.withoutEstimate} approved requisition{commitments.approved.withoutEstimate === 1 ? " has" : "s have"} no estimate, so it counts as ₱0 until a PO or estimate is entered.
                     </p>
                   )}
-                  {Math.abs(commitments.committedTotal + laborCost + pettyCash - committed) > 0.5 && (
+                  {Math.abs(commitments.committedTotal + laborCost + pettyCash + warehouseCost - committed) > 0.5 && (
                     <p className="text-xs text-red-700 dark:text-red-300">▲ This doesn’t match the Committed cost figure above — please report it.</p>
                   )}
                 </CardBody>

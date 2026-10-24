@@ -13,6 +13,8 @@ const patchSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("reject"), reason: z.string().trim().min(3).max(300) }),
   z.object({ action: z.literal("cancel") }),
   z.object({ action: z.literal("add_photos"), photos: z.array(z.string()).min(1).max(MAX_NEW_REQUEST_PHOTOS) }),
+  // Owner only: set or change the price a logged movement is valued at (for one that had no price when it was logged)
+  z.object({ action: z.literal("set_price"), unitPrice: z.number().min(0).max(100_000_000).nullable(), alsoOtherUnpriced: z.boolean().optional() }),
 ]);
 
 /**
@@ -23,6 +25,36 @@ const patchSchema = z.discriminatedUnion("action", [
 export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { id: string } }) => {
   const user = await requireUser();
   const body = patchSchema.parse(await req.json());
+
+  // Pricing a movement that already happened (an issue to a project that had no price when it was logged). The value of the
+  // movement is what is charged to the project, so the Owner alone changes it, and the audit log keeps what it was before.
+  if (body.action === "set_price") {
+    if (user.role !== "OWNER") throw new ApiError(403, "Only the Owner can change the price of a logged movement");
+    const mv = await prisma.inventoryMovement.findUnique({ where: { id: params.id }, include: { item: { select: { name: true, unit: true } }, fromProject: { select: { name: true } }, toProject: { select: { name: true } } } });
+    if (!mv) throw new ApiError(404, "Movement not found");
+    if (mv.status !== "APPLIED") throw new ApiError(400, "Only a movement that has happened can be priced — this one is still waiting for approval or was rejected");
+    const next = body.unitPrice === null ? null : Math.round(body.unitPrice * 100) / 100;
+    const before = mv.unitPrice === null ? null : Number(mv.unitPrice);
+    let others = 0;
+    await prisma.$transaction(async (db) => {
+      if (before !== next) await db.inventoryMovement.update({ where: { id: mv.id }, data: { unitPrice: next } });
+      if (body.alsoOtherUnpriced && next !== null) {
+        // the item's other movements that were also logged without a price get the same price
+        others = (await db.inventoryMovement.updateMany({ where: { itemId: mv.itemId, unitPrice: null, status: "APPLIED", id: { not: mv.id } }, data: { unitPrice: next } })).count;
+      }
+    });
+    if (before === next && others === 0) return NextResponse.json({ ok: true, unchanged: true });
+    await audit({
+      entityType: "InventoryMovement",
+      entityId: mv.id,
+      actorId: user.id,
+      actorName: user.name,
+      action: "INVENTORY_MOVEMENT_PRICED",
+      diff: { item: mv.item.name, qty: Number(mv.qty), unit: mv.item.unit, from: mv.fromProject?.name ?? mv.fromLoc, to: mv.toProject?.name ?? mv.toLoc, priceBefore: before, priceNow: next, alsoPricedOtherMovements: others } as never,
+    });
+    return NextResponse.json({ ok: true, alsoPriced: others });
+  }
+
   const m = await prisma.inventoryMovement.findUnique({ where: { id: params.id }, include: { item: true, fromProject: { select: { name: true } }, toProject: { select: { name: true } } } });
   if (!m || !materialNeedsApproval(m.type)) throw new ApiError(404, "Request not found");
   if (m.status !== "PENDING") throw new ApiError(409, `This request was already ${m.status === "APPLIED" ? "approved" : "rejected"}`);

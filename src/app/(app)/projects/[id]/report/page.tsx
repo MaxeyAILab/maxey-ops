@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { warehouseIssueCosts } from "@/lib/warehouse-issue-cost";
 import { notFound, redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -51,7 +52,9 @@ export default async function ProjectReportPage({ params }: { params: { id: stri
   // Same rule as the project detail page: committed cost stays Owner-only.
   const showCommitted = user.role === "OWNER";
   const received = p.payments.reduce((s, x) => s + Number(x.amount), 0);
+  const warehouseCost = (await warehouseIssueCosts([p.id])).get(p.id)?.cost ?? 0; // what the job took out of the warehouse stock
   const committed =
+    warehouseCost +
     p.payrollRuns.reduce((s, r) => s + runGross(r.entries), 0) +
     p.requisitions.reduce(
       (s, r) => s + (r.purchaseOrder ? Number(r.purchaseOrder.totalCost) : Number(r.estimatedCost ?? 0)),

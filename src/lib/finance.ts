@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { warehouseIssueCosts } from "@/lib/warehouse-issue-cost";
 import { runNonCorporateTotal, nonCorporateCharge, type PayrollEntry } from "@/lib/payroll";
 import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
 import { CATEGORY_LABELS, NON_PROJECT_CATEGORIES, requisitionAmount } from "@/lib/requisitions";
@@ -30,6 +31,10 @@ export interface ProjectFinance {
   committedCost: number;
   laborCost: number;
   pettyCashCost: number;
+  /** what the project took out of the warehouse stock (net of returns) — part of committedCost */
+  warehouseMaterialsCost: number;
+  /** warehouse issues with no price yet — not in the cost until they are priced */
+  warehouseUnpriced: number;
   grossMargin: number;
   marginPct: number;
   retentionHeld: number;
@@ -71,13 +76,15 @@ export async function getProjectFinances(): Promise<ProjectFinance[]> {
     orderBy: { createdAt: "desc" },
   });
 
+  const issued = await warehouseIssueCosts(projects.map((p) => p.id));
   return projects.map((p) => {
     const contractValue = Number(p.contractValue);
     const received = p.payments.reduce((s, x) => s + Number(x.amount), 0);
     const laborCost = p.payrollRuns.reduce((s, r) => s + runGross(r.entries), 0);
     const pettyCash = pettyCashCost(p.pettyCash);
+    const warehouseMaterialsCost = issued.get(p.id)?.cost ?? 0;
     const committedCost =
-      laborCost + pettyCash + p.requisitions.reduce((s, r) => s + requisitionAmount(r), 0);
+      laborCost + pettyCash + warehouseMaterialsCost + p.requisitions.reduce((s, r) => s + requisitionAmount(r), 0);
     const retentionHeld = p.paymentTerms
       .filter((t) => t.type === "RETENTION" && t.status !== "PAID")
       .reduce((s, t) => s + Number(t.amount), 0);
@@ -93,6 +100,8 @@ export async function getProjectFinances(): Promise<ProjectFinance[]> {
       committedCost,
       laborCost,
       pettyCashCost: pettyCash,
+      warehouseMaterialsCost,
+      warehouseUnpriced: issued.get(p.id)?.unpriced ?? 0,
       grossMargin,
       marginPct: contractValue > 0 ? (grossMargin / contractValue) * 100 : 0,
       retentionHeld,
@@ -208,7 +217,9 @@ export interface NonCorporateJobExpense {
   id: string;
   name: string;
   status: string;
-  materials: number; // approved requisitions / POs charged to the job, plus its liquidated petty cash
+  materials: number; // approved requisitions / POs charged to the job, its liquidated petty cash, and what it took out of the warehouse
+  warehouseMaterials: number; // the part of materials that came out of the warehouse stock (net of returns)
+  warehouseUnpriced: number; // warehouse issues with no price yet — not counted until they are priced
   crewPayroll: number; // approved or paid payroll of the crew assigned to the job
   driverPayroll: number; // drivers' hours charged to the job
   total: number;
@@ -240,11 +251,13 @@ export async function getNonCorporateExpenses(): Promise<{ jobs: NonCorporateJob
     }
   }
 
+  const issued = await warehouseIssueCosts(jobs.map((j) => j.id));
   const rows = jobs.map((j) => {
-    const materials = j.requisitions.reduce((s, r) => s + requisitionAmount(r), 0) + pettyCashCost(j.pettyCash);
+    const warehouseMaterials = issued.get(j.id)?.cost ?? 0;
+    const materials = j.requisitions.reduce((s, r) => s + requisitionAmount(r), 0) + pettyCashCost(j.pettyCash) + warehouseMaterials;
     const crewPayroll = j.payrollRuns.reduce((s, r) => s + runGross(r.entries), 0);
     const driverPayroll = Math.round((driverByJob.get(j.id) ?? 0) * 100) / 100;
-    return { id: j.id, name: j.name, status: j.status, materials, crewPayroll, driverPayroll, total: materials + crewPayroll + driverPayroll };
+    return { id: j.id, name: j.name, status: j.status, materials, warehouseMaterials, warehouseUnpriced: issued.get(j.id)?.unpriced ?? 0, crewPayroll, driverPayroll, total: materials + crewPayroll + driverPayroll };
   });
   return { jobs: rows, total: rows.reduce((s, r) => s + r.total, 0) };
 }

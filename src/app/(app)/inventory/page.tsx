@@ -18,6 +18,7 @@ import { MATERIAL_CATEGORIES, summarizeByCategory } from "@/lib/material-categor
 import { REQUEST_LABEL, decisionText } from "@/lib/inventory-labels";
 import { WarehouseTabs } from "@/components/warehouse-tabs";
 import { RequestPhotos } from "@/components/request-photos-ui";
+import { MovementPriceEditor } from "@/components/movement-price-editor";
 import { PhotoThumbnails } from "@/components/photo-viewer";
 import { photoList } from "@/lib/request-photos";
 import { DEFAULT_WAREHOUSE, countByWarehouse, warehouseFromSlug, warehouseLabel, warehouseSlug } from "@/lib/warehouses";
@@ -45,7 +46,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
       where: { item: { warehouse: wh } },
       orderBy: { createdAt: "desc" },
       take: 30,
-      include: { item: { select: { name: true, unit: true } } },
+      include: { item: { select: { name: true, unit: true, unitPrice: true } } },
     }),
     prisma.project.findMany({
       where: { status: { in: CHARGEABLE_STATUSES } },
@@ -87,6 +88,12 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
       : Promise.resolve([]),
   ]);
 
+  // for the Owner's "set price": how many other applied movements of each item in the log still have no price
+  const unpricedByItem = new Map<string, number>();
+  if (user.role === "OWNER") {
+    const rows = await prisma.inventoryMovement.groupBy({ by: ["itemId"], where: { status: "APPLIED", unitPrice: null, itemId: { in: [...new Set(movements.map((m) => m.itemId))] } }, _count: true });
+    for (const r of rows) unpricedByItem.set(r.itemId, r._count);
+  }
   const actorIds = [...new Set([...movements, ...toolMovements, ...pendingStock, ...pendingTools].map((m) => m.actorId))];
   const actorNames = new Map(
     (await prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } })).map(
@@ -449,7 +456,20 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                 <Td className="text-xs">
                   {m.fromLoc} → {m.toLoc}
                 </Td>
-                {showPrices && <Td className="text-right text-xs tabular-nums">{lineValue(m.qty, m.unitPrice) === null ? "—" : php(lineValue(m.qty, m.unitPrice) ?? 0)}</Td>}
+                {showPrices && (
+                  <Td className="text-right text-xs tabular-nums">
+                    {lineValue(m.qty, m.unitPrice) === null ? "—" : php(lineValue(m.qty, m.unitPrice) ?? 0)}
+                    {isOwner && m.status === "APPLIED" && (
+                      <MovementPriceEditor
+                        id={m.id}
+                        itemName={m.item.name}
+                        current={m.unitPrice === null ? null : Number(m.unitPrice)}
+                        itemPrice={m.item.unitPrice === null ? null : Number(m.item.unitPrice)}
+                        otherUnpriced={Math.max(0, (unpricedByItem.get(m.itemId) ?? 0) - (m.unitPrice === null ? 1 : 0))}
+                      />
+                    )}
+                  </Td>
+                )}
                 <Td className="text-xs">{actorNames.get(m.actorId) ?? "—"}</Td>
                 <Td className="text-xs">{decisionText(m, fmtDateTime) ?? "—"}</Td>
                 <Td>{shots(m).length > 0 ? <PhotoThumbnails photos={shots(m).map((src) => ({ src, label: fmtDateTime(m.createdAt) }))} /> : <span className="text-xs text-ink-400">—</span>}</Td>
