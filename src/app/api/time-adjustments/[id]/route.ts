@@ -58,8 +58,8 @@ export const PATCH = handleApi(
     if (body.action === "edit_hours") {
       if (request.status !== "APPROVED") throw new ApiError(400, "Only an approved request can have its hours changed");
       if (claimed === null) throw new ApiError(400, "Hours can only be set on an early-start or overtime request");
-      const hours = round2(Math.min(body.hours, claimed));
-      if (hours <= 0) throw new ApiError(400, "Nothing was clocked beyond the schedule for this shift");
+      if (claimed <= 0) throw new ApiError(400, "Nothing was clocked beyond the schedule for this shift, so there are no extra hours to credit — use the day's hours edit to pay for time that was not clocked");
+      const hours = round2(body.hours); // the Owner may credit more than the clock shows
       const before = request.approvedHours === null ? claimed : Number(request.approvedHours);
       if (before === hours) return NextResponse.json({ ok: true, unchanged: true });
       await prisma.timeAdjustmentRequest.update({ where: { id: request.id }, data: { approvedHours: hours } });
@@ -69,7 +69,7 @@ export const PATCH = handleApi(
         actorId: user.id,
         actorName: user.name,
         action: "TIME_ADJUSTMENT_HOURS_CHANGED",
-        diff: { employee: request.user.name, type: request.type, claimed, hoursBefore: before, hoursNow: hours, reason: body.reason },
+        diff: { employee: request.user.name, type: request.type, claimed, hoursBefore: before, hoursNow: hours, ...(hours > claimed ? { moreThanClocked: true } : {}), reason: body.reason },
       });
       await notify({
         to: { name: request.user.name, email: request.user.email },
@@ -90,8 +90,9 @@ export const PATCH = handleApi(
     let hours: number | null = null;
     if (body.action === "approve" && body.hours !== undefined) {
       if (claimed === null) throw new ApiError(400, "Hours can only be set on an early-start or overtime request");
-      if (claimed <= 0) throw new ApiError(400, "Nothing was clocked beyond the schedule for this shift — there are no extra hours to credit");
-      hours = round2(Math.min(body.hours, claimed));
+      if (claimed <= 0) throw new ApiError(400, "Nothing was clocked beyond the schedule for this shift, so there are no extra hours to credit — the Owner can use the day's hours edit to pay for time that was not clocked");
+      hours = round2(body.hours);
+      if (hours > claimed && user.role !== "OWNER") throw new ApiError(403, `Only ${claimed} h were clocked beyond the schedule. Only the Owner can credit more hours than the clock shows`);
     }
 
     const status = body.action === "approve" ? "APPROVED" : "REJECTED";
@@ -107,18 +108,19 @@ export const PATCH = handleApi(
     });
 
     const partial = hours !== null && claimed !== null && hours < claimed;
+    const beyondClock = hours !== null && claimed !== null && hours > claimed;
     await audit({
       entityType: "TimeAdjustmentRequest",
       entityId: request.id,
       actorId: user.id,
       actorName: user.name,
       action: `TIME_ADJUSTMENT_${status}`,
-      diff: { employee: request.user.name, type: request.type, ...(claimed !== null ? { claimedHours: claimed } : {}), ...(body.action === "approve" && hours !== null ? { creditedHours: hours } : {}) },
+      diff: { employee: request.user.name, type: request.type, ...(claimed !== null ? { claimedHours: claimed } : {}), ...(body.action === "approve" && hours !== null ? { creditedHours: hours, ...(beyondClock ? { moreThanClocked: true } : {}) } : {}) },
     });
     await notify({
       to: { name: request.user.name, email: request.user.email },
       subject: `Your ${TYPE_LABEL[request.type]} request was ${status.toLowerCase()}${partial ? ` for ${hours} hour${hours === 1 ? "" : "s"}` : ""}`,
-      message: body.action === "reject" ? body.reason : partial ? `Approved — ${hours} of the ${claimed} extra hours you clocked now count toward your payroll hours.` : APPROVED_MESSAGE[request.type],
+      message: body.action === "reject" ? body.reason : partial ? `Approved — ${hours} of the ${claimed} extra hours you clocked now count toward your payroll hours.` : beyondClock ? `Approved — ${hours} extra hours now count toward your payroll hours.` : APPROVED_MESSAGE[request.type],
     });
 
     return NextResponse.json(updated);

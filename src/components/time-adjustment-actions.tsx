@@ -175,12 +175,14 @@ export interface PendingTimeAdjustment {
 }
 
 /** Owner/PM approve/reject controls for one pending request. */
-export function DecideTimeAdjustmentButtons({ request }: { request: PendingTimeAdjustment }) {
+export function DecideTimeAdjustmentButtons({ request, canExceed = false }: { request: PendingTimeAdjustment; /** the Owner may credit more hours than the clock shows */ canExceed?: boolean }) {
   const router = useRouter();
   const claimed = request.claimedHours && request.claimedHours > 0 && request.type !== "WEEKEND_WORK" ? request.claimedHours : null;
   const [hoursText, setHoursText] = useState(claimed !== null ? String(claimed) : "");
-  const hours = claimed !== null ? Math.min(claimed, Math.max(0, Number(hoursText) || 0)) : null;
+  const top = canExceed ? 16 : claimed ?? 0;
+  const hours = claimed !== null ? Math.min(top, Math.max(0, Number(hoursText) || 0)) : null;
   const partial = claimed !== null && hours !== null && hours > 0 && hours < claimed;
+  const more = claimed !== null && hours !== null && hours > claimed;
   const [busy, setBusy] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
@@ -192,7 +194,7 @@ export function DecideTimeAdjustmentButtons({ request }: { request: PendingTimeA
     const res = await fetch(`/api/time-adjustments/${request.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(action === "approve" ? (partial ? { action, hours } : { action }) : { action, reason }),
+      body: JSON.stringify(action === "approve" ? (partial || more ? { action, hours } : { action }) : { action, reason }),
     });
     setBusy(false);
     if (res.ok) {
@@ -245,7 +247,7 @@ export function DecideTimeAdjustmentButtons({ request }: { request: PendingTimeA
             <input
               type="number"
               min="0.25"
-              max={claimed}
+              max={top}
               step="0.25"
               inputMode="decimal"
               value={hoursText}
@@ -253,9 +255,11 @@ export function DecideTimeAdjustmentButtons({ request }: { request: PendingTimeA
               aria-label="Hours to credit"
               className="min-h-[34px] w-20 rounded-md border border-ink-200 bg-ink-50 px-2 text-right tabular-nums text-ink-900 focus:border-[#8a1a28] focus:outline-none"
             />
-            h of it
+            h {canExceed ? "" : "of it"}
             {partial && <span className="font-medium text-amber-700">— the other {Math.round((claimed - (hours ?? 0)) * 100) / 100} h will not be paid</span>}
+            {more && <span className="font-medium text-amber-700">— {Math.round(((hours ?? 0) - claimed) * 100) / 100} h MORE than the clock shows</span>}
           </label>
+          {!canExceed && Number(hoursText) > claimed && <p className="mt-1 text-amber-700">Only {claimed} h were clocked, so that is the most that can be credited. Only the Owner can credit more.</p>}
         </div>
       )}
       <div className="flex items-center gap-3">
@@ -266,7 +270,7 @@ export function DecideTimeAdjustmentButtons({ request }: { request: PendingTimeA
         disabled={busy || (claimed !== null && !(hours && hours > 0))}
         className="text-xs font-medium text-emerald-600 hover:underline disabled:opacity-50"
       >
-        {partial ? `Approve ${hours} h` : "Approve"}
+        {partial || more ? `Approve ${hours} h` : "Approve"}
       </button>
       <button
         type="button"
@@ -300,7 +304,8 @@ export function EditApprovedHours({ row }: { row: ApprovedHoursRow }) {
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const hours = Math.min(row.claimedHours, Math.max(0, Number(hoursText) || 0));
+  const hours = Math.min(16, Math.max(0, Number(hoursText) || 0));
+  const more = hours > row.claimedHours;
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -325,8 +330,9 @@ export function EditApprovedHours({ row }: { row: ApprovedHoursRow }) {
     <form onSubmit={save} className="mt-2 space-y-2 rounded-lg border border-ink-200 p-2">
       <label className="flex flex-wrap items-center gap-2 text-xs text-ink-700">
         Credit
-        <input type="number" min="0.25" max={row.claimedHours} step="0.25" inputMode="decimal" value={hoursText} onChange={(e) => setHoursText(e.target.value)} aria-label="Hours to credit" className="min-h-[34px] w-20 rounded-md border border-ink-200 bg-ink-50 px-2 text-right tabular-nums text-ink-900 focus:border-[#8a1a28] focus:outline-none" />
-        h (of the {row.claimedHours} h clocked)
+        <input type="number" min="0.25" max="16" step="0.25" inputMode="decimal" value={hoursText} onChange={(e) => setHoursText(e.target.value)} aria-label="Hours to credit" className="min-h-[34px] w-20 rounded-md border border-ink-200 bg-ink-50 px-2 text-right tabular-nums text-ink-900 focus:border-[#8a1a28] focus:outline-none" />
+        h ({row.claimedHours} h were clocked)
+        {more && <span className="font-medium text-amber-700">— {Math.round((hours - row.claimedHours) * 100) / 100} h MORE than the clock shows</span>}
       </label>
       <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why? e.g., was waiting, not working — see photos" className="text-xs" required minLength={3} />
       {error && <p className="text-xs text-red-600">{error}</p>}

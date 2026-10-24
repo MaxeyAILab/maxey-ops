@@ -24,9 +24,9 @@ export interface AdjustmentFlags {
    * exempts the whole shift from every clamp (start, breaks, 5pm cutoff),
    * since a weekend shift has no scheduled hours to begin with. */
   weekendApproved: boolean;
-  /** Extra hours the Owner credited for an approved overtime (after 5:00 PM). Not set = all the clocked time counts. */
+  /** Extra hours the Owner credited for an approved overtime: exactly this many after 5:00 PM (even if the clock shows fewer). Not set = all the clocked time counts. */
   overtimeHours?: number | null;
-  /** Extra hours credited for an approved early start (before the scheduled start). Not set = all the clocked time counts. */
+  /** Extra hours credited for an approved early start: exactly this many before the scheduled start. Not set = all the clocked time counts. */
   earlyStartHours?: number | null;
 }
 
@@ -120,13 +120,13 @@ export function computeEffectiveHours(
   let effStart = timeIn.getTime();
   if (effStart < scheduledStart) {
     if (!flags.earlyStartApproved) effStart = scheduledStart;
-    else if (flags.earlyStartHours != null) effStart = Math.max(effStart, scheduledStart - flags.earlyStartHours * 3_600_000); // only the hours the Owner credited
+    else if (flags.earlyStartHours != null) effStart = scheduledStart - flags.earlyStartHours * 3_600_000; // exactly the hours the Owner credited
   }
 
   let effEnd = timeOut.getTime();
   if (effEnd > dayEnd) {
     if (!flags.overtimeApproved) effEnd = dayEnd;
-    else if (flags.overtimeHours != null) effEnd = Math.min(effEnd, dayEnd + flags.overtimeHours * 3_600_000); // only the hours the Owner credited
+    else if (flags.overtimeHours != null) effEnd = dayEnd + flags.overtimeHours * 3_600_000; // exactly the hours the Owner credited
   }
 
   if (effEnd <= effStart) return 0;

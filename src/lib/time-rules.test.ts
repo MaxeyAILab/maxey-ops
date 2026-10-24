@@ -29,8 +29,10 @@ describe("an approved overtime", () => {
     expect(computeEffectiveHours(at(8), at(20, 4), "OFFICE", { ...flags, overtimeHours: 1 })).toBe(9);
   });
 
-  it("a number bigger than what was really worked changes nothing", () => {
-    expect(computeEffectiveHours(at(8), at(18, 30), "OFFICE", { ...flags, overtimeHours: 5 })).toBe(9.5);
+  it("the Owner can credit more than the clock shows: exactly the number he set counts", () => {
+    // clocked out 5:05 PM (0.08 h after 5:00); credited 2 h → 8 regular + 2
+    expect(computeEffectiveHours(at(8), at(17, 5), "OFFICE", { ...flags, overtimeHours: 2 })).toBe(10);
+    expect(computeEffectiveHours(at(8), at(18, 30), "OFFICE", { ...flags, overtimeHours: 5 })).toBe(13);
   });
 
   it("a shift that ends before 5:00 PM is not affected", () => {
@@ -47,6 +49,8 @@ describe("an approved early start", () => {
     const some = computeEffectiveHours(at(5), at(17), "SITE", { ...flags, earlyStartHours: 1 });
     expect(all - some).toBeCloseTo(1.5, 5); // 2.5 claimed, 1 credited
     expect(computeEffectiveHours(at(5), at(17), "SITE", { ...flags, earlyStartHours: 2.5 })).toBeCloseTo(all, 5);
+    // more than was clocked early: counts exactly what was credited
+    expect(computeEffectiveHours(at(7), at(12, 30), "SITE", { ...flags, earlyStartHours: 2 })).toBeCloseTo(computeEffectiveHours(at(7, 30), at(12, 30), "SITE") + 2, 5);
   });
 });
 

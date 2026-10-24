@@ -442,7 +442,7 @@ export default async function AttendancePage() {
           shiftLabel: fmtDate(r.attendance.timeIn),
           clockLabel: `In ${timeFmt.format(r.attendance.timeIn)} → out ${r.attendance.timeOut ? timeFmt.format(r.attendance.timeOut) : "not yet"}`,
           claimedHours: claimed,
-          creditedHours: r.approvedHours === null ? claimed : Math.min(claimed, Number(r.approvedHours)),
+          creditedHours: r.approvedHours === null ? claimed : Number(r.approvedHours),
         },
       ];
     });
@@ -620,7 +620,7 @@ export default async function AttendancePage() {
                   </div>
                 )}
                 <div className="mt-2">
-                  <DecideTimeAdjustmentButtons request={r} />
+                  <DecideTimeAdjustmentButtons request={r} canExceed={user.role === "OWNER"} />
                 </div>
               </div>
             ))}
@@ -641,8 +641,8 @@ export default async function AttendancePage() {
                   <span className="font-medium text-ink-900">
                     {r.employeeName} — {r.type === "OVERTIME" ? "Overtime" : "Early start"} · {r.shiftLabel}
                   </span>
-                  <span className={`text-xs font-semibold tabular-nums ${r.creditedHours < r.claimedHours ? "text-amber-700" : "text-emerald-700"}`}>
-                    {r.creditedHours} h credited{r.creditedHours < r.claimedHours ? ` of ${r.claimedHours} h clocked` : ""}
+                  <span className={`text-xs font-semibold tabular-nums ${r.creditedHours !== r.claimedHours ? "text-amber-700" : "text-emerald-700"}`}>
+                    {r.creditedHours} h credited{r.creditedHours < r.claimedHours ? ` of ${r.claimedHours} h clocked` : r.creditedHours > r.claimedHours ? ` (${r.claimedHours} h clocked)` : ""}
                   </span>
                 </div>
                 <p className="mt-0.5 text-xs text-ink-500">{r.clockLabel}</p>
