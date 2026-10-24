@@ -221,6 +221,37 @@ export function pricedEntry(
 }
 
 /**
+ * A worker already on a draft run, with their hours re-read from the attendance records (after approvals or overtime hours were
+ * changed). Only the hours and days are replaced: the rate on the run, a person's meals and cash-advance deductions and the
+ * payslip reference stay as they are. SSS and PhilHealth follow the new gross when they were the standard share of the old gross
+ * (so they were never edited by hand); a figure someone typed in is kept. Someone added by hand, or with no attendance to read,
+ * is left exactly as it is.
+ */
+export function refreshEntryHours(existing: PayrollEntry, fresh: PayrollEntry | undefined, otMultiplier: number): PayrollEntry {
+  if (!fresh || existing.manual) return existing;
+  const cfg = PAYROLL_CONFIG;
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const rate = existing.hourlyRate;
+  const gross = fresh.regularHours * rate + fresh.otHours * rate * otMultiplier;
+  const standard = (value: number, oldBase: number, share: number) => Math.abs(value - oldBase * share) <= 0.011;
+  const sss = standard(existing.sss, existing.gross, cfg.sssRate) ? gross * cfg.sssRate : existing.sss;
+  const philhealth = standard(existing.philhealth, existing.gross, cfg.philhealthRate) ? gross * cfg.philhealthRate : existing.philhealth;
+  const net = Math.max(0, gross - sss - philhealth - existing.pagibig - existing.meals - existing.cashAdvance);
+  const worked = r2(fresh.regularHours + fresh.otHours);
+  return {
+    ...existing,
+    daysWorked: fresh.daysWorked,
+    regularHours: r2(fresh.regularHours),
+    otHours: r2(fresh.otHours),
+    gross: r2(gross),
+    sss: r2(sss),
+    philhealth: r2(philhealth),
+    net: r2(net),
+    ...(existing.nonCorporate ? { nonCorporate: { ...existing.nonCorporate, hours: Math.min(existing.nonCorporate.hours, worked) } } : {}),
+  };
+}
+
+/**
  * The hourly rate for an office-style person: a monthly salary is spread over the month's Monday–Saturday days and
  * 8-hour days; otherwise the profile's hourly rate, otherwise the daily rate ÷ 8. 0 when none is set.
  */

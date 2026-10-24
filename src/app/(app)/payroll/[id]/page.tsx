@@ -7,7 +7,7 @@ import { fmtDate, fmtDateTime, php } from "@/lib/format";
 import { hourlyRateForUser, nonCorporateCharge, normalizeEntries, otMultiplierFor, workingDaysInPeriod, type PayrollEntry } from "@/lib/payroll";
 import { Badge, Card, CardBody, CardHeader, Table, Td, Th } from "@/components/ui";
 import { ShareButton } from "@/components/share-button";
-import { PayrollStatusButtons } from "@/components/payroll-actions";
+import { PayrollStatusButtons, RecalculateHoursButton } from "@/components/payroll-actions";
 import { AddPersonToRun, EditablePayrollTable } from "@/components/payroll-entry-editor";
 import { PrintButton } from "@/components/print-button";
 
@@ -203,7 +203,10 @@ export default async function PayrollRunPage({ params }: { params: { id: string 
           )}
         </CardBody>
         <CardBody className="no-print border-t border-ink-100">
-          <PayrollStatusButtons runId={run.id} status={run.status} />
+          <div className="flex flex-wrap items-center gap-2">
+            <PayrollStatusButtons runId={run.id} status={run.status} />
+            {canEdit && <RecalculateHoursButton runId={run.id} />}
+          </div>
         </CardBody>
       </Card>
 

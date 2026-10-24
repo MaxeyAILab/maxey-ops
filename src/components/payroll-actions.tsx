@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Input, Label, Select } from "@/components/ui";
+import { Modal } from "@/components/modal";
 import { manilaSemiMonthlyPeriod, manilaWeeklySitePeriod } from "@/lib/time-rules";
 
 interface EmployeeOption {
@@ -284,5 +285,102 @@ export function PayrollStatusButtons({ runId, status }: { runId: string; status:
       )}
       {error && <p className="text-sm text-red-600">{error}</p>}
     </div>
+  );
+}
+
+interface HoursChange {
+  userId: string;
+  name: string;
+  before: { regularHours: number; otHours: number; gross: number; net: number };
+  after: { regularHours: number; otHours: number; gross: number; net: number };
+}
+
+const money = (n: number) => `₱${n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const hrs = (n: number) => (Math.round(n * 100) / 100).toString();
+
+/**
+ * "Recalculate hours" on a draft run: re-reads each worker's hours from the attendance records — for when overtime or early-start
+ * hours were approved or changed after the run was generated. It first shows what would change; nothing is saved until Apply.
+ * Rates, meals, cash advances and anyone added by hand stay as they are.
+ */
+export function RecalculateHoursButton({ runId }: { runId: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [preview, setPreview] = useState<{ changes: HoursChange[]; notOnRun: string[] } | null>(null);
+
+  async function call(apply: boolean) {
+    setBusy(true);
+    setError("");
+    const res = await fetch(`/api/payroll/${runId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "recalculate_hours", apply }) });
+    setBusy(false);
+    if (!res.ok) return setError(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? "Failed");
+    const data = (await res.json()) as { changes: HoursChange[]; notOnRun: string[] };
+    if (apply) {
+      setPreview(null);
+      router.refresh();
+    } else setPreview(data);
+  }
+
+  return (
+    <>
+      <Button variant="secondary" disabled={busy} onClick={() => call(false)}>
+        {busy && !preview ? "Checking…" : "↻ Recalculate hours"}
+      </Button>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      {preview && (
+        <Modal title="Recalculate hours from attendance" onClose={() => setPreview(null)} wide>
+          <div className="space-y-3 text-sm">
+            {preview.changes.length === 0 ? (
+              <p className="rounded-md bg-emerald-50 px-3 py-2 text-emerald-900">The hours on this run already match the attendance records and approvals — nothing to change.</p>
+            ) : (
+              <>
+                <p className="text-ink-700">These workers&apos; hours will be re-read from the attendance records and overtime approvals. Nothing is saved until you press Apply.</p>
+                <div className="overflow-x-auto rounded-lg border border-ink-200">
+                  <table className="w-full min-w-[460px] text-left">
+                    <thead className="bg-ink-100 text-xs uppercase tracking-wide text-ink-600">
+                      <tr>
+                        <th className="px-3 py-2">Worker</th>
+                        <th className="px-3 py-2 text-right">Regular h</th>
+                        <th className="px-3 py-2 text-right">OT h</th>
+                        <th className="px-3 py-2 text-right">Net pay</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {preview.changes.map((c) => (
+                        <tr key={c.userId} className="border-t border-ink-100">
+                          <td className="px-3 py-2 font-medium text-ink-900">{c.name}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            {hrs(c.before.regularHours)} → <b>{hrs(c.after.regularHours)}</b>
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            {hrs(c.before.otHours)} → <b>{hrs(c.after.otHours)}</b>
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            {money(c.before.net)} → <b>{money(c.after.net)}</b>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-xs text-ink-500">Rates, meals, cash advances and anyone you added by hand stay as they are. SSS and PhilHealth follow the new pay unless you typed them in yourself. If you edited a worker&apos;s hours by hand, those are replaced by the attendance records.</p>
+              </>
+            )}
+            {preview.notOnRun.length > 0 && <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">Also has attendance in this period but is not on the run (not added automatically): {preview.notOnRun.join(", ")}.</p>}
+            <div className="flex gap-2">
+              {preview.changes.length > 0 && (
+                <Button disabled={busy} onClick={() => call(true)}>
+                  {busy ? "Applying…" : "Apply"}
+                </Button>
+              )}
+              <Button variant="secondary" onClick={() => setPreview(null)}>
+                {preview.changes.length > 0 ? "Cancel" : "Close"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </>
   );
 }

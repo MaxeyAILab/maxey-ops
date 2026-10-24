@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Attendance } from "@prisma/client";
-import { computeDailyHoursByDay, creditedOvertimeByDay, splitRegularAndOvertime } from "./payroll";
+import { computeDailyHoursByDay, creditedOvertimeByDay, refreshEntryHours, splitRegularAndOvertime } from "./payroll";
 import type { AdjustmentFlags } from "./time-rules";
 
 const at = (iso: string) => new Date(iso);
@@ -82,5 +82,63 @@ describe("what payroll pays Jomer and Zoilo (the Oct 16–23 case)", () => {
     const r = pay(rec, new Map([["o1", flags({ overtimeApproved: true })]]));
     expect(r.regular).toBe(8);
     expect(r.ot).toBeCloseTo(1.5, 5); // 7:30→7 PM = 11.0 clocked 8:00→19:00 less lunch and breaks: 11 − 1 − 0.5 − 8
+  });
+});
+
+describe("refreshEntryHours — re-reading hours on a draft run", () => {
+  const base = {
+    userId: "u",
+    name: "Jomer Manuel",
+    daysWorked: 5,
+    regularHours: 34.94,
+    otHours: 7,
+    hourlyRate: 93.75,
+    gross: 3932.2,
+    sss: 176.95,
+    philhealth: 98.3,
+    pagibig: 100,
+    meals: 0,
+    cashAdvance: 0,
+    net: 3556.94,
+  };
+  const fresh = { ...base, regularHours: 34.83, otHours: 10, gross: 4202.81 };
+
+  it("takes the new hours and days, prices them at the rate on the run, and keeps meals / cash advance", () => {
+    const e = refreshEntryHours({ ...base, meals: 50, cashAdvance: 200 }, fresh, 1);
+    expect(e.regularHours).toBe(34.83);
+    expect(e.otHours).toBe(10);
+    expect(e.gross).toBe(4202.81); // 34.83 × 93.75 + 10 × 93.75 × 1
+    expect(e.meals).toBe(50);
+    expect(e.cashAdvance).toBe(200);
+    expect(e.hourlyRate).toBe(93.75);
+    expect(e.net).toBeCloseTo(4202.81 - 189.13 - 105.07 - 100 - 50 - 200, 1);
+  });
+
+  it("SSS and PhilHealth follow the new gross when they were the standard share of the old one", () => {
+    const e = refreshEntryHours(base, fresh, 1);
+    expect(e.sss).toBeCloseTo(4202.81 * 0.045, 1);
+    expect(e.philhealth).toBeCloseTo(4202.81 * 0.025, 1);
+  });
+
+  it("a deduction someone typed in is kept", () => {
+    const e = refreshEntryHours({ ...base, sss: 250 }, fresh, 1);
+    expect(e.sss).toBe(250);
+    expect(e.philhealth).toBeCloseTo(4202.81 * 0.025, 1);
+  });
+
+  it("keeps the rate on the run even when the profile rate has changed", () => {
+    const e = refreshEntryHours(base, { ...fresh, hourlyRate: 120 }, 1);
+    expect(e.hourlyRate).toBe(93.75);
+  });
+
+  it("leaves someone added by hand, or with no attendance to read, exactly as they are", () => {
+    expect(refreshEntryHours({ ...base, manual: true }, fresh, 1)).toEqual({ ...base, manual: true });
+    expect(refreshEntryHours(base, undefined, 1)).toBe(base);
+  });
+
+  it("keeps the payslip reference, and never charges a job more hours than were worked", () => {
+    const e = refreshEntryHours({ ...base, slipRef: "2026-009", nonCorporate: { jobId: "j", jobName: "House", hours: 60 } }, { ...fresh, regularHours: 20, otHours: 5 }, 1);
+    expect(e.slipRef).toBe("2026-009");
+    expect(e.nonCorporate?.hours).toBe(25);
   });
 });

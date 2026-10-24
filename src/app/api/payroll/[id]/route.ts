@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
-import { hourlyRateForUser, normalizeEntries, otMultiplierFor, pricedEntry, type PayrollEntry } from "@/lib/payroll";
+import { computePayroll, computeProjectPayroll, hourlyRateForUser, normalizeEntries, otMultiplierFor, pricedEntry, refreshEntryHours, type PayrollEntry } from "@/lib/payroll";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { ensureSlipRefs } from "@/lib/payslip-refs";
 import { postCashAdvanceDeductions, reverseCashAdvanceDeductions } from "@/lib/cash-expense-db";
@@ -26,6 +26,9 @@ const patchSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("set_status"), status: z.enum(["REVIEW", "APPROVED", "PAID"]) }),
   z.object({ action: z.literal("cancel_approval") }),
   z.object({ action: z.literal("update_entries"), entries: z.array(entryEditSchema).min(1) }),
+  // re-read every worker's hours from the attendance records (after approvals / overtime hours changed). Without apply it only
+  // shows what would change.
+  z.object({ action: z.literal("recalculate_hours"), apply: z.boolean().default(false) }),
   z.object({
     action: z.literal("add_person"),
     userId: z.string().min(1),
@@ -50,6 +53,42 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 export const PATCH = handleApi(
   async (req: NextRequest, { params }: { params: { id: string } }) => {
     const body = patchSchema.parse(await req.json());
+
+    if (body.action === "recalculate_hours") {
+      const user = await requireUser(["OWNER", "PM"]);
+      const run = await prisma.payrollRun.findUnique({ where: { id: params.id } });
+      if (!run) throw new ApiError(404, "Payroll run not found");
+      if (!["DRAFT", "REVIEW"].includes(run.status)) throw new ApiError(400, `A run that's already ${run.status} is a record — its hours can't be recalculated`);
+
+      const existing = normalizeEntries(run.entries as unknown as PayrollEntry[]);
+      const fresh = run.projectId
+        ? await computeProjectPayroll(run.projectId, run.periodStart, run.periodEnd)
+        : await computePayroll(run.department!, run.periodStart, run.periodEnd);
+      const freshBy = new Map(fresh.map((e) => [e.userId, e]));
+      const multiplier = otMultiplierFor(run.department);
+      const next = existing.map((e) => refreshEntryHours(e, freshBy.get(e.userId), multiplier));
+      const changes = existing.flatMap((before, i) => {
+        const after = next[i];
+        if (before.regularHours === after.regularHours && before.otHours === after.otHours && before.daysWorked === after.daysWorked && before.gross === after.gross) return [];
+        return [{ userId: before.userId, name: before.name, before: { regularHours: before.regularHours, otHours: before.otHours, gross: before.gross, net: before.net }, after: { regularHours: after.regularHours, otHours: after.otHours, gross: after.gross, net: after.net } }];
+      });
+      // people with attendance in the period who are not on this run (never added automatically — the run is a snapshot)
+      const onRun = new Set(existing.map((e) => e.userId));
+      const notOnRun = fresh.filter((e) => !onRun.has(e.userId)).map((e) => e.name);
+
+      if (!body.apply) return NextResponse.json({ changes, notOnRun });
+      if (changes.length === 0) return NextResponse.json({ ok: true, changes, notOnRun });
+      await prisma.payrollRun.update({ where: { id: run.id }, data: { entries: next as never } });
+      await audit({
+        entityType: "PayrollRun",
+        entityId: run.id,
+        actorId: user.id,
+        actorName: user.name,
+        action: "PAYROLL_HOURS_RECALCULATED",
+        diff: { changes, notOnRun } as never,
+      });
+      return NextResponse.json({ ok: true, changes, notOnRun });
+    }
 
     if (body.action === "update_entries") {
       const user = await requireUser(["OWNER", "PM"]);
