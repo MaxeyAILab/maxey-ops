@@ -275,3 +275,20 @@ export function claimedExtraHours(type: "EARLY_START" | "OVERTIME", timeIn: Date
   const ms = timeOut.getTime() - manilaTime(dayKey, DAY_END.h, DAY_END.m).getTime();
   return ms > 0 ? Math.round((ms / 3_600_000) * 100) / 100 : 0;
 }
+
+/**
+ * The extra hours the Owner explicitly credited on this shift that really apply to it — an overtime credit counts only when the
+ * shift ran past 5:00 PM, an early-start credit only when the person clocked in before the scheduled start. Payroll pays exactly
+ * these as overtime hours (not "whatever is left above 8 hours in the day"). 0 when nothing was credited with a number.
+ */
+export function creditedOvertimeHours(timeIn: Date, timeOut: Date, ruleset: TimeRuleset, flags: AdjustmentFlags): number {
+  if (flags.weekendApproved) return 0;
+  const dayKey = manilaDayKey(timeIn);
+  const start = SCHEDULE_START[ruleset];
+  const scheduledStart = manilaTime(dayKey, start.h, start.m).getTime();
+  const dayEnd = manilaTime(dayKey, DAY_END.h, DAY_END.m).getTime();
+  let credited = 0;
+  if (flags.overtimeApproved && flags.overtimeHours != null && timeOut.getTime() > dayEnd) credited += flags.overtimeHours;
+  if (flags.earlyStartApproved && flags.earlyStartHours != null && timeIn.getTime() < scheduledStart) credited += flags.earlyStartHours;
+  return credited;
+}

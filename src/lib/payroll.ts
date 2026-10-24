@@ -8,6 +8,7 @@ import {
   rulesetForDepartment,
   workingDaysInManilaMonth,
   type AdjustmentFlags,
+  creditedOvertimeHours,
   type TimeRuleset,
 } from "@/lib/time-rules";
 
@@ -100,7 +101,8 @@ export function computeDailyHoursByDay(
     if (!r.timeOut) continue;
     const key = manilaDayKey(r.timeIn);
     const flags = approvals.get(r.id);
-    if (flags?.overtimeApproved || flags?.weekendApproved) approvedDays.add(key);
+    // an approved early start lifts the 8-hour day cap too — otherwise the early hours it credits would vanish into the cap
+    if (flags?.overtimeApproved || flags?.weekendApproved || flags?.earlyStartApproved) approvedDays.add(key);
     const hours = computeEffectiveHours(r.timeIn, r.timeOut, ruleset, flags);
     byDay.set(key, (byDay.get(key) ?? 0) + hours);
   }
@@ -114,6 +116,31 @@ export function computeDailyHoursByDay(
     }
   }
   return byDay;
+}
+
+/**
+ * One day's hours → regular and overtime. Normally everything above 8 hours is overtime. When the Owner credited a number of
+ * overtime hours that day, exactly that many are overtime and the rest is regular — so approving 2.5 overtime hours pays 2.5
+ * overtime hours, even if the person clocked in a few minutes late and the day's total is a little under 8 + 2.5.
+ */
+export function splitRegularAndOvertime(hours: number, credited: number): { regular: number; ot: number } {
+  if (credited > 0) {
+    const regular = Math.min(PAYROLL_CONFIG.regularHoursPerDay, Math.max(0, hours - credited));
+    return { regular, ot: Math.max(0, hours - regular) };
+  }
+  return { regular: Math.min(PAYROLL_CONFIG.regularHoursPerDay, hours), ot: Math.max(0, hours - PAYROLL_CONFIG.regularHoursPerDay) };
+}
+
+/** The overtime hours the Owner credited with a number, per Manila day, for the shifts of one person. */
+export function creditedOvertimeByDay(records: Attendance[], ruleset: TimeRuleset, approvals: Map<string, AdjustmentFlags>): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const r of records) {
+    const flags = approvals.get(r.id);
+    if (!r.timeOut || !flags) continue;
+    const c = creditedOvertimeHours(r.timeIn, r.timeOut, ruleset, flags);
+    if (c > 0) out.set(manilaDayKey(r.timeIn), (out.get(manilaDayKey(r.timeIn)) ?? 0) + c);
+  }
+  return out;
 }
 
 /** Regular/OT split → gross/deductions/net, from computeDailyHoursByDay()'s
@@ -138,12 +165,14 @@ function buildEntry(
 
   const byDay = computeDailyHoursByDay(user.id, records, ruleset, approvalsByAttendanceId, overridesByUserDay);
 
-  const cfg = PAYROLL_CONFIG;
+  const credited = creditedOvertimeByDay(records, ruleset, approvalsByAttendanceId);
   let regularHours = 0;
   let otHours = 0;
-  for (const hours of byDay.values()) {
-    regularHours += Math.min(cfg.regularHoursPerDay, hours);
-    otHours += Math.max(0, hours - cfg.regularHoursPerDay);
+  for (const [day, hours] of byDay) {
+    // a day the Owner set by hand has no credited split — it is just that many hours
+    const split = splitRegularAndOvertime(hours, overridesByUserDay.has(`${user.id}|${day}`) ? 0 : credited.get(day) ?? 0);
+    regularHours += split.regular;
+    otHours += split.ot;
   }
   // Owner's period-total correction (attendance page) — counted as regular hours.
   regularHours = Math.max(0, regularHours + adjustment);
