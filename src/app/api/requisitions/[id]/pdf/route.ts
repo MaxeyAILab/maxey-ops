@@ -40,7 +40,7 @@ export const GET = handleApi(
         unit: i.unit,
         name: i.name,
         spec: i.spec,
-        remarks: i.remarks,
+        remarks: i.warehouseItemId ? "From warehouse stock" : i.remarks,
       })),
       requestedBy: r.submittedBy.name,
       approvedBy: r.approvedBy?.name ?? null,

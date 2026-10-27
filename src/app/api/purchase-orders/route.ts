@@ -40,10 +40,19 @@ export const POST = handleApi(async (req: NextRequest) => {
     throw new ApiError(400, "A PO already exists for this requisition");
   }
 
+  // Lines taken from the warehouse were issued from stock when the requisition was approved — buying them again would charge twice.
+  const reqItems = await prisma.requisitionItem.findMany({ where: { requisitionId: requisition.id }, select: { name: true, warehouseItemId: true } });
+  const bought = new Set(reqItems.filter((i) => !i.warehouseItemId).map((i) => i.name.trim().toLowerCase()));
+  const fromStock = reqItems.filter((i) => i.warehouseItemId && !bought.has(i.name.trim().toLowerCase())).map((i) => i.name.trim().toLowerCase());
+  const doubled = body.items.find((i) => fromStock.includes(i.name.trim().toLowerCase()));
+  if (doubled) throw new ApiError(400, `${doubled.name} is taken from the warehouse stock, not bought — remove it from the PO`);
+
   const totalCost = body.items.reduce((sum, i) => sum + i.qty * i.unitCost, 0);
   const year = new Date().getFullYear();
-  const count = await prisma.purchaseOrder.count();
-  const poNumber = `PO-${year}-${String(count + 1).padStart(4, "0")}`;
+  // one more than the highest number this year — counting POs would reuse a number once an earlier PO has been deleted
+  const thisYear = await prisma.purchaseOrder.findMany({ where: { poNumber: { startsWith: `PO-${year}-` } }, select: { poNumber: true } });
+  const highest = thisYear.reduce((m, p) => Math.max(m, Number(p.poNumber.slice(`PO-${year}-`.length)) || 0), 0);
+  const poNumber = `PO-${year}-${String(highest + 1).padStart(4, "0")}`;
 
   const po = await prisma.$transaction(async (db) => {
     const po = await db.purchaseOrder.create({

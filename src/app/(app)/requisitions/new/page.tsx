@@ -20,6 +20,12 @@ export default async function NewRequisitionPage() {
     orderBy: { name: "asc" },
   });
 
+  // what the warehouses hold, so the form can suggest stock instead of buying (names and quantities only — no prices)
+  const stock = await prisma.warehouseItem.findMany({
+    select: { id: true, name: true, unit: true, warehouse: true, currentQty: true },
+    orderBy: { name: "asc" },
+  });
+
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <h1 className="text-xl font-bold text-ink-900">{t("req.title")}</h1>
@@ -29,7 +35,10 @@ export default async function NewRequisitionPage() {
           requisition below and it can be linked to a project later.
         </p>
       )}
-      <RequisitionForm projects={projects.map((p) => ({ id: p.id, name: p.name, nonCorporate: p.isNonCorporate }))} />
+      <RequisitionForm
+        projects={projects.map((p) => ({ id: p.id, name: p.name, nonCorporate: p.isNonCorporate }))}
+        stock={stock.map((w) => ({ id: w.id, name: w.name, unit: w.unit, warehouse: w.warehouse, currentQty: Number(w.currentQty) }))}
+      />
     </div>
   );
 }

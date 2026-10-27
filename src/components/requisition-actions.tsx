@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Input, Label } from "@/components/ui";
 import { php } from "@/lib/format";
+import { matchWarehouseStock, planWarehouseUse, type StockOption } from "@/lib/requisition-warehouse";
+import { warehouseLabel } from "@/lib/warehouses";
 
 async function patch(id: string, body: unknown): Promise<string | null> {
   const res = await fetch(`/api/requisitions/${id}`, {
@@ -33,6 +35,92 @@ export interface CostableItem {
   remarks: string | null;
   quotes: CostableQuote[];
   selectedQuoteId: string | null;
+  /** taken from warehouse stock instead of bought */
+  warehouse?: { itemId: string; warehouse: string; currentQty: number; unitPrice: number | null; issued: boolean } | null;
+}
+
+/** An item that comes from the warehouse (no quotes needed), or — while the requisition is being costed — a hint that the
+ * warehouse already holds what is being asked for, with a one-click way to use it. */
+function ItemWarehouse({
+  requisitionId,
+  item,
+  editable,
+  canUseStock,
+  stock,
+}: {
+  requisitionId: string;
+  item: CostableItem;
+  editable: boolean;
+  canUseStock: boolean;
+  stock: StockOption[];
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function act(body: unknown) {
+    setBusy(true);
+    setError("");
+    const err = await patch(requisitionId, body);
+    setBusy(false);
+    if (err) setError(err);
+    else router.refresh();
+  }
+
+  const w = item.warehouse;
+  if (w) {
+    const short = !w.issued && item.qty > w.currentQty;
+    return (
+      <div className="space-y-2 rounded-lg bg-emerald-50 p-2.5 text-sm text-emerald-800">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span>
+            <strong>From the warehouse</strong> — {warehouseLabel(w.warehouse)}.{" "}
+            {w.issued
+              ? "Already issued to the site (it is in the material movement log)."
+              : `${w.currentQty} ${item.unit} in stock. Issued to the site automatically when the Owner approves; no purchase needed.`}
+            {w.unitPrice != null && ` Value ${php(item.qty * w.unitPrice)} (${php(w.unitPrice)} each) — charged to the project when issued.`}
+          </span>
+          {editable && !w.issued && (
+            <Button variant="ghost" disabled={busy} onClick={() => act({ action: "use_supplier", itemId: item.id })}>
+              Buy it instead
+            </Button>
+          )}
+        </div>
+        {short && (
+          <p className="rounded bg-amber-100 p-2 text-amber-900">
+            Only {w.currentQty} {item.unit} in stock but {item.qty} are needed — approval will be refused until the quantity is fixed.
+          </p>
+        )}
+        {error && <p className="text-red-600">{error}</p>}
+      </div>
+    );
+  }
+
+  const hits = editable && canUseStock ? matchWarehouseStock(item.name, stock).filter((x) => x.currentQty > 0) : [];
+  if (hits.length === 0) return null;
+  return (
+    <div className="space-y-1 rounded-lg bg-sky-50 p-2.5 text-sm text-sky-900">
+      <p className="text-xs font-semibold uppercase tracking-wide">The warehouse has this</p>
+      {hits.map((x) => {
+        const { fromWarehouse, toBuy } = planWarehouseUse(item.qty, x.currentQty);
+        return (
+          <div key={x.id} className="flex flex-wrap items-center justify-between gap-2">
+            <span>
+              {x.name} — {warehouseLabel(x.warehouse)}: <strong>{x.currentQty} {x.unit} in stock</strong>
+            </span>
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() => act({ action: "use_warehouse", itemId: item.id, warehouseItemId: x.id, qty: fromWarehouse })}
+            >
+              {toBuy > 0 ? `Take ${fromWarehouse}, buy the other ${toBuy}` : "Take from warehouse"}
+            </Button>
+          </div>
+        );
+      })}
+      {error && <p className="text-red-600">{error}</p>}
+    </div>
+  );
 }
 
 /** One item's canvassing sheet: every supplier quote recorded so far, an
@@ -193,12 +281,18 @@ export function ItemsCostingTable({
   requisitionId,
   items,
   editable,
+  canUseStock = false,
+  stock = [],
 }: {
   requisitionId: string;
   items: CostableItem[];
   editable: boolean;
+  /** the requisition is charged to a project, so its items can be taken from the warehouse */
+  canUseStock?: boolean;
+  stock?: StockOption[];
 }) {
-  const total = items.reduce((s, it) => s + it.qty * (it.estUnitCost ?? 0), 0);
+  const total = items.filter((it) => !it.warehouse).reduce((s, it) => s + it.qty * (it.estUnitCost ?? 0), 0);
+  const stockValue = items.reduce((s, it) => s + (it.warehouse?.unitPrice != null ? it.qty * it.warehouse.unitPrice : 0), 0);
 
   return (
     <div className="divide-y divide-ink-100">
@@ -213,13 +307,20 @@ export function ItemsCostingTable({
               {it.qty} {it.unit}
             </span>
           </div>
-          <ItemQuotes requisitionId={requisitionId} item={it} editable={editable} />
+          <ItemWarehouse requisitionId={requisitionId} item={it} editable={editable} canUseStock={canUseStock} stock={stock} />
+          {!it.warehouse && <ItemQuotes requisitionId={requisitionId} item={it} editable={editable} />}
         </div>
       ))}
       <div className="flex items-center justify-between p-3 font-semibold">
-        <span>Total</span>
+        <span>Total to buy</span>
         <span className="tabular-nums">{php(total)}</span>
       </div>
+      {stockValue > 0 && (
+        <div className="flex items-center justify-between p-3 text-sm text-ink-600">
+          <span>Taken from the warehouse (charged to the project when issued, not part of the purchase)</span>
+          <span className="tabular-nums">{php(stockValue)}</span>
+        </div>
+      )}
     </div>
   );
 }

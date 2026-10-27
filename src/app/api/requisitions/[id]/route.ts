@@ -5,6 +5,9 @@ import { audit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
+import { warehouseLabel } from "@/lib/warehouses";
+import { applyMaterialMove } from "@/lib/inventory-requests";
+import { planWarehouseUse, purchaseEstimate, warehouseShortfalls } from "@/lib/requisition-warehouse";
 
 const actionSchema = z.discriminatedUnion("action", [
   z.object({
@@ -27,6 +30,19 @@ const actionSchema = z.discriminatedUnion("action", [
     itemId: z.string().min(1),
     quoteId: z.string().min(1),
   }),
+  z.object({
+    // Take this item from warehouse stock instead of buying it. If the warehouse holds less than the item asks for, `qty`
+    // says how many to take: the item is split, and the rest stays as a line to buy.
+    action: z.literal("use_warehouse"),
+    itemId: z.string().min(1),
+    warehouseItemId: z.string().min(1),
+    qty: z.coerce.number().positive().optional(),
+  }),
+  z.object({
+    // Back to buying it from a supplier.
+    action: z.literal("use_supplier"),
+    itemId: z.string().min(1),
+  }),
   z.object({ action: z.literal("approve") }),
   z.object({
     action: z.literal("reject"),
@@ -39,7 +55,8 @@ const actionSchema = z.discriminatedUnion("action", [
  * anyone starts canvassing — same transition the old single-price flow made. */
 async function refreshRequisitionAfterCosting(requisitionId: string, wasSubmitted: boolean) {
   const items = await prisma.requisitionItem.findMany({ where: { requisitionId } });
-  const estimatedCost = items.reduce((sum, i) => sum + Number(i.qty) * Number(i.estUnitCost ?? 0), 0);
+  // lines taken from the warehouse are charged when they are issued, not here — otherwise the project pays for them twice
+  const estimatedCost = purchaseEstimate(items);
   await prisma.requisition.update({
     where: { id: requisitionId },
     data: { estimatedCost, ...(wasSubmitted ? { status: "UNDER_REVIEW" as const } : {}) },
@@ -62,6 +79,65 @@ export const PATCH = handleApi(
     });
     if (!requisition) throw new ApiError(404, "Requisition not found");
 
+    if (body.action === "use_warehouse" || body.action === "use_supplier") {
+      const user = await requireUser(["PM", "OWNER", "ACCOUNTING", "PURCHASING"]);
+      if (!["SUBMITTED", "UNDER_REVIEW"].includes(requisition.status)) {
+        throw new ApiError(400, `Cannot change where the items come from once the requisition is ${requisition.status}`);
+      }
+      const item = requisition.items.find((i) => i.id === body.itemId);
+      if (!item) throw new ApiError(400, "Unknown item on this requisition");
+      const wasSubmitted = requisition.status === "SUBMITTED";
+
+      if (body.action === "use_supplier") {
+        if (!item.warehouseItemId) return NextResponse.json(requisition);
+        // back on the buying list: pick the first canvassed price again if there is one
+        const first = await prisma.itemQuote.findFirst({ where: { requisitionItemId: item.id }, orderBy: { createdAt: "asc" } });
+        await prisma.requisitionItem.update({
+          where: { id: item.id },
+          data: { warehouseItemId: null, selectedQuoteId: first?.id ?? null, estUnitCost: first?.unitCost ?? null, remarks: first?.supplier ?? null },
+        });
+        const estimatedCost = await refreshRequisitionAfterCosting(requisition.id, wasSubmitted);
+        await audit({
+          entityType: "Requisition",
+          entityId: requisition.id,
+          actorId: user.id,
+          actorName: user.name,
+          action: "REQUISITION_ITEM_TO_SUPPLIER",
+          diff: { item: item.name, estimatedCost },
+        });
+        return NextResponse.json(await prisma.requisition.findUnique({ where: { id: requisition.id } }));
+      }
+
+      if (!requisition.projectId) throw new ApiError(400, "Materials can only be taken from the warehouse for a project or job");
+      const w = await prisma.warehouseItem.findUnique({ where: { id: body.warehouseItemId } });
+      if (!w) throw new ApiError(404, "Warehouse item not found");
+      const wanted = body.qty ?? Number(item.qty);
+      if (wanted > Number(item.qty)) throw new ApiError(400, `The item only asks for ${Number(item.qty)} ${item.unit}`);
+      const { fromWarehouse, toBuy } = planWarehouseUse(Number(item.qty), Math.min(Number(w.currentQty), wanted));
+      if (fromWarehouse <= 0) throw new ApiError(400, `${w.name} has none in the ${warehouseLabel(w.warehouse)}`);
+      await prisma.$transaction(async (db) => {
+        await db.requisitionItem.update({
+          where: { id: item.id },
+          // the price of a taken-from-warehouse line comes from the warehouse, so any canvassed price is no longer selected
+          data: { name: w.name, unit: w.unit, qty: fromWarehouse, warehouseItemId: w.id, selectedQuoteId: null, estUnitCost: null, remarks: null },
+        });
+        if (toBuy > 0) {
+          // the part the warehouse cannot cover stays on the buying list as its own line
+          await db.requisitionItem.create({ data: { requisitionId: requisition.id, name: item.name, spec: item.spec, qty: toBuy, unit: item.unit } });
+        }
+      });
+      const estimatedCost = await refreshRequisitionAfterCosting(requisition.id, wasSubmitted);
+      await audit({
+        entityType: "Requisition",
+        entityId: requisition.id,
+        actorId: user.id,
+        actorName: user.name,
+        action: "REQUISITION_ITEM_FROM_WAREHOUSE",
+        diff: { item: w.name, qty: fromWarehouse, unit: w.unit, warehouse: warehouseLabel(w.warehouse), leftToBuy: toBuy, estimatedCost },
+      });
+      return NextResponse.json(await prisma.requisition.findUnique({ where: { id: requisition.id } }));
+    }
+
     if (body.action === "add_quote" || body.action === "select_quote") {
       const user = await requireUser(["PM", "OWNER", "ACCOUNTING", "PURCHASING"]);
       if (!["SUBMITTED", "UNDER_REVIEW"].includes(requisition.status)) {
@@ -69,6 +145,7 @@ export const PATCH = handleApi(
       }
       const item = requisition.items.find((i) => i.id === body.itemId);
       if (!item) throw new ApiError(400, "Unknown item on this requisition");
+      if (item.warehouseItemId) throw new ApiError(400, "This item comes from the warehouse — switch it back to a supplier before adding a price");
       const wasSubmitted = requisition.status === "SUBMITTED";
 
       if (body.action === "add_quote") {
@@ -130,28 +207,85 @@ export const PATCH = handleApi(
     }
 
     if (body.action === "approve") {
-      const updated = await prisma.requisition.update({
-        where: { id: params.id },
-        data: {
-          status: "APPROVED",
-          approvedById: user.id,
-          approvedAt: new Date(),
-        },
+      // Lines taken from the warehouse are issued to the project now (a Warehouse → Site movement, applied at once), so nobody
+      // has to log them by hand. They are charged to the project through the warehouse issue cost, at the item's price today.
+      const fromWarehouse = requisition.items.filter((i) => i.warehouseItemId && !i.issuedMovementId);
+      if (fromWarehouse.length && !requisition.project) throw new ApiError(400, "Materials can only be taken from the warehouse for a project or job");
+      const buying = requisition.items.filter((i) => !i.warehouseItemId);
+      const issued: { item: string; qty: number; unit: string; from: string; movementId: string }[] = [];
+
+      const updated = await prisma.$transaction(async (db) => {
+        // nothing left to buy: the requisition is complete once the stock is issued
+        const claim = await db.requisition.updateMany({
+          where: { id: params.id, status: { in: ["SUBMITTED", "UNDER_REVIEW"] } },
+          data: { status: buying.length === 0 && fromWarehouse.length > 0 ? "DELIVERED" : "APPROVED", approvedById: user.id, approvedAt: new Date() },
+        });
+        if (claim.count !== 1) throw new ApiError(409, "This requisition was just decided by someone else — reload the page");
+
+        if (fromWarehouse.length) {
+          const stock = await db.warehouseItem.findMany({ where: { id: { in: fromWarehouse.map((i) => i.warehouseItemId!) } } });
+          const map = new Map(stock.map((w) => [w.id, { id: w.id, name: w.name, unit: w.unit, warehouse: warehouseLabel(w.warehouse), currentQty: Number(w.currentQty) }]));
+          const short = warehouseShortfalls(fromWarehouse, map);
+          if (short.length) {
+            throw new ApiError(
+              400,
+              `Not enough in the warehouse to approve: ${short
+                .map((x) => `${x.name} — asked ${x.wanted} ${x.unit}, ${x.warehouse || "warehouse"} has ${x.available}`)
+                .join("; ")}. Take only what is there (the rest is bought) or switch the item back to a supplier.`
+            );
+          }
+          for (const line of fromWarehouse) {
+            const w = stock.find((x) => x.id === line.warehouseItemId)!;
+            const qty = Number(line.qty);
+            const movement = await db.inventoryMovement.create({
+              data: {
+                clientUuid: crypto.randomUUID(),
+                itemId: w.id,
+                type: "WAREHOUSE_TO_SITE",
+                qty,
+                fromLoc: warehouseLabel(w.warehouse),
+                toLoc: requisition.project!.name,
+                toProjectId: requisition.project!.id,
+                note: `Requisition approved — requested by ${requisition.submittedBy.name}`,
+                unitPrice: w.unitPrice,
+                actorId: user.id,
+                status: "APPLIED",
+              },
+            });
+            await applyMaterialMove(db, { itemId: w.id, type: "WAREHOUSE_TO_SITE", qty, fromProjectId: null, toProjectId: requisition.project!.id });
+            await db.requisitionItem.update({ where: { id: line.id }, data: { issuedMovementId: movement.id } });
+            issued.push({ item: w.name, qty, unit: w.unit, from: warehouseLabel(w.warehouse), movementId: movement.id });
+          }
+        }
+        return db.requisition.findUniqueOrThrow({ where: { id: params.id } });
       });
+
       await audit({
         entityType: "Requisition",
         entityId: requisition.id,
         actorId: user.id,
         actorName: user.name,
         action: "REQUISITION_APPROVED",
-        diff: { estimatedCost: requisition.estimatedCost?.toString() ?? null },
+        diff: { estimatedCost: requisition.estimatedCost?.toString() ?? null, issuedFromWarehouse: issued.map((m) => ({ item: m.item, qty: m.qty, unit: m.unit, from: m.from })) },
       });
-      // Auto-forward to Purchasing (Spec 6.2) — cost now committed vs budget
-      await notify({
-        to: { name: "Purchasing" },
-        subject: "Requisition approved — create PO",
-        message: `${projectOrCategoryLabel(requisition)}: requisition from ${requisition.submittedBy.name} approved.`,
-      });
+      for (const m of issued) {
+        await audit({
+          entityType: "InventoryMovement",
+          entityId: m.movementId,
+          actorId: user.id,
+          actorName: user.name,
+          action: "STOCK_WAREHOUSE_TO_SITE",
+          diff: { item: m.item, qty: m.qty, unit: m.unit, type: "WAREHOUSE_TO_SITE", from: m.from, to: requisition.project!.name, viaRequisition: requisition.id },
+        });
+      }
+      // Auto-forward to Purchasing (Spec 6.2) — cost now committed vs budget; only if something is left to buy
+      if (buying.length) {
+        await notify({
+          to: { name: "Purchasing" },
+          subject: "Requisition approved — create PO",
+          message: `${projectOrCategoryLabel(requisition)}: requisition from ${requisition.submittedBy.name} approved.`,
+        });
+      }
       return NextResponse.json(updated);
     }
 

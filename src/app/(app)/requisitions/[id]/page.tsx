@@ -27,6 +27,7 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
     include: {
       items: {
         include: {
+          warehouseItem: { select: { id: true, warehouse: true, currentQty: true, unitPrice: true } },
           quotes: {
             orderBy: { createdAt: "asc" },
             include: { submittedBy: { select: { name: true } } },
@@ -42,6 +43,18 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
   if (!r) notFound();
   // Foremen — and anyone the Owner limited to their own — can only open requisitions they raised themselves
   if (seesOnlyOwnRequisitions(user) && r.submittedById !== user.id) redirect("/requisitions");
+
+  // warehouse stock, to suggest "the warehouse has this" while the requisition is being costed
+  const canCostNow = ["PM", "OWNER", "ACCOUNTING", "PURCHASING"].includes(user.role) && ["SUBMITTED", "UNDER_REVIEW"].includes(r.status);
+  const stock =
+    canCostNow && r.project
+      ? (await prisma.warehouseItem.findMany({ select: { id: true, name: true, unit: true, warehouse: true, currentQty: true }, orderBy: { name: "asc" } })).map((w) => ({
+          id: w.id, name: w.name, unit: w.unit, warehouse: w.warehouse, currentQty: Number(w.currentQty),
+        }))
+      : [];
+  const seesPrices = ["PM", "OWNER", "ACCOUNTING", "PURCHASING"].includes(user.role);
+  const buyingItems = r.items.filter((i) => !i.warehouseItemId);
+  const allFromWarehouse = r.items.length > 0 && buyingItems.length === 0;
 
   const auditTrail = await prisma.auditLog.findMany({
     where: { entityType: "Requisition", entityId: r.id },
@@ -105,6 +118,8 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
         <ItemsCostingTable
           requisitionId={r.id}
           editable={canCost}
+          canUseStock={!!r.project}
+          stock={stock}
           items={r.items.map((i) => ({
             id: i.id,
             name: i.name,
@@ -114,6 +129,15 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
             estUnitCost: i.estUnitCost != null ? Number(i.estUnitCost) : null,
             remarks: i.remarks,
             selectedQuoteId: i.selectedQuoteId,
+            warehouse: i.warehouseItem
+              ? {
+                  itemId: i.warehouseItem.id,
+                  warehouse: i.warehouseItem.warehouse,
+                  currentQty: Number(i.warehouseItem.currentQty),
+                  unitPrice: seesPrices && i.warehouseItem.unitPrice != null ? Number(i.warehouseItem.unitPrice) : null,
+                  issued: !!i.issuedMovementId,
+                }
+              : null,
             quotes: i.quotes.map((q) => ({
               id: q.id,
               supplier: q.supplier,
@@ -150,6 +174,10 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
               <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">
                 Approved by {r.approvedBy.name} on {fmtDateTime(r.approvedAt)} — cost committed
                 to project budget.
+                {r.items.some((i) => i.issuedMovementId) &&
+                  (allFromWarehouse
+                    ? " Everything came from the warehouse stock, so nothing is left to buy."
+                    : " The items from the warehouse were issued to the site; the rest is bought through the purchase order.")}
               </p>
             )}
             {canApprove && (
@@ -157,6 +185,13 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
                 <p className="mb-2 text-xs text-ink-500">
                   Owner approval {r.estimatedCost ? "" : "(consider costing first)"}
                 </p>
+                {r.items.some((i) => i.warehouseItemId) && (
+                  <p className="mb-2 rounded-lg bg-emerald-50 p-2 text-xs text-emerald-800">
+                    Approving takes {r.items.filter((i) => i.warehouseItemId).map((i) => `${Number(i.qty)} ${i.unit} ${i.name}`).join(", ")} out of the
+                    warehouse and logs it to {r.project?.name ?? "the project"} automatically.
+                    {allFromWarehouse ? " Nothing is left to buy, so no purchase order is needed." : ""}
+                  </p>
+                )}
                 <ApproveRejectButtons requisitionId={r.id} />
               </div>
             )}
@@ -184,7 +219,7 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
                 </p>
                 <CreatePoForm
                   requisitionId={r.id}
-                  initialItems={r.items.map((i) => ({
+                  initialItems={buyingItems.map((i) => ({
                     name: i.name,
                     qty: Number(i.qty),
                     unit: i.unit,

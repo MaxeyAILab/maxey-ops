@@ -11,6 +11,8 @@ const itemSchema = z.object({
   spec: z.string().max(500).optional().or(z.literal("")),
   qty: z.coerce.number().positive(),
   unit: z.string().min(1).max(30),
+  /** taken from this warehouse item instead of bought — issued to the project when the Owner approves */
+  warehouseItemId: z.string().optional().or(z.literal("")),
 });
 
 const createSchema = z.object({
@@ -50,6 +52,15 @@ export const POST = handleApi(async (req: NextRequest) => {
 
   // Entries that arrive well after their device timestamp came through the
   // offline queue — flag them so reviewers know the capture context.
+  // Lines taken from the warehouse: only for a project (the stock is issued to that site), and the item must exist
+  const warehouseIds = Array.from(new Set(body.items.map((i) => i.warehouseItemId).filter((x): x is string => !!x)));
+  const warehouseItems = warehouseIds.length ? await prisma.warehouseItem.findMany({ where: { id: { in: warehouseIds } } }) : [];
+  if (warehouseIds.length) {
+    if (!project) throw new ApiError(400, "Materials can only be taken from the warehouse for a project or job — pick one in 'Charge to'");
+    if (warehouseItems.length !== warehouseIds.length) throw new ApiError(400, "One of the warehouse items no longer exists — remove the link and try again");
+  }
+  const fromStock = new Map(warehouseItems.map((w) => [w.id, w]));
+
   const offlineSynced = Date.now() - body.submittedAt.getTime() > 2 * 60_000;
 
   const requisition = await prisma.requisition.create({
@@ -64,12 +75,16 @@ export const POST = handleApi(async (req: NextRequest) => {
       notes: body.notes || null,
       offlineSynced,
       items: {
-        create: body.items.map((i) => ({
-          name: i.name,
-          spec: i.spec || null,
-          qty: i.qty,
-          unit: i.unit,
-        })),
+        create: body.items.map((i) => {
+          const w = i.warehouseItemId ? fromStock.get(i.warehouseItemId) : undefined;
+          return {
+            name: w ? w.name : i.name,
+            spec: i.spec || null,
+            qty: i.qty,
+            unit: w ? w.unit : i.unit,
+            warehouseItemId: w ? w.id : null,
+          };
+        }),
       },
     },
     include: { items: true },
@@ -81,7 +96,7 @@ export const POST = handleApi(async (req: NextRequest) => {
     actorId: user.id,
     actorName: user.name,
     action: "REQUISITION_SUBMITTED",
-    diff: { project: projectLabel, items: body.items.length, offlineSynced },
+    diff: { project: projectLabel, items: body.items.length, fromWarehouse: body.items.filter((i) => i.warehouseItemId).length, offlineSynced },
   });
   // Replaces the "call/text Jacob" step (Spec 6.2)
   await notifyOwner(
