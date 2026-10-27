@@ -122,7 +122,7 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
     const later = await prisma.delivery.findFirst({ where: { poId: po.id, createdAt: { gt: d.createdAt }, OR: [{ needsConfirmation: false }, { confirmedAt: { not: null } }] }, select: { id: true } });
     if (later) throw new ApiError(400, "A later delivery was recorded for this PO after this one, so this one is history. Accepting it would cut the PO back to what it received — accept (or correct) the latest delivery instead");
     if (!d.discrepancies) throw new ApiError(400, "This delivery already tallies with the PO — there is nothing to accept");
-    const poItems = (po.items as unknown as PoLine[]).map((i) => ({ name: i.name, qty: Number(i.qty), unit: i.unit, unitCost: Number(i.unitCost) }));
+    const poItems = (po.items as unknown as PoLine[]).map((i) => ({ name: i.name, qty: Number(i.qty), unit: i.unit, unitCost: Number(i.unitCost), fromWarehouse: !!i.fromWarehouse }));
     const plan = planAdjustment(poItems, stored);
     if (body.expectedTotalAfter !== undefined && Math.abs(body.expectedTotalAfter - plan.totalAfter) > 0.005) {
       throw new ApiError(409, "The PO changed since you opened this — close the window and look again");

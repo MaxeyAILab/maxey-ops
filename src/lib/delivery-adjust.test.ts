@@ -94,3 +94,19 @@ describe("adjustRequisitionItems", () => {
     expect(r.unmatched).toEqual(["Gravel"]);
   });
 });
+
+describe("planAdjustment — items issued from the warehouse", () => {
+  it("never changes them: the stock was already issued, so a short count does not shrink the PO line", () => {
+    const po = [
+      { name: "Primer", qty: 4, unit: "pail", unitCost: 0, fromWarehouse: true },
+      { name: "Paint", qty: 2, unit: "pcs", unitCost: 100 },
+    ];
+    const plan = planAdjustment(po, [
+      { item: "Primer", orderedQty: 4, receivedQty: 3, ok: true },
+      { item: "Paint", orderedQty: 2, receivedQty: 1, ok: true },
+    ]);
+    expect(plan.lines.map((l) => l.item)).toEqual(["Paint"]);
+    expect(plan.poItems[0].qty).toBe(4);
+    expect(plan.totalAfter).toBe(100);
+  });
+});

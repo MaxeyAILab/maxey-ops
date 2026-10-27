@@ -176,8 +176,8 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
                 to project budget.
                 {r.items.some((i) => i.issuedMovementId) &&
                   (allFromWarehouse
-                    ? " Everything came from the warehouse stock, so nothing is left to buy."
-                    : " The items from the warehouse were issued to the site; the rest is bought through the purchase order.")}
+                    ? " Everything comes from the warehouse stock, so nothing is bought. It still has to be verified on the Deliveries page when it reaches the site."
+                    : " The items from the warehouse were issued to the site; the rest is bought through the purchase order. Both are verified on the Deliveries page.")}
               </p>
             )}
             {canApprove && (
@@ -189,7 +189,7 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
                   <p className="mb-2 rounded-lg bg-emerald-50 p-2 text-xs text-emerald-800">
                     Approving takes {r.items.filter((i) => i.warehouseItemId).map((i) => `${Number(i.qty)} ${i.unit} ${i.name}`).join(", ")} out of the
                     warehouse and logs it to {r.project?.name ?? "the project"} automatically.
-                    {allFromWarehouse ? " Nothing is left to buy, so no purchase order is needed." : ""}
+                    {allFromWarehouse ? " Nothing is left to buy, so there is no purchase — but delivery to the site still has to be verified." : " Its delivery to the site is verified together with the purchase."}
                   </p>
                 )}
                 <ApproveRejectButtons requisitionId={r.id} />

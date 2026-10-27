@@ -6,6 +6,7 @@ import { notify } from "@/lib/notify";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
 import { warehouseLabel } from "@/lib/warehouses";
+import { nextPoNumber, WAREHOUSE_SUPPLIER } from "@/lib/po-number";
 import { applyMaterialMove } from "@/lib/inventory-requests";
 import { planWarehouseUse, purchaseEstimate, warehouseShortfalls } from "@/lib/requisition-warehouse";
 
@@ -215,10 +216,9 @@ export const PATCH = handleApi(
       const issued: { item: string; qty: number; unit: string; from: string; movementId: string }[] = [];
 
       const updated = await prisma.$transaction(async (db) => {
-        // nothing left to buy: the requisition is complete once the stock is issued
         const claim = await db.requisition.updateMany({
           where: { id: params.id, status: { in: ["SUBMITTED", "UNDER_REVIEW"] } },
-          data: { status: buying.length === 0 && fromWarehouse.length > 0 ? "DELIVERED" : "APPROVED", approvedById: user.id, approvedAt: new Date() },
+          data: { status: "APPROVED", approvedById: user.id, approvedAt: new Date() },
         });
         if (claim.count !== 1) throw new ApiError(409, "This requisition was just decided by someone else — reload the page");
 
@@ -256,6 +256,22 @@ export const PATCH = handleApi(
             await db.requisitionItem.update({ where: { id: line.id }, data: { issuedMovementId: movement.id } });
             issued.push({ item: w.name, qty, unit: w.unit, from: warehouseLabel(w.warehouse), movementId: movement.id });
           }
+        }
+        // Nothing is bought: there is no purchase to make, but the stock still has to reach the site and be verified like any
+        // delivery. So a PO at no cost is opened for it (the cost is already charged by the warehouse issue); the requisition
+        // only becomes Delivered once the driver verifies and the receiver confirms, same as every other delivery.
+        if (buying.length === 0 && fromWarehouse.length > 0) {
+          await db.purchaseOrder.create({
+            data: {
+              poNumber: await nextPoNumber(db),
+              requisitionId: params.id,
+              supplier: WAREHOUSE_SUPPLIER,
+              items: fromWarehouse.map((l) => ({ name: l.name, qty: Number(l.qty), unit: l.unit, unitCost: 0, fromWarehouse: true })) as never,
+              totalCost: 0,
+              createdById: user.id,
+            },
+          });
+          await db.requisition.update({ where: { id: params.id }, data: { status: "PO_ISSUED" } });
         }
         return db.requisition.findUniqueOrThrow({ where: { id: params.id } });
       });

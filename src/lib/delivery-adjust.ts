@@ -17,6 +17,8 @@ export interface PoLine {
   qty: number;
   unit: string;
   unitCost: number;
+  /** issued from warehouse stock (at no cost on the PO): an acceptance never changes these — the stock was already issued */
+  fromWarehouse?: boolean;
 }
 
 const cents = (n: number) => Math.round(n * 100) / 100;
@@ -66,7 +68,7 @@ export function planAdjustment(poItems: PoLine[], checklist: ChecklistRow[]): Ad
   const lines: AdjustLine[] = [];
   const next = poItems.map((p) => {
     const to = received.get(key(p.name));
-    if (to === undefined || to === Number(p.qty)) return { ...p };
+    if (p.fromWarehouse || to === undefined || to === Number(p.qty)) return { ...p };
     lines.push({ item: p.name, unit: p.unit, unitCost: Number(p.unitCost), from: Number(p.qty), to, costChange: cents(cents(to * Number(p.unitCost)) - cents(Number(p.qty) * Number(p.unitCost))) });
     return { ...p, qty: to };
   });

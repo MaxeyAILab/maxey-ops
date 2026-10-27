@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
+import { nextPoNumber } from "@/lib/po-number";
 
 const poItemSchema = z.object({
   name: z.string().min(1),
@@ -41,27 +42,26 @@ export const POST = handleApi(async (req: NextRequest) => {
   }
 
   // Lines taken from the warehouse were issued from stock when the requisition was approved — buying them again would charge twice.
-  const reqItems = await prisma.requisitionItem.findMany({ where: { requisitionId: requisition.id }, select: { name: true, warehouseItemId: true } });
+  const reqItems = await prisma.requisitionItem.findMany({ where: { requisitionId: requisition.id }, select: { name: true, qty: true, unit: true, warehouseItemId: true } });
   const bought = new Set(reqItems.filter((i) => !i.warehouseItemId).map((i) => i.name.trim().toLowerCase()));
   const fromStock = reqItems.filter((i) => i.warehouseItemId && !bought.has(i.name.trim().toLowerCase())).map((i) => i.name.trim().toLowerCase());
   const doubled = body.items.find((i) => fromStock.includes(i.name.trim().toLowerCase()));
   if (doubled) throw new ApiError(400, `${doubled.name} is taken from the warehouse stock, not bought — remove it from the PO`);
 
   const totalCost = body.items.reduce((sum, i) => sum + i.qty * i.unitCost, 0);
-  const year = new Date().getFullYear();
-  // one more than the highest number this year — counting POs would reuse a number once an earlier PO has been deleted
-  const thisYear = await prisma.purchaseOrder.findMany({ where: { poNumber: { startsWith: `PO-${year}-` } }, select: { poNumber: true } });
-  const highest = thisYear.reduce((m, p) => Math.max(m, Number(p.poNumber.slice(`PO-${year}-`.length)) || 0), 0);
-  const poNumber = `PO-${year}-${String(highest + 1).padStart(4, "0")}`;
+  // The warehouse lines ride on the same PO at no cost (they are charged when issued), so that what leaves the warehouse is
+  // verified on delivery like everything else.
+  const warehouseLines = reqItems.filter((i) => i.warehouseItemId).map((i) => ({ name: i.name, qty: Number(i.qty), unit: i.unit, unitCost: 0, fromWarehouse: true }));
 
   const po = await prisma.$transaction(async (db) => {
+    const poNumber = await nextPoNumber(db);
     const po = await db.purchaseOrder.create({
       data: {
         poNumber,
         requisitionId: body.requisitionId,
         supplier: body.supplier,
         deliveryDate: body.deliveryDate,
-        items: body.items,
+        items: [...body.items, ...warehouseLines],
         totalCost,
         createdById: user.id,
       },
@@ -80,7 +80,7 @@ export const POST = handleApi(async (req: NextRequest) => {
     actorName: user.name,
     action: "PO_CREATED",
     diff: {
-      poNumber,
+      poNumber: po.poNumber,
       supplier: body.supplier,
       totalCost,
       project: projectOrCategoryLabel(requisition),

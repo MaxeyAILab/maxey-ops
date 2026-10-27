@@ -62,7 +62,7 @@ function ownerData(d: { id: string; driverName: string | null; recipientName: st
     accepted: !!d.acceptedAt,
     awaiting: d.needsConfirmation && !d.confirmedAt,
     photos: Array.isArray(d.photos) ? (d.photos as string[]) : [],
-    poItems: ((d.po.items as PoLine[]) ?? []).map((i) => ({ name: i.name, qty: Number(i.qty), unit: i.unit, unitCost: Number(i.unitCost) })),
+    poItems: ((d.po.items as PoLine[]) ?? []).map((i) => ({ name: i.name, qty: Number(i.qty), unit: i.unit, unitCost: Number(i.unitCost), fromWarehouse: !!i.fromWarehouse })),
   };
 }
 
