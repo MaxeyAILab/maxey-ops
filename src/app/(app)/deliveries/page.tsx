@@ -50,7 +50,7 @@ function adjustmentText(adj: unknown): string | null {
 }
 
 /** What the Owner's buttons on a delivery need: its checklist, whether it tallies, whether it was accepted, and the PO's lines. */
-function ownerData(d: { id: string; driverName: string | null; recipientName: string | null; checklist: unknown; discrepancies: string | null; acceptedAt: Date | null; needsConfirmation: boolean; confirmedAt: Date | null; photos: unknown; po: { poNumber: string; items: unknown } }): OwnerDelivery {
+function ownerData(d: { id: string; driverName: string | null; recipientName: string | null; checklist: unknown; discrepancies: string | null; acceptedAt: Date | null; needsConfirmation: boolean; confirmedAt: Date | null; photos: unknown; po: { poNumber: string; items: unknown } }, superseded = false): OwnerDelivery {
   return {
     id: d.id,
     poNumber: d.po.poNumber,
@@ -58,6 +58,7 @@ function ownerData(d: { id: string; driverName: string | null; recipientName: st
     recipientName: d.recipientName,
     checklist: ((d.checklist as ChecklistRow[]) ?? []).map((c) => ({ item: c.item, orderedQty: Number(c.orderedQty), receivedQty: Number(c.receivedQty), ok: !!c.ok, remarks: c.remarks ?? "" })),
     hasDiscrepancy: !!d.discrepancies,
+    superseded,
     accepted: !!d.acceptedAt,
     awaiting: d.needsConfirmation && !d.confirmedAt,
     photos: Array.isArray(d.photos) ? (d.photos as string[]) : [],
@@ -100,6 +101,8 @@ export default async function DeliveriesPage() {
   const canVerify = hasTab && canVerifyDelivery(user.role, user.department);
   const isOwner = user.role === "OWNER";
   const awaitingByPo = new Map(awaiting.map((d) => [d.poId, d]));
+  // an earlier short delivery is made up by a later delivery of the same PO that was recorded and confirmed
+  const madeUpLater = (d: (typeof deliveries)[number]) => deliveries.find((x) => x.poId === d.poId && x.createdAt > d.createdAt && !isAwaitingConfirmation(x));
   const verifierNames = new Map(
     (
       await prisma.user.findMany({
@@ -317,7 +320,7 @@ export default async function DeliveriesPage() {
                     ⬇ Download
                   </a>
                   <ShareButton src={`/api/deliveries/${d.id}/pdf`} filename={`Delivery-${d.po.poNumber}.pdf`} title={`Delivery ${d.po.poNumber}`} />
-                  {isOwner && <OwnerDeliveryActions d={ownerData(d)} />}
+                  {isOwner && <OwnerDeliveryActions d={ownerData(d, !!madeUpLater(d))} />}
                   {isOwner && <DeleteDeliveryButton deliveryId={d.id} poNumber={d.po.poNumber} />}
                 </div>
               </div>
@@ -356,6 +359,12 @@ export default async function DeliveriesPage() {
                   {d.discrepancies && <p className="whitespace-pre-wrap text-xs text-ink-500">What did not tally: {d.discrepancies}</p>}
                   {adjustmentText(d.adjustment) && <p className="text-xs text-ink-600">{adjustmentText(d.adjustment)}</p>}
                 </div>
+              ) : d.discrepancies && madeUpLater(d) ? (
+                <p className="mt-1 whitespace-pre-wrap rounded bg-ink-100 p-2 text-xs text-ink-600">
+                  ↻ Was short: {d.discrepancies}
+                  {" "}
+                  Made up by the later delivery of {fmtDate(madeUpLater(d)!.verifiedAt ?? madeUpLater(d)!.createdAt)}.
+                </p>
               ) : d.discrepancies ? (
                 <p className="mt-1 whitespace-pre-wrap rounded bg-amber-50 p-2 text-xs text-amber-700">
                   ⚠ {d.discrepancies}
@@ -422,6 +431,8 @@ export default async function DeliveriesPage() {
                           <Td>
                             {d.acceptedAt ? (
                               <span className="text-xs font-medium text-emerald-700">✓ Accepted by Owner</span>
+                            ) : d.discrepancies && madeUpLater(d) ? (
+                              <span className="text-xs font-medium text-ink-500">↻ Made up later</span>
                             ) : d.discrepancies ? (
                               <span className="text-xs font-medium text-amber-700">⚠ Discrepancy</span>
                             ) : (
@@ -440,7 +451,7 @@ export default async function DeliveriesPage() {
                             </span>
                             {isOwner && (
                               <span className="ml-2 inline-flex flex-wrap items-center gap-x-3">
-                                <OwnerDeliveryActions d={ownerData(d)} />
+                                <OwnerDeliveryActions d={ownerData(d, !!madeUpLater(d))} />
                                 <DeleteDeliveryButton deliveryId={d.id} poNumber={d.po.poNumber} />
                               </span>
                             )}

@@ -118,6 +118,9 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
   if (body.action === "accept") {
     if (d.needsConfirmation && !d.confirmedAt) throw new ApiError(400, "This delivery is still waiting for the receiver's confirmation — it can be accepted once that is done");
     if (d.acceptedAt) throw new ApiError(409, "This delivery was already accepted");
+    // accepting sets the PO to what THIS delivery received — wrong when a later delivery has made up the shortage
+    const later = await prisma.delivery.findFirst({ where: { poId: po.id, createdAt: { gt: d.createdAt }, OR: [{ needsConfirmation: false }, { confirmedAt: { not: null } }] }, select: { id: true } });
+    if (later) throw new ApiError(400, "A later delivery was recorded for this PO after this one, so this one is history. Accepting it would cut the PO back to what it received — accept (or correct) the latest delivery instead");
     if (!d.discrepancies) throw new ApiError(400, "This delivery already tallies with the PO — there is nothing to accept");
     const poItems = (po.items as unknown as PoLine[]).map((i) => ({ name: i.name, qty: Number(i.qty), unit: i.unit, unitCost: Number(i.unitCost) }));
     const plan = planAdjustment(poItems, stored);

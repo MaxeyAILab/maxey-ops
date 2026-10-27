@@ -25,6 +25,8 @@ export interface OwnerDelivery {
   recipientName: string | null;
   checklist: ChecklistRow[];
   hasDiscrepancy: boolean;
+  /** a later delivery was recorded and confirmed for the same PO, so this one is history — it must not be accepted (it would cut the PO back to what it received) */
+  superseded: boolean;
   accepted: boolean;
   /** verified by the driver but not yet confirmed by the receiver */
   awaiting: boolean;
@@ -40,7 +42,7 @@ export function OwnerDeliveryActions({ d }: { d: OwnerDelivery }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
       <EditDelivery d={d} />
-      {d.hasDiscrepancy && !d.accepted && !d.awaiting && <AcceptDelivery d={d} />}
+      {d.hasDiscrepancy && !d.accepted && !d.awaiting && !d.superseded && <AcceptDelivery d={d} />}
       {d.accepted && <UndoAccept d={d} />}
     </span>
   );
