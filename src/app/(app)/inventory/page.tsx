@@ -9,7 +9,7 @@ import { AddToolForm, ToolActions } from "@/components/tool-forms";
 import { TOOL_CONDITION_LABEL } from "@/lib/tool-condition";
 import { NO_TOOL_CATEGORY, TOOL_CATEGORIES, TOOL_CATEGORY_LABEL, summarizeToolCategories, toolCategorySlug, type ToolCategoryKey } from "@/lib/tool-category";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
-import { canAccess, canAddInventoryCatalog, canApproveInventoryRequest, canLogInventoryMovement, canSeeStockPrices } from "@/lib/access";
+import { canAccess, canAddInventoryCatalog, canApproveInventoryRequest, canLogInventoryMovement, canLogInventoryUsage, canSeeStockPrices } from "@/lib/access";
 import { issuedFromWarehouse, lineValue, summarizeValue } from "@/lib/warehouse-value";
 import { php } from "@/lib/format";
 import { manilaDayKey } from "@/lib/time-rules";
@@ -95,11 +95,10 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
     for (const r of rows) unpricedByItem.set(r.itemId, r._count);
   }
   const actorIds = [...new Set([...movements, ...toolMovements, ...pendingStock, ...pendingTools].map((m) => m.actorId))];
-  const actorNames = new Map(
-    (await prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } })).map(
-      (u) => [u.id, u.name]
-    )
-  );
+  const askers = await prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true, inventoryRestricted: true } });
+  const actorNames = new Map(askers.map((u) => [u.id, u.name]));
+  // a person whose inventory is limited: only the Owner decides their requests
+  const limitedAskers = new Set(askers.filter((u) => u.inventoryRestricted).map((u) => u.id));
 
   const items = allItems.filter((i) => i.warehouse === wh);
   const tools = allTools.filter((t) => t.warehouse === wh);
@@ -163,7 +162,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                   </div>
                   <RequestPhotos kind="stock" id={m.id} photos={photoList(m.photos)} label={fmtDateTime(m.createdAt)} canAdd={m.actorId === user.id || canApprove} />
                 </div>
-                <RequestDecision kind="stock" id={m.id} canDecide={canApprove && (isOwner || m.actorId !== user.id)} mine={m.actorId === user.id} />
+                <RequestDecision kind="stock" id={m.id} canDecide={canApprove && (isOwner || (m.actorId !== user.id && !limitedAskers.has(m.actorId)))} mine={m.actorId === user.id} />
               </div>
             ))}
             {pendingTools.map((m) => (
@@ -179,7 +178,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                   </div>
                   <RequestPhotos kind="tool" id={m.id} photos={photoList(m.photos)} label={fmtDateTime(m.createdAt)} canAdd={m.actorId === user.id || canApprove} />
                 </div>
-                <RequestDecision kind="tool" id={m.id} canDecide={canApprove && (isOwner || m.actorId !== user.id)} mine={m.actorId === user.id} />
+                <RequestDecision kind="tool" id={m.id} canDecide={canApprove && (isOwner || (m.actorId !== user.id && !limitedAskers.has(m.actorId)))} mine={m.actorId === user.id} />
               </div>
             ))}
           </CardBody>
@@ -255,7 +254,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
           <CardBody>
             {canMove ? (
               projectOptions.length > 0 ? (
-                <MovementForm key={wh} defaultWarehouse={wh} items={pickerItems} projects={projectOptions} recentIds={recentIds} instant={isOwner} showValue={showPrices} />
+                <MovementForm key={wh} canLogUsage={canLogInventoryUsage(user)} defaultWarehouse={wh} items={pickerItems} projects={projectOptions} recentIds={recentIds} instant={isOwner} showValue={showPrices} />
               ) : (
                 <p className="text-sm text-ink-400">There is no active project to log a movement for yet.</p>
               )
@@ -368,6 +367,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                     }))}
                     otherProjects={otherProjects}
                     instant={isOwner}
+                    canLogUsage={canLogInventoryUsage(user)}
                   />
                 )}
               </div>

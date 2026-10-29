@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Department, Role } from "@prisma/client";
-import { canAddInventoryCatalog, canApproveInventoryRequest, canDeleteTool, canLogInventoryMovement, canVerifyDelivery, isTimekeeperOrLeadman } from "./access";
+import { canAddInventoryCatalog, canApproveInventoryRequest, canDeleteTool, canLogInventoryMovement, canLogInventoryUsage, canVerifyDelivery, isTimekeeperOrLeadman } from "./access";
 
 describe("who can verify a delivery", () => {
   it("includes a driver whose account is Office staff in the Driver department", () => {
@@ -133,5 +133,14 @@ describe("deleting tools and equipment", () => {
     expect(canDeleteTool(person("DRIVER", "DRIVER"), 0)).toBe(false);
     expect(canDeleteTool(person("OFFICE", "SITE", "Timekeeper"), 0)).toBe(false);
     expect(canDeleteTool(person("OFFICE", "OFFICE", null, false), 0)).toBe(false); // office staff without the Inventory tab
+  });
+});
+
+describe("logging usage on the Inventory tab", () => {
+  it("is allowed for everyone except a person whose inventory the Owner has limited", () => {
+    expect(canLogInventoryUsage({})).toBe(true);
+    expect(canLogInventoryUsage({ inventoryRestricted: false })).toBe(true);
+    expect(canLogInventoryUsage({ inventoryRestricted: null })).toBe(true);
+    expect(canLogInventoryUsage({ inventoryRestricted: true })).toBe(false);
   });
 });

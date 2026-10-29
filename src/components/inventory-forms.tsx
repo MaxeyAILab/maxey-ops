@@ -135,6 +135,7 @@ export function MovementForm({
   instant = false,
   showValue = false,
   defaultWarehouse = "MAIN",
+  canLogUsage = true,
 }: {
   /** every stock item, with the warehouse that keeps it */
   items: ItemOption[];
@@ -147,9 +148,12 @@ export function MovementForm({
   instant?: boolean;
   /** the warehouse being looked at on the page — pre-selected */
   defaultWarehouse?: WarehouseValue;
+  /** a person whose inventory is limited cannot log "used on site" */
+  canLogUsage?: boolean;
 }) {
   const router = useRouter();
   const [type, setType] = useState<(typeof MOVEMENT_TYPES)[number]["value"]>("WAREHOUSE_TO_SITE");
+  const typeChoices = MOVEMENT_TYPES.filter((t) => canLogUsage || t.value !== "CONSUMED_ON_SITE");
   const [warehouse, setWarehouse] = useState<WarehouseValue>(defaultWarehouse);
   const [pickerKey, setPickerKey] = useState(0); // a new key clears the chosen item after each movement is logged
   const [chosen, setChosen] = useState<PickItem | null>(null);
@@ -195,7 +199,7 @@ export function MovementForm({
         qty: Number(fd.get("qty")),
         fromProjectId: rule.from ? fd.get("fromProjectId") : undefined,
         toProjectId: rule.to ? fd.get("toProjectId") : undefined,
-        note: fd.get("note"),
+        note: fd.get("note") ?? "",
         ...(canBeNew && (excessChecked || isNew) ? { excess: true } : {}),
         ...(type === "SITE_TO_WAREHOUSE" || type === "SITE_TO_SITE" ? { photos: proof } : {}),
       },
@@ -236,7 +240,7 @@ export function MovementForm({
             setIsNew(false);
           }}
         >
-          {MOVEMENT_TYPES.map((t) => (
+          {typeChoices.map((t) => (
             <option key={t.value} value={t.value}>
               {t.label}
             </option>
@@ -403,15 +407,18 @@ export function ProjectMaterialQuickActions({
   stocks,
   otherProjects,
   instant = false,
+  canLogUsage = true,
 }: {
   projectId: string;
   stocks: OnSiteStockRow[];
   otherProjects: ProjectOption[];
   /** the Owner's returns and transfers are approved on the spot */
   instant?: boolean;
+  /** a person whose inventory is limited cannot log usage */
+  canLogUsage?: boolean;
 }) {
   const router = useRouter();
-  const [action, setAction] = useState<"usage" | "return" | "transfer">("usage");
+  const [action, setAction] = useState<"usage" | "return" | "transfer">(canLogUsage ? "usage" : "return");
   const [pickerKey, setPickerKey] = useState(0);
   const pickItems = stocks.map((st) => ({ id: st.itemId, name: st.name, unit: st.unit, category: st.category ?? "OTHERS", qty: st.qty }));
   const [proof, setProof] = useState<string[]>([]);
@@ -442,7 +449,7 @@ export function ProjectMaterialQuickActions({
         qty: Number(fd.get("qty")),
         fromProjectId: projectId,
         toProjectId: action === "transfer" ? fd.get("toProjectId") : undefined,
-        note: fd.get("note"),
+        note: fd.get("note") ?? "",
         ...(action !== "usage" ? { photos: proof } : {}),
       },
     });
@@ -473,7 +480,7 @@ export function ProjectMaterialQuickActions({
       <div>
         <Label>Action</Label>
         <Select value={action} onChange={(e) => setAction(e.target.value as typeof action)}>
-          <option value="usage">Log usage</option>
+          {canLogUsage && <option value="usage">Log usage</option>}
           <option value="return">Return to warehouse (request)</option>
           <option value="transfer">Transfer to project (request)</option>
         </Select>

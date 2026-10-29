@@ -231,3 +231,35 @@ export function PettyCashAccessToggle({ userId, name, kind, allowed }: { userId:
     </label>
   );
 }
+
+/**
+ * Inventory limits (People page): a limited person still issues, returns and transfers materials and tools, but cannot log
+ * usage, and only the Owner approves the returns and transfers they request.
+ */
+export function InventoryLimitToggle({ userId, name, limited }: { userId: string; name: string; limited: boolean }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function change(next: boolean) {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    const res = await fetch(`/api/people/${userId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "set-inventory-limits", allowed: next }),
+    });
+    setBusy(false);
+    if (res.ok) router.refresh();
+    else setError(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? "Failed");
+  }
+
+  return (
+    <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-ink-700" title="No usage logging; the Owner alone approves their returns and transfers">
+      <input type="checkbox" checked={limited} disabled={busy} onChange={(e) => change(e.target.checked)} aria-label={`${name}'s inventory is limited`} />
+      {limited ? "Limited" : "No"}
+      {error && <span className="text-red-600">{error}</span>}
+    </label>
+  );
+}

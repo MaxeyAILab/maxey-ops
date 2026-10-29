@@ -84,6 +84,10 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
 
   if (!canApproveInventoryRequest(user)) throw new ApiError(403, "Only office staff can approve or reject this");
   if (mine && user.role !== "OWNER") throw new ApiError(403, "You can't approve your own request — another office staff member must");
+  if (user.role !== "OWNER") {
+    const asker = await prisma.user.findUnique({ where: { id: m.actorId }, select: { name: true, inventoryRestricted: true } });
+    if (asker?.inventoryRestricted) throw new ApiError(403, `Only the Owner can approve or reject ${asker.name}'s requests`);
+  }
 
   if (body.action === "reject") {
     const done = await prisma.inventoryMovement.updateMany({ where: { id: m.id, status: "PENDING" }, data: { status: "REJECTED", decidedById: user.id, decidedByName: user.name, decidedAt: now, rejectedReason: body.reason } });

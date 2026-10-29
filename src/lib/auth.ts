@@ -27,6 +27,8 @@ export interface SessionUser {
   canRequisition: boolean;
   /** Sees only the requisitions they raised themselves (see seesOnlyOwnRequisitions). */
   ownRequisitionsOnly: boolean;
+  /** Inventory limits set on the People page: cannot log usage, and only the Owner approves their requests. */
+  inventoryRestricted: boolean;
   /** The Owner has switched this person on to approve / to release petty cash (People page). */
   canApprovePettyCash: boolean;
   canReleasePettyCash: boolean;
@@ -163,6 +165,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       customMenus: true,
       canRequisition: true,
       ownRequisitionsOnly: true,
+      inventoryRestricted: true,
       canApprovePettyCash: true,
       canReleasePettyCash: true,
       canManageCash: true,
@@ -185,6 +188,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     ...withOwnRequisitionsTab(dbUser),
     canRequisition: dbUser.canRequisition,
     ownRequisitionsOnly: dbUser.ownRequisitionsOnly,
+    inventoryRestricted: dbUser.inventoryRestricted,
     canApprovePettyCash: dbUser.canApprovePettyCash,
     canReleasePettyCash: dbUser.canReleasePettyCash,
     canManageCash: dbUser.canManageCash,

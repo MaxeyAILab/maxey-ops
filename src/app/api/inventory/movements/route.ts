@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
-import { canLogInventoryMovement } from "@/lib/access";
+import { canLogInventoryMovement, canLogInventoryUsage } from "@/lib/access";
 import { savePhotos } from "@/lib/storage";
 import { MAX_NEW_REQUEST_PHOTOS } from "@/lib/request-photos";
 import { WAREHOUSE_VALUES, warehouseLabel } from "@/lib/warehouses";
@@ -33,7 +33,7 @@ const createSchema = z.object({
   qty: z.coerce.number().positive(),
   fromProjectId: z.string().optional().or(z.literal("")),
   toProjectId: z.string().optional().or(z.literal("")),
-  note: z.string().max(300).optional().or(z.literal("")), // e.g. usage note: "poured column C4"
+  note: z.string().max(300).nullish().or(z.literal("")), // e.g. usage note: "poured column C4"
   photos: z.array(z.string()).max(MAX_NEW_REQUEST_PHOTOS).optional(), // compressed data URLs: what is being returned / transferred
 });
 
@@ -48,6 +48,7 @@ export const POST = handleApi(async (req: NextRequest) => {
   const user = await requireUser();
   if (!canLogInventoryMovement(user)) throw new ApiError(403, "Not authorized for this action");
   const body = createSchema.parse(await req.json());
+  if (body.type === "CONSUMED_ON_SITE" && !canLogInventoryUsage(user)) throw new ApiError(403, "You are not allowed to log usage — you can issue, return or transfer materials");
 
   const dup = await prisma.inventoryMovement.findUnique({
     where: { clientUuid: body.clientUuid },

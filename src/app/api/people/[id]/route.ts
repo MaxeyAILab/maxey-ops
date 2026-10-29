@@ -7,7 +7,7 @@ import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 
 const actionSchema = z.object({
-  action: z.enum(["deactivate", "reactivate", "reset-password", "set-requisition-access", "set-requisition-scope", "set-petty-cash-access"]),
+  action: z.enum(["deactivate", "reactivate", "reset-password", "set-requisition-access", "set-requisition-scope", "set-petty-cash-access", "set-inventory-limits"]),
   allowed: z.boolean().optional(),
   kind: z.enum(["approve", "release", "manage"]).optional(), // set-petty-cash-access: which switch
 });
@@ -54,6 +54,22 @@ export const PATCH = handleApi(
         actorId: user.id,
         actorName: user.name,
         action: body.allowed ? "REQUISITION_VIEW_LIMITED_TO_OWN" : "REQUISITION_VIEW_OPENED_TO_ALL",
+        diff: { name: target.name, role: target.role },
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    if (body.action === "set-inventory-limits") {
+      if (typeof body.allowed !== "boolean") throw new ApiError(400, "Say whether their inventory is limited");
+      if (target.role === "CLIENT") throw new ApiError(400, "A client account has no inventory access");
+      if (target.inventoryRestricted === body.allowed) return NextResponse.json({ ok: true, alreadyDone: true });
+      await prisma.user.update({ where: { id: target.id }, data: { inventoryRestricted: body.allowed } });
+      await audit({
+        entityType: "User",
+        entityId: target.id,
+        actorId: user.id,
+        actorName: user.name,
+        action: body.allowed ? "INVENTORY_LIMITED" : "INVENTORY_LIMITS_REMOVED",
         diff: { name: target.name, role: target.role },
       });
       return NextResponse.json({ ok: true });

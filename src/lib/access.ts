@@ -200,6 +200,12 @@ export function canLogInventoryMovement(u: InventoryPerson): boolean {
 }
 
 /**
+ * Whether this person may log "used on site" (consumption). Everyone who can log movements may, except a person the Owner has
+ * limited on the People page (Inventory limits) — they still issue, return and transfer, but not log usage (2026-10-29).
+ */
+export const canLogInventoryUsage = (u: { inventoryRestricted?: boolean | null }): boolean => !u.inventoryRestricted;
+
+/**
  * Who can approve (or reject) a return or transfer request on the Inventory tab: the Owner, PM and Purchasing, and office staff
  * who have the Inventory tab (2026-10-21). Nobody but the Owner approves their own request.
  */
