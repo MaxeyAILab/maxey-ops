@@ -9,6 +9,7 @@ import { clientIp, lockedError } from "@/lib/login-throttle";
 import { newSessionId, readPayload, type LoginTicket } from "@/lib/passkey";
 import type { Department, Role } from "@prisma/client";
 import { withOwnRequisitionsTab } from "@/lib/access";
+import { deviceSlot, sessionColumn, sessionIsCurrent } from "@/lib/device-slot";
 
 export interface SessionUser {
   id: string;
@@ -31,7 +32,7 @@ export interface SessionUser {
   canReleasePettyCash: boolean;
   /** Full Cash Expense access, as Accounting has it (People page switch). */
   canManageCash: boolean;
-  /** Single-device login tag, set for every role including the Owner. */
+  /** Single-device login tag, set for every role (the Owner holds one per device type: phone and computer). */
   sessionId?: string;
 }
 
@@ -75,11 +76,12 @@ export const authOptions: NextAuthOptions = {
         }
         await clearAttempts(attempt);
 
-        // Single-device login — every role, the Owner included. Each successful login
-        // overwrites currentSessionId, so whatever session a previous device was holding
-        // stops matching on its next request and getSessionUser() treats it as signed out.
+        // Single-device login. Each successful login overwrites the account's session id, so whatever session a previous
+        // device was holding stops matching on its next request and getSessionUser() treats it as signed out. The Owner may
+        // be signed in on two devices — one phone and one computer — so a phone sign-in uses its own slot (lib/device-slot).
         const sessionId = crypto.randomBytes(24).toString("hex");
-        await prisma.user.update({ where: { id: user.id }, data: { currentSessionId: sessionId } });
+        const column = sessionColumn(user.role, deviceSlot(req?.headers?.["user-agent"]));
+        await prisma.user.update({ where: { id: user.id }, data: { [column]: sessionId } });
 
         return {
           id: user.id,
@@ -105,7 +107,8 @@ export const authOptions: NextAuthOptions = {
         // A ticket works once: it only matches while the session id it carries is still the account's current one,
         // and redeeming swaps in a new id (so a copied ticket is dead the moment the real one is used).
         const sessionId = newSessionId();
-        const swapped = await prisma.user.updateMany({ where: { id: user.id, currentSessionId: ticket.sid }, data: { currentSessionId: sessionId } });
+        const column = sessionColumn(user.role, ticket.slot ?? "desktop");
+        const swapped = await prisma.user.updateMany({ where: { id: user.id, [column]: ticket.sid }, data: { [column]: sessionId } });
         if (swapped.count !== 1) return null;
         return { id: user.id, name: user.name, email: user.email, role: user.role, clientId: user.clientId, sessionId } as never;
       },
@@ -164,10 +167,11 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       canReleasePettyCash: true,
       canManageCash: true,
       currentSessionId: true,
+      mobileSessionId: true,
     },
   });
   if (!dbUser?.active) return null;
-  if (!dbUser.currentSessionId || dbUser.currentSessionId !== su.sessionId) {
+  if (!sessionIsCurrent(dbUser, su.sessionId)) {
     return null; // signed in from another device (or the password was reset) since this session started
   }
   return {

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { handleApi } from "@/lib/rbac";
 import { beginAttempt, clearAttempts, failAttempt } from "@/lib/login-guard";
 import { clientIp, lockedError } from "@/lib/login-throttle";
+import { deviceSlot, sessionColumn } from "@/lib/device-slot";
 import { CHALLENGE_COOKIE, TICKET_TTL_MS, clearChallenge, newSessionId, readPayload, relyingParty, signPayload, type ChallengePayload, type LoginTicket } from "@/lib/passkey";
 
 const schema = z.object({ response: z.object({ id: z.string().max(1024) }).passthrough() });
@@ -57,9 +58,11 @@ export const POST = handleApi(async (req: NextRequest) => {
 
   await prisma.passkey.update({ where: { id: passkey.id }, data: { counter: result.authenticationInfo.newCounter, lastUsedAt: new Date() } });
   // The fingerprint check passed: this becomes the person's one signed-in device (every other device is signed out).
+  // (The Owner may also stay signed in on one phone and one computer: the phone has its own slot.)
   const sid = newSessionId();
-  await prisma.user.update({ where: { id: passkey.userId }, data: { currentSessionId: sid } });
+  const slot = deviceSlot(req.headers.get("user-agent"));
+  await prisma.user.update({ where: { id: passkey.userId }, data: { [sessionColumn(passkey.user.role, slot)]: sid } });
   await clearAttempts(attempt);
-  const ticket = signPayload({ typ: "passkey-login", uid: passkey.userId, sid, exp: Date.now() + TICKET_TTL_MS } satisfies LoginTicket);
+  const ticket = signPayload({ typ: "passkey-login", uid: passkey.userId, sid, slot, exp: Date.now() + TICKET_TTL_MS } satisfies LoginTicket);
   return clearChallenge(NextResponse.json({ ticket }));
 });

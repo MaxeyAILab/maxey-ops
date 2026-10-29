@@ -82,6 +82,8 @@ export interface LoginTicket {
   uid: string;
   /** the session id written to the account when the fingerprint check passed; redeeming the ticket swaps it for a new one, so a ticket works once */
   sid: string;
+  /** which device the fingerprint check happened on — the Owner has a separate session for the phone */
+  slot?: "desktop" | "phone";
   exp: number;
 }
 

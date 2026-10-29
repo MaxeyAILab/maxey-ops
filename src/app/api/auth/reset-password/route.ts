@@ -40,6 +40,7 @@ export const POST = handleApi(async (req: NextRequest) => {
         mustChangePassword: false,
         // A reset signs the account out everywhere: whoever may have had the old password loses their session.
         currentSessionId: null,
+        mobileSessionId: null,
       },
     }),
     prisma.passwordResetToken.update({
