@@ -174,10 +174,10 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
               <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">
                 Approved by {r.approvedBy.name} on {fmtDateTime(r.approvedAt)} — cost committed
                 to project budget.
-                {r.items.some((i) => i.issuedMovementId) &&
+                {r.items.some((i) => i.warehouseItem) &&
                   (allFromWarehouse
-                    ? " Everything comes from the warehouse stock, so nothing is bought. It still has to be verified on the Deliveries page when it reaches the site."
-                    : " The items from the warehouse were issued to the site; the rest is bought through the purchase order. Both are verified on the Deliveries page.")}
+                    ? " Everything comes from the warehouse stock, so nothing is bought. The items are reserved; they reach the project's materials list only when the driver verifies the delivery and the receiver confirms it on the Deliveries page."
+                    : " The items from the warehouse are reserved and reach the project's materials list only when the driver verifies the delivery and the receiver confirms it; the rest is bought through the purchase order. Both are verified on the Deliveries page.")}
               </p>
             )}
             {canApprove && (

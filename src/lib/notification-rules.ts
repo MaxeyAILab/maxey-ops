@@ -67,6 +67,7 @@ export interface RecipientUser {
   canApprovePettyCash: boolean;
   canReleasePettyCash: boolean;
   canManageCash: boolean;
+  canApproveTallyOut: boolean;
 }
 
 /** Whether a person's tab access includes the tab a category lives in (always true for categories with no tab). */
@@ -76,9 +77,11 @@ export function hasCategoryMenu(u: RecipientUser, category: NotificationCategory
   return allowedMenus(u.role, u.department as never, u.customMenus, u.useCustomMenus).includes(menu);
 }
 
-export type AudienceToken = "cashApprovers" | "cashReleasers" | "cashCustodians" | "inventoryApprovers";
+export type AudienceToken = "cashApprovers" | "cashReleasers" | "cashCustodians" | "inventoryApprovers" | "tallyOutApprovers";
 
 const TOKEN_TEST: Record<AudienceToken, (u: RecipientUser) => boolean> = {
+  // whoever may approve a tally-out form: the Owner, and a person the Owner switched on
+  tallyOutApprovers: (u) => u.role === "OWNER" || u.canApproveTallyOut,
   cashApprovers: (u) => u.role === "OWNER" || u.canApprovePettyCash,
   cashReleasers: (u) => u.role === "OWNER" || u.canReleasePettyCash,
   cashCustodians: (u) => u.role === "OWNER" || u.role === "ACCOUNTING" || u.canManageCash,
@@ -159,6 +162,15 @@ export const EVENTS: Record<string, EventDef> = {
   TOOL_REQUEST_SUBMITTED: { category: "INVENTORY", tokens: ["inventoryApprovers"], title: "Tool request waiting for approval", body: bodyOf },
   TOOL_REQUEST_APPROVED: { category: "INVENTORY", roles: [], title: "Tool request approved", explicitTitle: "Your tool request was approved", body: bodyOf },
   TOOL_REQUEST_REJECTED: { category: "INVENTORY", roles: [], title: "Tool request rejected", explicitTitle: "Your tool request was rejected", body: bodyOf },
+
+  // ----- tally-out forms: materials leaving the warehouse for a project -----
+  TALLYOUT_SUBMITTED: { category: "INVENTORY", tokens: ["tallyOutApprovers"], title: "Tally-out form waiting for approval", body: bodyOf },
+  TALLYOUT_APPROVED: { category: "INVENTORY", roles: ["DRIVER"], title: "Tally-out approved — ready for the driver to verify", explicitTitle: "Your tally-out form was approved", body: bodyOf },
+  TALLYOUT_REJECTED: { category: "INVENTORY", roles: [], title: "Tally-out form rejected", explicitTitle: "Your tally-out form was rejected", body: bodyOf },
+  TALLYOUT_CANCELLED: { category: "INVENTORY", roles: [], title: "Tally-out form cancelled", body: bodyOf },
+  TALLYOUT_VERIFIED: { category: "INVENTORY", roles: [], title: "Tally-out verified by the driver — waiting for the receiver", explicitTitle: "A tally-out is waiting for your confirmation", body: bodyOf },
+  TALLYOUT_DELIVERED: { category: "INVENTORY", roles: [], title: "Tally-out delivered — materials added to the project", explicitTitle: "Your tally-out was received on site", body: bodyOf },
+  TALLYOUT_DISPUTED: { category: "INVENTORY", tokens: ["tallyOutApprovers"], title: "The receiver reported a problem with a tally-out", explicitTitle: "The receiver reported a problem with your delivery", body: bodyOf },
 
   // ----- cash expense: petty cash and cash advances -----
   PETTY_CASH_REQUESTED: { category: "CASH", tokens: ["cashApprovers"], title: "Petty cash request awaiting approval", body: bodyOf },

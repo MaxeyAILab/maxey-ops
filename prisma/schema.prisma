@@ -302,6 +302,7 @@ model User {
   position            String? // trade/position: Foreman, Mason, Carpenter, Welder, Driver, Office Admin…
   employeeNo          String?            @unique // company employee ID printed on the payslip, e.g. VCDC-016
   canRequisition      Boolean            @default(false) // the Owner lets this person raise material requisitions even though their role doesn't already allow it
+  canApproveTallyOut  Boolean            @default(false) // may approve tally-out forms (materials leaving the warehouse for a project), like the Owner
   inventoryRestricted Boolean            @default(false) // Inventory: may not log usage, and the Owner alone approves their return/transfer requests
   ownRequisitionsOnly Boolean            @default(false) // sees only the requisitions they raised themselves (Foremen always do); gives them the Requisitions tab
   canApprovePettyCash Boolean            @default(false) // the Owner lets this person approve petty cash requests (the Owner always can)
@@ -845,8 +846,11 @@ model InventoryMovement {
   newItem        Boolean        @default(false) // this movement created the item (it was not in the warehouse yet)
   deliveryId     String? // set when a verified delivery put the material on site: that delivery (kept in step with it if it is corrected or deleted)
   deliveryLine   String? // ...and the delivery line (the checklist item name) it came from
+  tallyOutId     String? // set when a confirmed tally-out form issued this from the warehouse to a project
 
   @@unique([deliveryId, deliveryLine])
+  @@unique([tallyOutId, itemId])
+  @@index([tallyOutId])
   @@index([status])
   @@index([deliveryId])
 }
@@ -1635,4 +1639,54 @@ model Passkey {
   lastUsedAt   DateTime?
 
   @@index([userId])
+}
+
+/// A tally-out form: materials leaving a warehouse for a project. Nothing reaches the project's materials list until the Owner (or a
+/// person allowed to) approves it, the driver verifies the count, and the person receiving it on site confirms — only then are the
+/// warehouse and the project's balances moved (one Warehouse → Site movement per line).
+enum TallyOutStatus {
+  PENDING // waiting for approval
+  APPROVED // approved — waiting for the driver to verify the count
+  VERIFIED // the driver verified it — waiting for the receiver on site to confirm
+  DELIVERED // the receiver confirmed: the stock has moved
+  REJECTED
+  CANCELLED
+}
+
+model TallyOut {
+  id          String         @id @default(cuid())
+  clientUuid  String?        @unique
+  number      String         @unique // TO-2026-0001
+  projectId   String
+  requestedById String
+  note        String? // what it is for / where it goes
+  items       Json // [{ itemId, name, unit, qty }]
+  status      TallyOutStatus @default(PENDING)
+  createdAt   DateTime       @default(now())
+
+  decidedById    String?
+  decidedByName  String?
+  decidedAt      DateTime?
+  rejectedReason String?
+
+  // the driver's verification of what was loaded
+  driverName     String?
+  verifiedById   String?
+  verifiedByName String?
+  verifiedAt     DateTime?
+  verifyChecklist Json? // [{ itemId, countedQty, ok, remarks }]
+  verifyPhotos   Json?
+  receiverId     String? // the staff member who has to confirm on site (null = not in the app; the Owner / PM / Purchasing confirms)
+  recipientName  String?
+
+  // the receiver's confirmation
+  confirmedAt     DateTime?
+  confirmedById   String?
+  confirmedByName String?
+  receivedChecklist Json? // [{ itemId, receivedQty, remarks }]
+  disputedAt      DateTime?
+  disputeNote     String?
+
+  @@index([status])
+  @@index([projectId])
 }

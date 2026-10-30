@@ -25,6 +25,7 @@ const fallbackUrl: Record<string, string> = {
   WarehouseItem: "/inventory",
   Tool: "/inventory",
   InventoryMovement: "/inventory",
+  TallyOut: "/inventory/tally-outs",
   ToolMovement: "/inventory",
 };
 
@@ -107,6 +108,14 @@ export async function resolveContext(entityType: string, entityId: string, actio
       case "ProjectAssignment": {
         const a = await prisma.projectAssignment.findUnique({ where: { id: entityId }, select: { userId: true, projectId: true, project: { select: { name: true } } } });
         return a ? { url: projectUrl(a.projectId), projectId: a.projectId, projectName: a.project.name, label: a.project.name, explicit: ids(a.userId) } : null;
+      }
+      case "TallyOut": {
+        const t = await prisma.tallyOut.findUnique({ where: { id: entityId }, select: { number: true, projectId: true, requestedById: true, receiverId: true, verifiedById: true } });
+        if (!t) return { url: "/inventory/tally-outs" };
+        const project = await prisma.project.findUnique({ where: { id: t.projectId }, select: { name: true } });
+        // waiting for the receiver: only the receiver is told; a problem report goes to the driver; otherwise whoever filed the form
+        const explicit = action === "TALLYOUT_VERIFIED" ? ids(t.receiverId) : action === "TALLYOUT_DISPUTED" ? ids(t.verifiedById) : ids(t.requestedById);
+        return { url: "/inventory/tally-outs", projectId: t.projectId, projectName: project?.name, label: [t.number, project?.name].filter(Boolean).join(" · "), explicit };
       }
       case "InventoryMovement": {
         // a return/transfer request: the people it is about is whoever asked for it (told when it is decided)

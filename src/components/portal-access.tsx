@@ -263,3 +263,32 @@ export function InventoryLimitToggle({ userId, name, limited }: { userId: string
     </label>
   );
 }
+
+/** Whether this person may approve tally-out forms (materials leaving the warehouse for a project), like the Owner (People page). */
+export function TallyOutApprovalToggle({ userId, name, allowed }: { userId: string; name: string; allowed: boolean }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function change(next: boolean) {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    const res = await fetch(`/api/people/${userId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "set-tally-out-approval", allowed: next }),
+    });
+    setBusy(false);
+    if (res.ok) router.refresh();
+    else setError(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? "Failed");
+  }
+
+  return (
+    <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-ink-700">
+      <input type="checkbox" checked={allowed} disabled={busy} onChange={(e) => change(e.target.checked)} aria-label={`${name} can approve tally-out forms`} />
+      {allowed ? "Yes" : "No"}
+      {error && <span className="text-red-600">{error}</span>}
+    </label>
+  );
+}

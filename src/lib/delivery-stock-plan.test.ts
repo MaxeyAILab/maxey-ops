@@ -107,3 +107,29 @@ describe("the group of a new item", () => {
     expect(guessCategory("Safety gloves")).toBe("OTHERS");
   });
 });
+
+describe("lines taken from the warehouse", () => {
+  const poW = [
+    { name: "ZZ Rebar", unit: "pcs", unitCost: 0, fromWarehouse: true, issueOnDelivery: true, warehouseItemId: "w1", requisitionItemId: "r1" },
+    { name: "ZZ Old", unit: "pcs", unitCost: 0, fromWarehouse: true },
+    { name: "ZZ Bought", unit: "pcs", unitCost: 5 },
+  ];
+  it("a line made to be issued on delivery is issued to the project for what was received", () => {
+    const d = desiredStock([{ item: "ZZ Rebar", receivedQty: 7 }], poW, true);
+    expect(d.get("ZZ Rebar")).toEqual({ qty: 7, unit: "pcs", unitCost: 0, warehouse: { itemId: "w1", requisitionItemId: "r1" } });
+  });
+  it("an older warehouse line (issued when the requisition was approved) is left alone", () => {
+    expect(desiredStock([{ item: "ZZ Old", receivedQty: 3 }], poW, true).size).toBe(0);
+  });
+  it("a bought line next to it still comes from the supplier", () => {
+    const d = desiredStock([{ item: "ZZ Bought", receivedQty: 2 }, { item: "ZZ Rebar", receivedQty: 1 }], poW, true);
+    expect(d.get("ZZ Bought")?.warehouse).toBeUndefined();
+    expect(d.get("ZZ Rebar")?.warehouse?.itemId).toBe("w1");
+  });
+  it("the plan carries the warehouse source into the add action and does nothing the second time", () => {
+    const d = desiredStock([{ item: "ZZ Rebar", receivedQty: 7 }], poW, true);
+    const first = planDeliveryStock(d, []);
+    expect(first[0]).toMatchObject({ kind: "add", line: "ZZ Rebar", qty: 7, warehouse: { itemId: "w1" } });
+    expect(planDeliveryStock(d, [{ id: "m", deliveryLine: "ZZ Rebar", qty: 7 }])).toEqual([]);
+  });
+});

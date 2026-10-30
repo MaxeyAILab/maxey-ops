@@ -1,4 +1,5 @@
 import type { MovementType, Prisma } from "@prisma/client";
+import { ApiError } from "@/lib/rbac";
 import { applyMaterialMove } from "@/lib/inventory-requests";
 import { WAREHOUSE_VALUES, warehouseLabel } from "@/lib/warehouses";
 import {
@@ -42,7 +43,8 @@ export interface DeliveryStockResult {
 
 const nothing = (): DeliveryStockResult => ({ added: [], changed: [], removed: [], shortBy: [] });
 
-const DELIVERY_MOVEMENTS: MovementType[] = ["SUPPLIER_TO_SITE", "SUPPLIER_TO_WAREHOUSE"];
+// a delivery's movements: supplier deliveries, and (for lines taken from the warehouse) the issue to the project made when it is confirmed
+const DELIVERY_MOVEMENTS: MovementType[] = ["SUPPLIER_TO_SITE", "SUPPLIER_TO_WAREHOUSE", "WAREHOUSE_TO_SITE"];
 
 /**
  * Brings the stock in step with a delivery. Every received line of a fully verified delivery is ONE movement at the PO price, so
@@ -100,7 +102,34 @@ export async function syncDeliveryStock(db: Db, deliveryId: string): Promise<Del
   };
 
   for (const a of actions as StockAction[]) {
-    if (a.kind === "add") {
+    if (a.kind === "add" && a.warehouse) {
+      // taken from the warehouse: it only now leaves the warehouse and reaches the project, because the driver verified it and the
+      // receiver confirmed it. The project is charged for it as for any issue from the warehouse (at the item's price today).
+      if (!projectId || !d.project) continue;
+      const item = await db.warehouseItem.findUnique({ where: { id: a.warehouse.itemId } });
+      if (!item) throw new ApiError(409, `${a.line} is no longer in the warehouse list`);
+      if (Number(item.currentQty) + 1e-9 < a.qty) throw new ApiError(409, `The warehouse no longer has enough ${item.name}: ${Number(item.currentQty)} ${item.unit} left, ${a.qty} received`);
+      const mv = await db.inventoryMovement.create({
+        data: {
+          itemId: item.id,
+          type: "WAREHOUSE_TO_SITE",
+          qty: a.qty,
+          fromLoc: warehouseLabel(item.warehouse),
+          toLoc: d.project.name,
+          toProjectId: projectId,
+          note: `Requisition delivery · ${d.po.poNumber}`,
+          unitPrice: item.unitPrice,
+          actorId: d.verifiedById,
+          createdAt: when,
+          status: "APPLIED",
+          deliveryId: d.id,
+          deliveryLine: a.line,
+        },
+      });
+      await applyMaterialMove(db, { itemId: item.id, type: "WAREHOUSE_TO_SITE", qty: a.qty, fromProjectId: null, toProjectId: projectId });
+      if (a.warehouse.requisitionItemId) await db.requisitionItem.updateMany({ where: { id: a.warehouse.requisitionItemId }, data: { issuedMovementId: mv.id } });
+      result.added.push({ item: item.name, qty: a.qty });
+    } else if (a.kind === "add") {
       await loadItems();
       let item = findExistingItem(a.line, a.unit, onSite!, catalogue!);
       let created = false;
@@ -139,6 +168,10 @@ export async function syncDeliveryStock(db: Db, deliveryId: string): Promise<Del
     } else if (a.kind === "change") {
       const row = rowById.get(a.movementId)!;
       const diff = round2(a.to - a.from);
+      if (diff > 0 && row.type === "WAREHOUSE_TO_SITE") {
+        const item = await db.warehouseItem.findUnique({ where: { id: row.itemId }, select: { currentQty: true, name: true, unit: true } });
+        if (!item || Number(item.currentQty) + 1e-9 < diff) throw new ApiError(409, `The warehouse no longer has enough ${row.item.name}: ${Number(item?.currentQty ?? 0)} ${item?.unit ?? ""} left, ${diff} more needed`);
+      }
       if (diff > 0) await applyMaterialMove(db, { itemId: row.itemId, type: row.type, qty: diff, fromProjectId: null, toProjectId: row.toProjectId });
       else {
         const took = await takeOff(db, row, -diff);
@@ -150,6 +183,7 @@ export async function syncDeliveryStock(db: Db, deliveryId: string): Promise<Del
       const row = rowById.get(a.movementId)!;
       const took = await takeOff(db, row, a.qty);
       if (took < a.qty) result.shortBy.push({ item: row.item.name, qty: round2(a.qty - took) });
+      await db.requisitionItem.updateMany({ where: { issuedMovementId: row.id }, data: { issuedMovementId: null } });
       await db.inventoryMovement.delete({ where: { id: row.id } });
       result.removed.push({ item: row.item.name, qty: a.qty });
     }
@@ -160,6 +194,12 @@ export async function syncDeliveryStock(db: Db, deliveryId: string): Promise<Del
 /** Takes back, from where it was put (the project's site, or the warehouse), up to `qty` of what a delivery movement added. */
 async function takeOff(db: Db, row: { type: MovementType; itemId: string; toProjectId: string | null }, qty: number): Promise<number> {
   if (row.type === "SUPPLIER_TO_WAREHOUSE") return takeOffWarehouse(db, row.itemId, qty);
+  if (row.type === "WAREHOUSE_TO_SITE") {
+    // an issue from the warehouse is reversed: what can still be taken off the site goes back into the warehouse
+    const took = row.toProjectId ? await takeOffSite(db, row.toProjectId, row.itemId, qty) : 0;
+    if (took > 0) await db.warehouseItem.update({ where: { id: row.itemId }, data: { currentQty: { increment: took } } });
+    return took;
+  }
   return row.toProjectId ? takeOffSite(db, row.toProjectId, row.itemId, qty) : 0;
 }
 
@@ -174,6 +214,7 @@ export async function removeDeliveryStock(db: Db, deliveryId: string): Promise<D
     const qty = Number(m.qty);
     const took = await takeOff(db, m, qty);
     if (took < qty) result.shortBy.push({ item: m.item.name, qty: round2(qty - took) });
+    await db.requisitionItem.updateMany({ where: { issuedMovementId: m.id }, data: { issuedMovementId: null } });
     await db.inventoryMovement.delete({ where: { id: m.id } });
     result.removed.push({ item: m.item.name, qty });
   }

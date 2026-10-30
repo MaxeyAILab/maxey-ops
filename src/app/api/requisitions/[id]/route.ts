@@ -7,7 +7,7 @@ import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
 import { warehouseLabel } from "@/lib/warehouses";
 import { nextPoNumber, WAREHOUSE_SUPPLIER } from "@/lib/po-number";
-import { applyMaterialMove } from "@/lib/inventory-requests";
+import { reservedStock } from "@/lib/tally-out-db";
 import { planWarehouseUse, purchaseEstimate, warehouseShortfalls } from "@/lib/requisition-warehouse";
 
 const actionSchema = z.discriminatedUnion("action", [
@@ -208,65 +208,44 @@ export const PATCH = handleApi(
     }
 
     if (body.action === "approve") {
-      // Lines taken from the warehouse are issued to the project now (a Warehouse → Site movement, applied at once), so nobody
-      // has to log them by hand. They are charged to the project through the warehouse issue cost, at the item's price today.
+      // Lines taken from the warehouse are NOT put on the project's materials list now. The Owner's approval is the approval of the
+      // issue; the materials leave the warehouse and reach the project only when the driver has verified the delivery and the
+      // receiver on site has confirmed it. Until then the quantities are reserved so nobody else can promise them.
       const fromWarehouse = requisition.items.filter((i) => i.warehouseItemId && !i.issuedMovementId);
       if (fromWarehouse.length && !requisition.project) throw new ApiError(400, "Materials can only be taken from the warehouse for a project or job");
       const buying = requisition.items.filter((i) => !i.warehouseItemId);
-      const issued: { item: string; qty: number; unit: string; from: string; movementId: string }[] = [];
 
       const updated = await prisma.$transaction(async (db) => {
+        if (fromWarehouse.length) {
+          const stock = await db.warehouseItem.findMany({ where: { id: { in: fromWarehouse.map((i) => i.warehouseItemId!) } } });
+          const reserved = await reservedStock(db); // this requisition is not approved yet, so its own lines are not in it
+          const map = new Map(stock.map((w) => [w.id, { id: w.id, name: w.name, unit: w.unit, warehouse: warehouseLabel(w.warehouse), currentQty: Math.max(0, Number(w.currentQty) - (reserved.get(w.id) ?? 0)) }]));
+          const short = warehouseShortfalls(fromWarehouse, map);
+          if (short.length) {
+            throw new ApiError(
+              400,
+              `Not enough in the warehouse to approve: ${short
+                .map((x) => `${x.name} — asked ${x.wanted} ${x.unit}, ${x.warehouse || "warehouse"} has ${x.available} free (the rest is reserved for other forms)`)
+                .join("; ")}. Take only what is there (the rest is bought) or switch the item back to a supplier.`
+            );
+          }
+        }
         const claim = await db.requisition.updateMany({
           where: { id: params.id, status: { in: ["SUBMITTED", "UNDER_REVIEW"] } },
           data: { status: "APPROVED", approvedById: user.id, approvedAt: new Date() },
         });
         if (claim.count !== 1) throw new ApiError(409, "This requisition was just decided by someone else — reload the page");
 
-        if (fromWarehouse.length) {
-          const stock = await db.warehouseItem.findMany({ where: { id: { in: fromWarehouse.map((i) => i.warehouseItemId!) } } });
-          const map = new Map(stock.map((w) => [w.id, { id: w.id, name: w.name, unit: w.unit, warehouse: warehouseLabel(w.warehouse), currentQty: Number(w.currentQty) }]));
-          const short = warehouseShortfalls(fromWarehouse, map);
-          if (short.length) {
-            throw new ApiError(
-              400,
-              `Not enough in the warehouse to approve: ${short
-                .map((x) => `${x.name} — asked ${x.wanted} ${x.unit}, ${x.warehouse || "warehouse"} has ${x.available}`)
-                .join("; ")}. Take only what is there (the rest is bought) or switch the item back to a supplier.`
-            );
-          }
-          for (const line of fromWarehouse) {
-            const w = stock.find((x) => x.id === line.warehouseItemId)!;
-            const qty = Number(line.qty);
-            const movement = await db.inventoryMovement.create({
-              data: {
-                clientUuid: crypto.randomUUID(),
-                itemId: w.id,
-                type: "WAREHOUSE_TO_SITE",
-                qty,
-                fromLoc: warehouseLabel(w.warehouse),
-                toLoc: requisition.project!.name,
-                toProjectId: requisition.project!.id,
-                note: `Requisition approved — requested by ${requisition.submittedBy.name}`,
-                unitPrice: w.unitPrice,
-                actorId: user.id,
-                status: "APPLIED",
-              },
-            });
-            await applyMaterialMove(db, { itemId: w.id, type: "WAREHOUSE_TO_SITE", qty, fromProjectId: null, toProjectId: requisition.project!.id });
-            await db.requisitionItem.update({ where: { id: line.id }, data: { issuedMovementId: movement.id } });
-            issued.push({ item: w.name, qty, unit: w.unit, from: warehouseLabel(w.warehouse), movementId: movement.id });
-          }
-        }
         // Nothing is bought: there is no purchase to make, but the stock still has to reach the site and be verified like any
-        // delivery. So a PO at no cost is opened for it (the cost is already charged by the warehouse issue); the requisition
-        // only becomes Delivered once the driver verifies and the receiver confirms, same as every other delivery.
+        // delivery. So a PO at no cost is opened for it (the cost is charged when the warehouse issue happens, at confirmation);
+        // the requisition only becomes Delivered once the driver verifies and the receiver confirms, same as every other delivery.
         if (buying.length === 0 && fromWarehouse.length > 0) {
           await db.purchaseOrder.create({
             data: {
               poNumber: await nextPoNumber(db),
               requisitionId: params.id,
               supplier: WAREHOUSE_SUPPLIER,
-              items: fromWarehouse.map((l) => ({ name: l.name, qty: Number(l.qty), unit: l.unit, unitCost: 0, fromWarehouse: true })) as never,
+              items: fromWarehouse.map((l) => ({ name: l.name, qty: Number(l.qty), unit: l.unit, unitCost: 0, fromWarehouse: true, issueOnDelivery: true, warehouseItemId: l.warehouseItemId, requisitionItemId: l.id })) as never,
               totalCost: 0,
               createdById: user.id,
             },
@@ -282,18 +261,8 @@ export const PATCH = handleApi(
         actorId: user.id,
         actorName: user.name,
         action: "REQUISITION_APPROVED",
-        diff: { estimatedCost: requisition.estimatedCost?.toString() ?? null, issuedFromWarehouse: issued.map((m) => ({ item: m.item, qty: m.qty, unit: m.unit, from: m.from })) },
+        diff: { estimatedCost: requisition.estimatedCost?.toString() ?? null, fromWarehouseOnDelivery: fromWarehouse.map((l) => ({ item: l.name, qty: Number(l.qty), unit: l.unit })) },
       });
-      for (const m of issued) {
-        await audit({
-          entityType: "InventoryMovement",
-          entityId: m.movementId,
-          actorId: user.id,
-          actorName: user.name,
-          action: "STOCK_WAREHOUSE_TO_SITE",
-          diff: { item: m.item, qty: m.qty, unit: m.unit, type: "WAREHOUSE_TO_SITE", from: m.from, to: requisition.project!.name, viaRequisition: requisition.id },
-        });
-      }
       // Auto-forward to Purchasing (Spec 6.2) — cost now committed vs budget; only if something is left to buy
       if (buying.length) {
         await notify({

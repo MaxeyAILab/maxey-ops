@@ -113,7 +113,6 @@ export function AddItemForm({ withPrice = false, warehouse = "MAIN" }: { withPri
 }
 
 const MOVEMENT_TYPES = [
-  { value: "WAREHOUSE_TO_SITE", label: "Warehouse → Site (issue to project)", from: false, to: true, warehouse: "Take it from" },
   { value: "SITE_TO_WAREHOUSE", label: "Site → Warehouse (return of unused / excess — needs approval)", from: true, to: false, warehouse: "Put it into" },
   { value: "SITE_TO_SITE", label: "Site → Site (direct transfer — needs approval)", from: true, to: true, warehouse: null },
   { value: "CONSUMED_ON_SITE", label: "Used on site (consumed)", from: true, to: false, warehouse: null },
@@ -151,7 +150,7 @@ export function MovementForm({
   canLogUsage?: boolean;
 }) {
   const router = useRouter();
-  const [type, setType] = useState<(typeof MOVEMENT_TYPES)[number]["value"]>("WAREHOUSE_TO_SITE");
+  const [type, setType] = useState<(typeof MOVEMENT_TYPES)[number]["value"]>("SITE_TO_WAREHOUSE");
   const typeChoices = MOVEMENT_TYPES.filter((t) => canLogUsage || t.value !== "CONSUMED_ON_SITE");
   const [warehouse, setWarehouse] = useState<WarehouseValue>(defaultWarehouse);
   const [pickerKey, setPickerKey] = useState(0); // a new key clears the chosen item after each movement is logged
@@ -358,7 +357,7 @@ export function MovementForm({
             <span className="text-ink-500">No price has been entered for this item yet, so this movement has no value.</span>
           ) : entryValue != null && Number(qtyText) > 0 ? (
             <>
-              {type === "WAREHOUSE_TO_SITE" ? "Taken out of the warehouse: " : type === "SITE_TO_WAREHOUSE" ? "Back into the warehouse: " : "Value: "}
+              {type === "SITE_TO_WAREHOUSE" ? "Back into the warehouse: " : "Value: "}
               <b className="tabular-nums">₱{entryValue.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
               <span className="text-ink-500">
                 {" "}

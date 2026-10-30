@@ -35,6 +35,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
 
   // The four warehouses are tabs on this page: the one chosen (?wh=alua) decides which stock, tools and logs are shown.
   const wh = warehouseFromSlug(searchParams.wh);
+  const openTallyOuts = await prisma.tallyOut.count({ where: { status: { in: ["PENDING", "APPROVED", "VERIFIED"] } } });
   const whName = warehouseLabel(wh);
 
   const [allItems, movements, projects, allTools, toolMovements, pendingStock, pendingTools, myRecent, issuedRows] = await Promise.all([
@@ -138,7 +139,12 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold text-ink-900">Inventory</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-bold text-ink-900">Inventory</h1>
+        <Link href="/inventory/tally-outs" className="rounded-lg border border-brand-200 px-3 py-1.5 text-sm font-medium text-brand-700 hover:bg-brand-50">
+          Tally-out forms{openTallyOuts > 0 ? ` (${openTallyOuts} open)` : ""} →
+        </Link>
+      </div>
 
       {pendingCount > 0 && (
         <Card className="border-amber-300">

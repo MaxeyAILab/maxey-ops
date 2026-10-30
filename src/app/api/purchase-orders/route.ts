@@ -41,8 +41,8 @@ export const POST = handleApi(async (req: NextRequest) => {
     throw new ApiError(400, "A PO already exists for this requisition");
   }
 
-  // Lines taken from the warehouse were issued from stock when the requisition was approved — buying them again would charge twice.
-  const reqItems = await prisma.requisitionItem.findMany({ where: { requisitionId: requisition.id }, select: { name: true, qty: true, unit: true, warehouseItemId: true } });
+  // Lines taken from the warehouse are issued from stock when the delivery is confirmed — buying them as well would charge twice.
+  const reqItems = await prisma.requisitionItem.findMany({ where: { requisitionId: requisition.id }, select: { id: true, name: true, qty: true, unit: true, warehouseItemId: true } });
   const bought = new Set(reqItems.filter((i) => !i.warehouseItemId).map((i) => i.name.trim().toLowerCase()));
   const fromStock = reqItems.filter((i) => i.warehouseItemId && !bought.has(i.name.trim().toLowerCase())).map((i) => i.name.trim().toLowerCase());
   const doubled = body.items.find((i) => fromStock.includes(i.name.trim().toLowerCase()));
@@ -50,8 +50,8 @@ export const POST = handleApi(async (req: NextRequest) => {
 
   const totalCost = body.items.reduce((sum, i) => sum + i.qty * i.unitCost, 0);
   // The warehouse lines ride on the same PO at no cost (they are charged when issued), so that what leaves the warehouse is
-  // verified on delivery like everything else.
-  const warehouseLines = reqItems.filter((i) => i.warehouseItemId).map((i) => ({ name: i.name, qty: Number(i.qty), unit: i.unit, unitCost: 0, fromWarehouse: true }));
+  // verified by the driver and confirmed by the receiver like everything else — it is issued to the project only then.
+  const warehouseLines = reqItems.filter((i) => i.warehouseItemId).map((i) => ({ name: i.name, qty: Number(i.qty), unit: i.unit, unitCost: 0, fromWarehouse: true, issueOnDelivery: true, warehouseItemId: i.warehouseItemId, requisitionItemId: i.id }));
 
   const po = await prisma.$transaction(async (db) => {
     const poNumber = await nextPoNumber(db);

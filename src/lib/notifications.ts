@@ -38,7 +38,7 @@ async function run(a: AuditEventInput, def: NonNullable<ReturnType<typeof eventF
   const [users, crew] = await Promise.all([
     prisma.user.findMany({
       where: { active: true, role: { not: "CLIENT" } },
-      select: { id: true, role: true, department: true, customMenus: true, useCustomMenus: true, canApprovePettyCash: true, canReleasePettyCash: true, canManageCash: true },
+      select: { id: true, role: true, department: true, customMenus: true, useCustomMenus: true, canApprovePettyCash: true, canReleasePettyCash: true, canManageCash: true, canApproveTallyOut: true },
     }),
     ctx.projectId ? prisma.projectAssignment.findMany({ where: { projectId: ctx.projectId, active: true }, select: { userId: true } }) : Promise.resolve([]),
   ]);

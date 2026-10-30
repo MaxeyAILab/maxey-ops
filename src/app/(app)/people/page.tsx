@@ -3,7 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fmtDate } from "@/lib/format";
 import { Badge, Card, CardHeader, Table, Td, Th } from "@/components/ui";
-import { AccountToggleButton, InventoryLimitToggle, PettyCashAccessToggle, RequisitionAccessToggle, ResetPasswordButton } from "@/components/portal-access";
+import { AccountToggleButton, InventoryLimitToggle, TallyOutApprovalToggle, PettyCashAccessToggle, RequisitionAccessToggle, ResetPasswordButton } from "@/components/portal-access";
 import { requisitionAllowedByRole } from "@/lib/requisitions";
 
 export const metadata = { title: "People" };
@@ -71,6 +71,13 @@ export default async function PeoplePage() {
           <InventoryLimitToggle userId={u.id} name={u.name} limited={u.inventoryRestricted} />
         )}
       </Td>
+      <Td>
+        {u.role === "CLIENT" || u.role === "OWNER" ? (
+          <span className="text-xs text-ink-300">{u.role === "OWNER" ? "Yes — owner" : "—"}</span>
+        ) : (
+          <TallyOutApprovalToggle userId={u.id} name={u.name} allowed={u.canApproveTallyOut} />
+        )}
+      </Td>
       {(["approve", "release", "manage"] as const).map((kind) => (
         <Td key={kind}>
           {u.role === "CLIENT" || u.role === "OWNER" ? (
@@ -107,6 +114,7 @@ export default async function PeoplePage() {
       <Th>Assignment</Th>
       <Th>Can raise requisitions</Th>
       <Th>Inventory limited</Th>
+      <Th>Approves tally-outs</Th>
       <Th>Approves petty cash</Th>
       <Th>Releases petty cash</Th>
       <Th>Full cash expense access</Th>
@@ -143,7 +151,7 @@ export default async function PeoplePage() {
             {clients.map(renderRow)}
             {clients.length === 0 && (
               <tr>
-                <Td colSpan={11} className="py-6 text-center text-ink-400">
+                <Td colSpan={12} className="py-6 text-center text-ink-400">
                   No client accounts yet — create one from a project&apos;s Portal Access panel.
                 </Td>
               </tr>

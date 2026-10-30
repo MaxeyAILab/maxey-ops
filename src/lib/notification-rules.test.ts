@@ -23,6 +23,7 @@ const user = (id: string, role: Role, over: Partial<RecipientUser> = {}): Recipi
   canApprovePettyCash: false,
   canReleasePettyCash: false,
   canManageCash: false,
+  canApproveTallyOut: false,
   ...over,
 });
 

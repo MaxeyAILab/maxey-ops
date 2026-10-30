@@ -50,6 +50,8 @@ export const POST = handleApi(async (req: NextRequest) => {
   const body = createSchema.parse(await req.json());
   // Materials from a supplier reach a site only through a verified delivery of a purchase order, which adds them by itself
   if (body.type === "SUPPLIER_TO_SITE") throw new ApiError(400, "Materials from a supplier are added to a project only when a purchase order delivery is verified — log the delivery against its PO");
+  // Materials leave a warehouse for a project only through a tally-out form (approved, verified by the driver, confirmed on site)
+  if (body.type === "WAREHOUSE_TO_SITE") throw new ApiError(400, "Materials go from the warehouse to a project through a tally-out form — it needs the Owner's approval, the driver's verification and the receiver's confirmation");
   if (body.type === "CONSUMED_ON_SITE" && !canLogInventoryUsage(user)) throw new ApiError(403, "You are not allowed to log usage — you can issue, return or transfer materials");
 
   const dup = await prisma.inventoryMovement.findUnique({

@@ -76,8 +76,8 @@ function ItemWarehouse({
           <span>
             <strong>From the warehouse</strong> — {warehouseLabel(w.warehouse)}.{" "}
             {w.issued
-              ? "Already issued to the site (it is in the material movement log)."
-              : `${w.currentQty} ${item.unit} in stock. Issued to the site automatically when the Owner approves; no purchase needed.`}
+              ? "Issued to the site when the delivery was confirmed (it is in the material movement log)."
+              : `${w.currentQty} ${item.unit} in stock. Reserved when the Owner approves; it reaches the site only after the driver verifies and the receiver confirms the delivery. No purchase needed.`}
             {w.unitPrice != null && ` Value ${php(item.qty * w.unitPrice)} (${php(w.unitPrice)} each) — charged to the project when issued.`}
           </span>
           {editable && !w.issued && (

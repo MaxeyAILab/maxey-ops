@@ -16,8 +16,26 @@ export interface PlanPoLine {
   name: string;
   unit: string;
   unitCost: number;
-  /** issued from warehouse stock (at no cost on the PO) — already put on site when the requisition was approved */
+  /** taken from warehouse stock (at no cost on the PO) */
   fromWarehouse?: boolean;
+  /** set on lines made since warehouse items are issued when the delivery is confirmed (not when the requisition is approved) */
+  issueOnDelivery?: boolean;
+  warehouseItemId?: string;
+  requisitionItemId?: string;
+}
+
+/** Where a line comes from when it is issued from the warehouse instead of being bought. */
+export interface WarehouseSource {
+  itemId: string;
+  requisitionItemId?: string;
+}
+
+export interface DesiredLine {
+  qty: number;
+  unit: string;
+  unitCost: number;
+  /** present when this line is issued from the warehouse to the project (instead of a supplier delivery) */
+  warehouse?: WarehouseSource;
 }
 
 export interface ExistingStockMovement {
@@ -27,7 +45,7 @@ export interface ExistingStockMovement {
 }
 
 export type StockAction =
-  | { kind: "add"; line: string; qty: number; unit: string; unitCost: number }
+  | { kind: "add"; line: string; qty: number; unit: string; unitCost: number; warehouse?: WarehouseSource }
   | { kind: "change"; movementId: string; line: string; from: number; to: number }
   | { kind: "remove"; movementId: string; line: string; qty: number };
 
@@ -41,29 +59,30 @@ const lineKey = (s: string) => s.trim().toLowerCase();
  * warehouse-sourced lines. `enabled` is false for a delivery that is not fully verified, was verified before this existed, or has
  * no project — then nothing should be on site for it.
  */
-export function desiredStock(checklist: PlanChecklistRow[], poLines: PlanPoLine[], enabled: boolean): Map<string, { qty: number; unit: string; unitCost: number }> {
-  const out = new Map<string, { qty: number; unit: string; unitCost: number }>();
+export function desiredStock(checklist: PlanChecklistRow[], poLines: PlanPoLine[], enabled: boolean): Map<string, DesiredLine> {
+  const out = new Map<string, DesiredLine>();
   if (!enabled) return out;
   for (const row of checklist) {
     const po = poLines.find((l) => lineKey(l.name) === lineKey(row.item));
-    if (po?.fromWarehouse) continue;
+    // a warehouse line is only issued when the delivery is confirmed if it was made that way; older ones were issued on approval
+    if (po?.fromWarehouse && !(po.issueOnDelivery && po.warehouseItemId)) continue;
     const qty = round2(Number(row.receivedQty) || 0);
     if (qty <= 0) continue;
     const have = out.get(row.item);
     if (have) have.qty = round2(have.qty + qty);
-    else out.set(row.item, { qty, unit: po?.unit?.trim() || "pc", unitCost: Number(po?.unitCost) || 0 });
+    else out.set(row.item, { qty, unit: po?.unit?.trim() || "pc", unitCost: Number(po?.unitCost) || 0, ...(po?.fromWarehouse ? { warehouse: { itemId: po.warehouseItemId!, requisitionItemId: po.requisitionItemId } } : {}) });
   }
   return out;
 }
 
 /** The movements to add, change or remove so that what is on site for the delivery matches what it received. */
-export function planDeliveryStock(desired: Map<string, { qty: number; unit: string; unitCost: number }>, existing: ExistingStockMovement[]): StockAction[] {
+export function planDeliveryStock(desired: Map<string, DesiredLine>, existing: ExistingStockMovement[]): StockAction[] {
   const actions: StockAction[] = [];
   const byLine = new Map<string, ExistingStockMovement>();
   for (const e of existing) if (e.deliveryLine !== null) byLine.set(e.deliveryLine, e);
   for (const [line, want] of desired) {
     const have = byLine.get(line);
-    if (!have) actions.push({ kind: "add", line, qty: want.qty, unit: want.unit, unitCost: want.unitCost });
+    if (!have) actions.push({ kind: "add", line, qty: want.qty, unit: want.unit, unitCost: want.unitCost, ...(want.warehouse ? { warehouse: want.warehouse } : {}) });
     else if (round2(have.qty) !== want.qty) actions.push({ kind: "change", movementId: have.id, line, from: round2(have.qty), to: want.qty });
   }
   for (const [line, have] of byLine) if (!desired.has(line)) actions.push({ kind: "remove", movementId: have.id, line, qty: round2(have.qty) });

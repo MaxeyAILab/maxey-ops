@@ -29,6 +29,8 @@ export interface SessionUser {
   ownRequisitionsOnly: boolean;
   /** Inventory limits set on the People page: cannot log usage, and only the Owner approves their requests. */
   inventoryRestricted: boolean;
+  /** May approve tally-out forms (materials leaving the warehouse for a project) — switched on from the People page; the Owner always may. */
+  canApproveTallyOut: boolean;
   /** The Owner has switched this person on to approve / to release petty cash (People page). */
   canApprovePettyCash: boolean;
   canReleasePettyCash: boolean;
@@ -166,6 +168,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       canRequisition: true,
       ownRequisitionsOnly: true,
       inventoryRestricted: true,
+      canApproveTallyOut: true,
       canApprovePettyCash: true,
       canReleasePettyCash: true,
       canManageCash: true,
@@ -189,6 +192,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     canRequisition: dbUser.canRequisition,
     ownRequisitionsOnly: dbUser.ownRequisitionsOnly,
     inventoryRestricted: dbUser.inventoryRestricted,
+    canApproveTallyOut: dbUser.canApproveTallyOut,
     canApprovePettyCash: dbUser.canApprovePettyCash,
     canReleasePettyCash: dbUser.canReleasePettyCash,
     canManageCash: dbUser.canManageCash,
