@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
-import { canLogInventoryMovement } from "@/lib/access";
+import { canFileTallyOut } from "@/lib/access";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
 import { mergeLines, shortLines } from "@/lib/tally-out";
 import { nextTallyNumber, onHandOf, reservedStock } from "@/lib/tally-out-db";
@@ -23,7 +23,7 @@ const createSchema = z.object({
  */
 export const POST = handleApi(async (req: NextRequest) => {
   const user = await requireUser();
-  if (!canLogInventoryMovement(user)) throw new ApiError(403, "Not authorized for this action");
+  if (!canFileTallyOut(user)) throw new ApiError(403, "Not authorized for this action");
   const body = createSchema.parse(await req.json());
 
   const dup = await prisma.tallyOut.findUnique({ where: { clientUuid: body.clientUuid }, select: { id: true } });

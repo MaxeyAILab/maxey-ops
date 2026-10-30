@@ -206,6 +206,23 @@ export function canLogInventoryMovement(u: InventoryPerson): boolean {
 export const canLogInventoryUsage = (u: { inventoryRestricted?: boolean | null }): boolean => !u.inventoryRestricted;
 
 /**
+ * Who can open the Tally-out forms page: drivers and office staff always (whatever tabs they were given — the drivers verify the
+ * loads and office staff file the forms), plus everyone who has the Inventory tab (foremen, PM, Purchasing…). Opening it lets a
+ * person see the forms; what they can DO on a form is decided by the steps themselves (approval is only the Owner's and the
+ * person the Owner switched on; verifying is for drivers and site leads; confirming is for the named receiver).
+ */
+export function canUseTallyOuts(u: InventoryPerson): boolean {
+  if (u.role === "CLIENT") return false;
+  if (u.role === "DRIVER" || u.department === "DRIVER" || isOfficeStaff(u)) return true;
+  return hasInventoryTab(u);
+}
+
+/** Who can file a tally-out form: drivers and office staff (whatever tabs they have), and whoever may log inventory movements. */
+export function canFileTallyOut(u: InventoryPerson): boolean {
+  return u.role === "DRIVER" || u.department === "DRIVER" || isOfficeStaff(u) || canLogInventoryMovement(u);
+}
+
+/**
  * Who can approve (or reject) a return or transfer request on the Inventory tab: the Owner, PM and Purchasing, and office staff
  * who have the Inventory tab (2026-10-21). Nobody but the Owner approves their own request.
  */

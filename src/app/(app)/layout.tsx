@@ -2,7 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { allowedMenus, canUseCashExpense } from "@/lib/access";
+import { allowedMenus, canUseCashExpense, canUseTallyOuts } from "@/lib/access";
+import { TallyOutNav } from "@/components/tally-out-nav";
 import { SyncStatus } from "@/components/sync-status";
 import { SignOutButton } from "@/components/signout-button";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -80,6 +81,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   // Cash Expense also opens for anyone the Owner made a petty cash approver or releaser.
   const showCashExpense = canUseCashExpense(user);
+  // Tally-out forms: drivers and office staff always, and anyone with the Inventory tab (the Inventory page has its own link)
+  const showTallyOuts = canUseTallyOuts(user) && !menus.includes("/inventory");
   const sidebarItems: SidebarItem[] = items.map((n) => ({
     href: n.href,
     label: t(n.labelKey),
@@ -125,6 +128,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </div>
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
         <SidebarNav items={sidebarItems} />
+        {showTallyOuts && <TallyOutNav />}
         {showCashExpense && <CashExpenseNav showAdvances />}
       </nav>
       <div className="border-t border-ink-100 px-4 py-3" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>

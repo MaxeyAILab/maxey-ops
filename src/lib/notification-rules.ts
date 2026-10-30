@@ -77,10 +77,12 @@ export function hasCategoryMenu(u: RecipientUser, category: NotificationCategory
   return allowedMenus(u.role, u.department as never, u.customMenus, u.useCustomMenus).includes(menu);
 }
 
-export type AudienceToken = "cashApprovers" | "cashReleasers" | "cashCustodians" | "inventoryApprovers" | "tallyOutApprovers";
+export type AudienceToken = "cashApprovers" | "cashReleasers" | "cashCustodians" | "inventoryApprovers" | "tallyOutApprovers" | "drivers";
 
 const TOKEN_TEST: Record<AudienceToken, (u: RecipientUser) => boolean> = {
   // whoever may approve a tally-out form: the Owner, and a person the Owner switched on
+  // drivers, whether their account is a Driver account or an office account in the Driver department
+  drivers: (u) => u.role === "DRIVER" || u.department === "DRIVER",
   tallyOutApprovers: (u) => u.role === "OWNER" || u.canApproveTallyOut,
   cashApprovers: (u) => u.role === "OWNER" || u.canApprovePettyCash,
   cashReleasers: (u) => u.role === "OWNER" || u.canReleasePettyCash,
@@ -165,7 +167,7 @@ export const EVENTS: Record<string, EventDef> = {
 
   // ----- tally-out forms: materials leaving the warehouse for a project -----
   TALLYOUT_SUBMITTED: { category: "INVENTORY", tokens: ["tallyOutApprovers"], title: "Tally-out form waiting for approval", body: bodyOf },
-  TALLYOUT_APPROVED: { category: "INVENTORY", roles: ["DRIVER"], title: "Tally-out approved — ready for the driver to verify", explicitTitle: "Your tally-out form was approved", body: bodyOf },
+  TALLYOUT_APPROVED: { category: "INVENTORY", tokens: ["drivers"], title: "Tally-out approved — ready for the driver to verify", explicitTitle: "Your tally-out form was approved", body: bodyOf },
   TALLYOUT_REJECTED: { category: "INVENTORY", roles: [], title: "Tally-out form rejected", explicitTitle: "Your tally-out form was rejected", body: bodyOf },
   TALLYOUT_CANCELLED: { category: "INVENTORY", roles: [], title: "Tally-out form cancelled", body: bodyOf },
   TALLYOUT_VERIFIED: { category: "INVENTORY", roles: [], title: "Tally-out verified by the driver — waiting for the receiver", explicitTitle: "A tally-out is waiting for your confirmation", body: bodyOf },

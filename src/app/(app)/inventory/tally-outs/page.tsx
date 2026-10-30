@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canAccess, canLogInventoryMovement } from "@/lib/access";
+import { canFileTallyOut, canUseTallyOuts } from "@/lib/access";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
 import { fmtDateTime } from "@/lib/format";
 import { warehouseLabel } from "@/lib/warehouses";
@@ -36,7 +36,12 @@ const photoList = (v: unknown): string[] => (Array.isArray(v) ? (v as string[]) 
 export default async function TallyOutsPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
-  if (user.role === "CLIENT" || !canAccess(user.role, user.department, "/inventory", user.customMenus, user.useCustomMenus)) redirect("/dashboard");
+  if (user.role === "CLIENT") redirect("/portal");
+  // drivers and office staff, and anyone with the Inventory tab; anyone else only when a form names them (e.g. as the receiver on site)
+  if (!canUseTallyOuts(user)) {
+    const named = await prisma.tallyOut.count({ where: { OR: [{ receiverId: user.id }, { requestedById: user.id }] } });
+    if (named === 0) redirect("/dashboard");
+  }
 
   const [forms, projects, items, reserved, staff] = await Promise.all([
     prisma.tallyOut.findMany({ orderBy: { createdAt: "desc" }, take: 150 }),
@@ -54,7 +59,7 @@ export default async function TallyOutsPage() {
     .map((i) => ({ id: i.id, name: i.name, unit: i.unit, category: i.category, qty: availableToPromise(Number(i.currentQty), reserved.get(i.id) ?? 0), tag: warehouseLabel(i.warehouse) }))
     .filter((i) => i.qty > 0);
 
-  const canFile = canLogInventoryMovement(user);
+  const canFile = canFileTallyOut(user);
   const approver = canApproveTallyOut(user);
 
   const view = forms.map((f) => {
