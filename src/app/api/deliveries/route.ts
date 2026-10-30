@@ -10,6 +10,7 @@ import { canVerifyDelivery } from "@/lib/access";
 import { discrepancyLines as listDiscrepancies } from "@/lib/delivery-adjust";
 import { missingNames } from "@/lib/delivery-confirm";
 import { syncPoStatus } from "@/lib/delivery-db";
+import { syncDeliveryStock } from "@/lib/delivery-stock";
 
 const checkItemSchema = z.object({
   item: z.string().min(1),
@@ -77,7 +78,7 @@ export const POST = handleApi(async (req: NextRequest) => {
   const receivedByVerifier = !!receiverId && receiverId === user.id; // verifying and receiving it yourself: nothing more to confirm
   const now = new Date();
 
-  const delivery = await prisma.$transaction(async (db) => {
+  const created = await prisma.$transaction(async (db) => {
     const delivery = await db.delivery.create({
       data: {
         clientUuid: body.clientUuid,
@@ -92,13 +93,19 @@ export const POST = handleApi(async (req: NextRequest) => {
         photos: photoUrls.length ? photoUrls : undefined,
         gps: body.gps || null,
         needsConfirmation: true,
+        stocksSite: true, // a delivery recorded now adds what it received to the project's on-site materials once fully verified
         receiverId,
         ...(receivedByVerifier ? { confirmedAt: now, confirmedById: user.id, confirmedByName: user.name } : {}),
       },
     });
-    if (receivedByVerifier) await syncPoStatus(db, po.id);
-    return delivery;
+    let onSite: Awaited<ReturnType<typeof syncDeliveryStock>> | null = null;
+    if (receivedByVerifier) {
+      await syncPoStatus(db, po.id);
+      onSite = await syncDeliveryStock(db, delivery.id);
+    }
+    return { delivery, onSite };
   });
+  const { delivery, onSite } = created;
 
   await audit({
     entityType: "Delivery",
@@ -113,6 +120,7 @@ export const POST = handleApi(async (req: NextRequest) => {
       driverName,
       recipientName,
       waitingForReceiver: !receivedByVerifier,
+      ...(onSite && onSite.added.length ? { addedToSite: onSite.added } : {}),
     },
   });
 

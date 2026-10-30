@@ -6,6 +6,7 @@ import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
 import { canConfirmDelivery } from "@/lib/delivery-confirm";
 import { syncPoStatus } from "@/lib/delivery-db";
+import { syncDeliveryStock } from "@/lib/delivery-stock";
 
 const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("confirm") }),
@@ -42,13 +43,15 @@ export const POST = handleApi(async (req: NextRequest, { params }: { params: { i
   }
 
   const now = new Date();
-  await prisma.$transaction(async (db) => {
+  const onSite = await prisma.$transaction(async (db) => {
     const done = await db.delivery.updateMany({
       where: { id: d.id, confirmedAt: null },
-      data: { confirmedAt: now, confirmedById: user.id, confirmedByName: user.name, disputedAt: null, disputeNote: null },
+      // stocksSite: a delivery still waiting for its confirmation when this was introduced also adds to the project's materials now
+      data: { confirmedAt: now, confirmedById: user.id, confirmedByName: user.name, disputedAt: null, disputeNote: null, stocksSite: true },
     });
     if (done.count === 0) throw new ApiError(409, "This delivery was just confirmed by someone else");
     await syncPoStatus(db, d.poId);
+    return syncDeliveryStock(db, d.id);
   });
   await audit({
     entityType: "Delivery",
@@ -56,7 +59,7 @@ export const POST = handleApi(async (req: NextRequest, { params }: { params: { i
     actorId: user.id,
     actorName: user.name,
     action: d.discrepancies ? "DELIVERY_VERIFIED_WITH_DISCREPANCIES" : "DELIVERY_VERIFIED",
-    diff: { po: d.po.poNumber, project: label, confirmedBy: user.name, onBehalfOf: user.id === d.receiverId ? null : d.recipientName, discrepancies: d.discrepancies ? d.discrepancies.split("\n") : [] },
+    diff: { po: d.po.poNumber, project: label, confirmedBy: user.name, onBehalfOf: user.id === d.receiverId ? null : d.recipientName, discrepancies: d.discrepancies ? d.discrepancies.split("\n") : [], ...(onSite.added.length ? { addedToSite: onSite.added } : {}) },
   });
   return NextResponse.json({ ok: true });
 });

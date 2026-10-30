@@ -6,6 +6,7 @@ import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
 import { adjustRequisitionItems, discrepancyLines, planAdjustment, type ChecklistRow, type PoLine } from "@/lib/delivery-adjust";
 import { revertAcceptance, syncPoStatus, type StoredAdjustment } from "@/lib/delivery-db";
+import { removeDeliveryStock, syncDeliveryStock } from "@/lib/delivery-stock";
 
 const editRow = z.object({
   item: z.string().min(1),
@@ -82,14 +83,14 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
     const recipient = body.recipientName !== undefined ? body.recipientName || null : d.recipientName;
     if (changes.length === 0 && driver === d.driverName && recipient === d.recipientName) return NextResponse.json({ ok: true, unchanged: true });
 
-    const undid = await prisma.$transaction(async (db) => {
+    const { undid, onSite } = await prisma.$transaction(async (db) => {
       const undid = await revertAcceptance(db, d.id);
       await db.delivery.update({
         where: { id: d.id },
         data: { checklist: next as never, discrepancies: lines.length ? lines.join("\n") : null, driverName: driver, recipientName: recipient, editedAt: new Date(), editedByName: user.name },
       });
       await syncPoStatus(db, po.id);
-      return undid;
+      return { undid, onSite: await syncDeliveryStock(db, d.id) };
     });
     const after = await prisma.purchaseOrder.findUnique({ where: { id: po.id }, select: { status: true } });
     await audit({
@@ -109,6 +110,7 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
         completeNow: lines.length === 0,
         acceptanceTakenBack: undid,
         poStatus: { from: po.status, to: after?.status ?? po.status },
+        ...(onSite.added.length || onSite.changed.length || onSite.removed.length ? { onSiteMaterials: onSite } : {}),
       } as never,
     });
     return NextResponse.json({ ok: true, complete: lines.length === 0, poStatus: after?.status });
@@ -195,10 +197,12 @@ export const DELETE = handleApi(async (_req: NextRequest, { params }: { params: 
   const delivery = await prisma.delivery.findUnique({ where: { id: params.id }, include: { po: true } });
   if (!delivery) throw new ApiError(404, "Delivery not found");
 
-  await prisma.$transaction(async (db) => {
+  const onSite = await prisma.$transaction(async (db) => {
     await revertAcceptance(db, delivery.id);
+    const onSite = await removeDeliveryStock(db, delivery.id); // what it put on site comes off again
     await db.delivery.delete({ where: { id: delivery.id } });
     await syncPoStatus(db, delivery.poId);
+    return onSite;
   });
 
   await audit({
@@ -207,7 +211,7 @@ export const DELETE = handleApi(async (_req: NextRequest, { params }: { params: 
     actorId: user.id,
     actorName: user.name,
     action: "DELIVERY_DELETED",
-    diff: { po: delivery.po.poNumber, hadOwnerAcceptance: !!delivery.acceptedAt },
+    diff: { po: delivery.po.poNumber, hadOwnerAcceptance: !!delivery.acceptedAt, ...(onSite.removed.length ? { takenOffSite: onSite.removed, couldNotTakeOff: onSite.shortBy } : {}) },
   });
 
   return NextResponse.json({ ok: true });

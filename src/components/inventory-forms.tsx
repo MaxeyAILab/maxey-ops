@@ -117,7 +117,7 @@ const MOVEMENT_TYPES = [
   { value: "SITE_TO_WAREHOUSE", label: "Site → Warehouse (return of unused / excess — needs approval)", from: true, to: false, warehouse: "Put it into" },
   { value: "SITE_TO_SITE", label: "Site → Site (direct transfer — needs approval)", from: true, to: true, warehouse: null },
   { value: "CONSUMED_ON_SITE", label: "Used on site (consumed)", from: true, to: false, warehouse: null },
-  { value: "SUPPLIER_TO_SITE", label: "Supplier → Site (direct delivery)", from: false, to: true, warehouse: null },
+  { value: "SUPPLIER_TO_SITE", label: "Supplier → Site (NOT on a PO — deliveries on a PO are added automatically)", from: false, to: true, warehouse: null },
   { value: "SUPPLIER_TO_WAREHOUSE", label: "Supplier → Warehouse", from: false, to: false, warehouse: "Deliver it into" },
 ] as const;
 

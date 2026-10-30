@@ -41,10 +41,46 @@ describe("warehouse issue cost per project", () => {
     expect(m.size).toBe(0);
   });
 
-  it("never goes below zero, even if more was returned or moved on than the project was charged", () => {
+  it("never goes below zero, and a transfer moves nothing the project was not charged for", () => {
     const m = issueCostByProject([mv({ type: "SITE_TO_SITE", qty: 5, unitPrice: 20, fromProjectId: "A", toProjectId: "B" })]);
+    expect(m.get("A")).toBeUndefined();
+    expect(m.get("B")).toBeUndefined();
+  });
+
+  it("moves only the part that came from the warehouse when a transfer is bigger than what was issued (the rest was bought on a PO)", () => {
+    const m = issueCostByProject([mv({ qty: 3, unitPrice: 20 }), mv({ type: "SITE_TO_SITE", qty: 10, unitPrice: 20, fromProjectId: "A", toProjectId: "B" })]);
     expect(m.get("A")?.cost).toBe(0);
-    expect(m.get("B")?.cost).toBe(100);
+    expect(m.get("B")?.cost).toBe(60);
+  });
+
+  it("matches a return to the same item: warehouse cost of one item is not credited for returning another bought on a PO", () => {
+    const m = issueCostByProject([
+      mv({ itemId: "cement", qty: 10, unitPrice: 20 }),
+      mv({ type: "SITE_TO_WAREHOUSE", itemId: "sand", qty: 4, unitPrice: 50, fromProjectId: "A", toProjectId: null }),
+    ]);
+    expect(m.get("A")?.cost).toBe(200);
+  });
+
+  it("goes by the order things happened: a return logged before the issue gives back nothing", () => {
+    const early = new Date("2026-10-01T00:00:00Z");
+    const late = new Date("2026-10-02T00:00:00Z");
+    const m = issueCostByProject([
+      mv({ qty: 10, unitPrice: 20, createdAt: late }),
+      mv({ type: "SITE_TO_WAREHOUSE", qty: 4, unitPrice: 20, fromProjectId: "A", toProjectId: null, createdAt: early }),
+    ]);
+    expect(m.get("A")?.cost).toBe(200);
+  });
+
+  it("a transferred part can be passed on again, and a second transfer cannot move it twice", () => {
+    const m = issueCostByProject([
+      mv({ qty: 5, unitPrice: 20 }),
+      mv({ type: "SITE_TO_SITE", qty: 5, unitPrice: 20, fromProjectId: "A", toProjectId: "B" }),
+      mv({ type: "SITE_TO_SITE", qty: 5, unitPrice: 20, fromProjectId: "A", toProjectId: "C" }),
+      mv({ type: "SITE_TO_SITE", qty: 5, unitPrice: 20, fromProjectId: "B", toProjectId: "C" }),
+    ]);
+    expect(m.get("A")?.cost).toBe(0);
+    expect(m.get("B")?.cost).toBe(0);
+    expect(m.get("C")?.cost).toBe(100);
   });
 
   it("keeps centavos exact (12.5 × ₱19.99)", () => {

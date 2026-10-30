@@ -764,6 +764,10 @@ model Delivery {
   confirmedByName   String?
   disputedAt        DateTime? // the receiver reported a problem instead of confirming
   disputeNote       String?
+
+  // Once fully verified, what was received is added to the project's on-site materials list (see delivery-stock.ts). Deliveries
+  // verified before that existed are false and never add to it.
+  stocksSite        Boolean   @default(false)
 }
 
 /// The four groups warehouse materials are sorted into.
@@ -839,8 +843,12 @@ model InventoryMovement {
   photos         Json? // photos of the items moved (urls) — attached to a return/transfer request so the approver can see what is coming
   excess         Boolean        @default(false) // a return of excess materials that were never logged on that site: the warehouse is added to in full, the site record only goes down as far as it was recorded
   newItem        Boolean        @default(false) // this movement created the item (it was not in the warehouse yet)
+  deliveryId     String? // set when a verified delivery put the material on site: that delivery (kept in step with it if it is corrected or deleted)
+  deliveryLine   String? // ...and the delivery line (the checklist item name) it came from
 
+  @@unique([deliveryId, deliveryLine])
   @@index([status])
+  @@index([deliveryId])
 }
 
 enum ToolStatus {
