@@ -98,6 +98,9 @@ export async function syncDeliveryStock(db: Db, deliveryId: string): Promise<Del
         item = { id: made.id, name: made.name, unit: made.unit, warehouse: made.warehouse };
         catalogue!.push(item);
         created = true;
+      } else if (a.unitCost > 0) {
+        // an item with no price yet gets the PO price, so that when these materials go back to the warehouse their value shows in the stock total
+        await db.warehouseItem.updateMany({ where: { id: item.id, unitPrice: null }, data: { unitPrice: a.unitCost } });
       }
       await db.inventoryMovement.create({
         data: {
