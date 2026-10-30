@@ -21,6 +21,7 @@ import {
 import { LocationPin } from "@/components/location-pin";
 import { EditPeriodTotalButton, EditTodayHoursButton } from "@/components/hours-override-button";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
+import { payslipPeriodLabel } from "@/lib/payslip";
 import { computeDailyHoursByDay, fetchApprovals, fetchDailyOverrides, withLiveOpenShifts } from "@/lib/payroll";
 import {
   isEarlyStart,
@@ -119,16 +120,18 @@ export default async function AttendancePage() {
   const periodFor = (department: string | null | undefined): PayPeriod =>
     department === "SITE" || department === "DRIVER" ? weeklyPeriod : semiPeriod;
 
-  const [me, openEntry, recent, projects] = await Promise.all([
+  const [me, openEntry, recentAll, projects] = await Promise.all([
     prisma.user.findUnique({ where: { id: user.id } }),
     prisma.attendance.findFirst({
       where: { userId: user.id, timeOut: null },
       orderBy: { timeIn: "desc" },
     }),
+    // the person's whole current pay cut-off (never fewer than their latest 10 punches), so nothing from the start of the
+    // period drops off the list — the same days payroll will count
     prisma.attendance.findMany({
       where: { userId: user.id },
       orderBy: { timeIn: "desc" },
-      take: 10,
+      take: 300,
       include: { project: { select: { name: true } } },
     }),
     prisma.project.findMany({
@@ -137,6 +140,8 @@ export default async function AttendancePage() {
       orderBy: { name: "asc" },
     }),
   ]);
+  const myPeriod = periodFor(user.department);
+  const recent = recentAll.filter((a, i) => i < 10 || a.timeIn >= myPeriod.start);
 
   const needsProject = me?.department === "SITE" || me?.department === "DRIVER";
 
@@ -569,6 +574,11 @@ export default async function AttendancePage() {
           )}
         </div>
         <div className="flex items-center gap-3">
+          {user.role === "OWNER" && (
+            <Link href="/attendance/logs" className="text-xs font-medium text-brand-600 hover:underline">
+              Staff time logs →
+            </Link>
+          )}
           {isAdmin && (
             <Link href="/attendance/yearly" className="text-xs font-medium text-brand-600 hover:underline">
               Yearly hours log →
@@ -742,8 +752,8 @@ export default async function AttendancePage() {
       {/* Own history */}
       <Card className="mx-auto max-w-xl lg:mx-0">
         <CardHeader
-          title="My recent entries"
-          subtitle="Your own record — payroll counts these against the standard schedule (clamped start, breaks, 5pm cutoff) unless a request below is approved"
+          title={`My entries — this cut-off (${payslipPeriodLabel(myPeriod.start, myPeriod.end)})`}
+          subtitle="Every punch of your current pay period, newest first. Your own record — payroll counts these against the standard schedule (clamped start, breaks, 5pm cutoff) unless a request below is approved"
         />
         <Table>
           <thead>
