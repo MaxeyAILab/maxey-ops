@@ -87,3 +87,56 @@ describe("warehouse issue cost per project", () => {
     expect(issueCostByProject([mv({ qty: 12.5, unitPrice: 19.99 })]).get("A")?.cost).toBe(249.88);
   });
 });
+
+describe("materials delivered on a project's PO and then moved on", () => {
+  const delivered = (o: Partial<IssueRow> = {}) => mv({ type: "SUPPLIER_TO_SITE", deliveryId: "d1", qty: 10, unitPrice: 270, fromProjectId: null, toProjectId: "A", ...o });
+  const transfer = (qty: number, from = "A", to = "B", o: Partial<IssueRow> = {}) => mv({ type: "SITE_TO_SITE", qty, unitPrice: 999, fromProjectId: from, toProjectId: to, ...o });
+
+  it("a delivery adds no cost of its own — its cost is the PO's", () => {
+    expect(issueCostByProject([delivered()]).size).toBe(0);
+  });
+  it("a transfer charges the receiving project for the items moved, at the PO price, and takes the same off the first project", () => {
+    const m = issueCostByProject([delivered(), transfer(4)]);
+    expect(m.get("B")?.cost).toBe(1080);
+    expect(m.get("A")?.cost).toBe(-1080);
+  });
+  it("uses what the items cost where they were, not the catalogue price on the transfer", () => {
+    const m = issueCostByProject([delivered({ unitPrice: 100 }), transfer(3, "A", "B", { unitPrice: 5000 })]);
+    expect(m.get("B")?.cost).toBe(300);
+  });
+  it("the two projects together always add up to what was bought (nothing counted twice, nothing lost)", () => {
+    const m = issueCostByProject([delivered(), transfer(6), transfer(2, "B", "C")]);
+    const total = (m.get("A")?.cost ?? 0) + (m.get("B")?.cost ?? 0) + (m.get("C")?.cost ?? 0);
+    expect(total).toBe(0);
+    expect(m.get("B")?.cost).toBe(1620 - 540);
+    expect(m.get("C")?.cost).toBe(540);
+  });
+  it("mixed stock moves in proportion at the average cost (5 from the warehouse at 20, 5 from a PO at 100)", () => {
+    const m = issueCostByProject([mv({ qty: 5, unitPrice: 20 }), delivered({ qty: 5, unitPrice: 100 }), transfer(5)]);
+    expect(m.get("B")?.cost).toBe(300); // 2.5 × 20 + 2.5 × 100
+  });
+  it("usage on site shrinks the holding without changing what an item costs", () => {
+    const m = issueCostByProject([delivered(), mv({ type: "CONSUMED_ON_SITE", qty: 6, fromProjectId: "A", toProjectId: null }), transfer(4)]);
+    expect(m.get("B")?.cost).toBe(1080);
+  });
+  it("materials logged by hand with no known cost move at no cost (nothing is invented)", () => {
+    const m = issueCostByProject([mv({ type: "SUPPLIER_TO_SITE", qty: 10, unitPrice: 50, deliveryId: null, fromProjectId: null, toProjectId: "A" }), transfer(4)]);
+    expect(m.get("B")).toBeUndefined();
+  });
+  it("sending delivered materials back to the warehouse credits nothing — the PO paid for them", () => {
+    const m = issueCostByProject([delivered(), mv({ type: "SITE_TO_WAREHOUSE", qty: 4, fromProjectId: "A", toProjectId: null })]);
+    expect(m.size).toBe(0);
+  });
+  it("what was transferred in is charged to the receiving project, so sending it back credits that project", () => {
+    const m = issueCostByProject([delivered(), transfer(4), mv({ type: "SITE_TO_WAREHOUSE", qty: 4, fromProjectId: "B", toProjectId: null })]);
+    expect(m.get("B")?.cost).toBe(0);
+    expect(m.get("A")?.cost).toBe(-1080);
+  });
+  it("processes events in the order they were decided, not the order they are listed", () => {
+    const m = issueCostByProject([
+      transfer(4, "A", "B", { createdAt: new Date("2026-10-03T00:00:00Z") }),
+      delivered({ createdAt: new Date("2026-10-01T00:00:00Z") }),
+    ]);
+    expect(m.get("B")?.cost).toBe(1080);
+  });
+});

@@ -1648,7 +1648,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                     <span className="tabular-nums"><Fig>{php(pettyCash)}</Fig></span>
                   </div>
                   <div className="flex justify-between gap-3">
-                    <span className="text-ink-700">+ Taken from the warehouse (net of returns)</span>
+                    <span className="text-ink-700">+ Materials from the warehouse and other projects (net of returns and of what was passed on)</span>
                     <span className="tabular-nums"><Fig>{php(warehouseCost)}</Fig></span>
                   </div>
                   <div className="flex justify-between gap-3 border-t border-ink-100 pt-2 font-semibold text-ink-900">

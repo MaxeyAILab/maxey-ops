@@ -48,6 +48,8 @@ export const POST = handleApi(async (req: NextRequest) => {
   const user = await requireUser();
   if (!canLogInventoryMovement(user)) throw new ApiError(403, "Not authorized for this action");
   const body = createSchema.parse(await req.json());
+  // Materials from a supplier reach a site only through a verified delivery of a purchase order, which adds them by itself
+  if (body.type === "SUPPLIER_TO_SITE") throw new ApiError(400, "Materials from a supplier are added to a project only when a purchase order delivery is verified — log the delivery against its PO");
   if (body.type === "CONSUMED_ON_SITE" && !canLogInventoryUsage(user)) throw new ApiError(403, "You are not allowed to log usage — you can issue, return or transfer materials");
 
   const dup = await prisma.inventoryMovement.findUnique({
@@ -100,7 +102,7 @@ export const POST = handleApi(async (req: NextRequest) => {
 
   const fromLoc = fromProject
     ? fromProject.name
-    : body.type === "SUPPLIER_TO_WAREHOUSE" || body.type === "SUPPLIER_TO_SITE"
+    : body.type === "SUPPLIER_TO_WAREHOUSE"
       ? "Supplier"
       : warehouseLabel(shown.warehouse);
   const toLoc = toProject ? toProject.name : body.type === "CONSUMED_ON_SITE" ? "Used on site" : warehouseLabel(shown.warehouse);
