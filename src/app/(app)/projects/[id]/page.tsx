@@ -23,6 +23,8 @@ import { warehouseIssueCosts } from "@/lib/warehouse-issue-cost";
 import { canAccess } from "@/lib/access";
 import { computeWorkItemStatuses, currentBreakdown, summarizeProgress, weightTotal } from "@/lib/progress";
 import { SubItemsManager } from "@/components/sub-items-editor";
+import { ContractValueEditor } from "@/components/contract-value-editor";
+import { contractLock } from "@/lib/project-cost";
 import { computeForecast } from "@/lib/forecast";
 import { computeSchedule } from "@/lib/schedule";
 import { buildActionQueue } from "@/lib/action-queue";
@@ -776,6 +778,19 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                 }
               />
             </div>
+          )}
+
+          {showMoney && p.client.name !== "Non-corporate (internal)" && (
+            <ContractValueEditor
+              projectId={p.id}
+              current={contractValue}
+              lock={contractLock(p)}
+              canEdit={user.role === "OWNER"}
+              approvedChangeOrders={{
+                count: p.changeOrders.filter((c) => c.status === "APPROVED").length,
+                total: p.changeOrders.filter((c) => c.status === "APPROVED").reduce((s, c) => s + Number(c.costImpact), 0),
+              }}
+            />
           )}
 
           <div className="grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">

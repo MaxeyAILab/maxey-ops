@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
+import { locksCost } from "@/lib/project-cost";
 
 const patchSchema = z.object({
   status: z.enum([
@@ -31,7 +32,8 @@ export const PATCH = handleApi(
 
     const updated = await prisma.project.update({
       where: { id: params.id },
-      data: { status: body.status },
+      // reaching On-going Construction (or later) makes the contract value final, for good
+      data: { status: body.status, ...(locksCost(body.status) && !project.costLockedAt ? { costLockedAt: new Date() } : {}) },
     });
 
     await audit({
@@ -40,7 +42,7 @@ export const PATCH = handleApi(
       actorId: user.id,
       actorName: user.name,
       action: "PROJECT_STATUS_CHANGED",
-      diff: { from: project.status, to: body.status },
+      diff: { from: project.status, to: body.status, ...(locksCost(body.status) && !project.costLockedAt ? { contractValueLocked: true } : {}) },
     });
 
     // Turnover housekeeping: if this client has no other running projects,

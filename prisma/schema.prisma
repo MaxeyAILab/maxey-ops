@@ -461,6 +461,9 @@ model Project {
   code            String?       @unique // short project code, e.g. "CTC" — prefixes this project's site instruction Task IDs
   address         String?
   contractValue   Decimal       @default(0) @db.Decimal(14, 2)
+  // Set the moment the project first reaches On-going Construction (or later): the contract value is then final and can only change
+  // through a change order the client approves — moving the status back never unlocks it.
+  costLockedAt    DateTime?
   termsJson       Json?
   status          ProjectStatus @default(SITE_SURVEY)
   pcabRef         String?
