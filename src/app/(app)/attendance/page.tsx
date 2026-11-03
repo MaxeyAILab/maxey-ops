@@ -19,6 +19,8 @@ import {
   type PendingTimeAdjustment,
 } from "@/components/time-adjustment-actions";
 import { LocationPin } from "@/components/location-pin";
+import { ForceTimeOutButton } from "@/components/force-timeout-button";
+import { defaultForcedTimeOut } from "@/lib/force-timeout";
 import { EditPeriodTotalButton, EditTodayHoursButton } from "@/components/hours-override-button";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
 import { payslipPeriodLabel } from "@/lib/payslip";
@@ -46,6 +48,8 @@ const timeFmt = new Intl.DateTimeFormat("en-PH", {
   hour: "numeric",
   minute: "2-digit",
 });
+
+const sinceFmt = new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 interface PayPeriod {
   start: Date;
@@ -92,7 +96,7 @@ function StatusCell({
     return (
       <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700">
         <span className="h-2 w-2 rounded-full bg-emerald-500" />
-        On duty since {timeFmt.format(open.timeIn)}
+        On duty since {manilaDayKey(open.timeIn) === manilaDayKey(new Date()) ? timeFmt.format(open.timeIn) : sinceFmt.format(open.timeIn)}
       </span>
     );
   }
@@ -535,6 +539,14 @@ export default async function AttendancePage() {
             )}
             <Td>
               <StatusCell open={r.summary.open} loggedToday={r.summary.loggedToday} />
+              {canManagePersonnel && r.summary.open && (
+                <ForceTimeOutButton
+                  attendanceId={r.summary.open.id}
+                  name={r.name}
+                  since={sinceFmt.format(r.summary.open.timeIn)}
+                  defaultTime={defaultForcedTimeOut(r.summary.open.timeIn, now)}
+                />
+              )}
             </Td>
             <Td className="relative text-right tabular-nums">
               {r.summary.todayHours.toFixed(1)}
