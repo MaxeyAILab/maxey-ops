@@ -262,6 +262,8 @@ export async function getOwnerDashboard(filters: DashboardFilters): Promise<Owne
             createdAt: true,
             reviewStatus: true,
             reviewedAt: true,
+            subItem: true, // without these two a sub-item report would be mistaken for a whole-item one
+            subWeight: true,
           },
         },
         changeOrders: {

@@ -17,7 +17,7 @@ const entry = (
   pct: number,
   day: number,
   reviewStatus: ProgressEntryLike["reviewStatus"] = "APPROVED"
-): ProgressEntryLike => ({ workItem, weight, pctComplete: pct, createdAt: d(day), reviewStatus });
+): ProgressEntryLike => ({ workItem, weight, pctComplete: pct, createdAt: d(day), reviewStatus, subItem: null, subWeight: null });
 
 describe("verified progress", () => {
   it("counts only approved entries", () => {
@@ -41,8 +41,8 @@ describe("verified progress", () => {
 
   it("ignores entries without a work item or weight", () => {
     const entries: ProgressEntryLike[] = [
-      { workItem: null, weight: 10, pctComplete: 100, createdAt: d(1), reviewStatus: "APPROVED" },
-      { workItem: "A", weight: null, pctComplete: 100, createdAt: d(1), reviewStatus: "APPROVED" },
+      { workItem: null, weight: 10, pctComplete: 100, createdAt: d(1), reviewStatus: "APPROVED", subItem: null, subWeight: null },
+      { workItem: "A", weight: null, pctComplete: 100, createdAt: d(1), reviewStatus: "APPROVED", subItem: null, subWeight: null },
     ];
     expect(computeWorkItemStatuses(entries)).toHaveLength(0);
   });
@@ -152,7 +152,7 @@ describe("work items broken into sub-items", () => {
     workItem: item, weight: 40, subItem, subWeight, pctComplete: pct, createdAt: t(day), reviewStatus: "APPROVED" as const, color: "#ec4899", ...over,
   });
   const whole = (item: string, weight: number, pct: number, day: number, over: Record<string, unknown> = {}) => ({
-    workItem: item, weight, pctComplete: pct, createdAt: t(day), reviewStatus: "APPROVED" as const, ...over,
+    workItem: item, weight, pctComplete: pct, createdAt: t(day), reviewStatus: "APPROVED" as const, subItem: null, subWeight: null, ...over,
   });
   const earth = [sub("Earthfilling", "Earthfill materials", 15, 100, 5), sub("Earthfilling", "Spreading", 10, 50, 5), sub("Earthfilling", "Compaction", 15, 0, 5)];
 

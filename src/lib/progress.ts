@@ -28,10 +28,11 @@ export interface ProgressEntryLike {
    * unreviewed work as verified. */
   reviewStatus: ReviewStatus;
   reviewedAt?: Date | null;
-  /** set when the entry reports one sub-item of the work item */
-  subItem?: string | null;
+  /** Required on purpose (like reviewStatus): a query that leaves these out would read a sub-item report as a whole-item one, so
+   * every caller must load them. Set when the entry reports one sub-item of the work item. */
+  subItem: string | null;
   /** that sub-item's share of the whole project (0 = the sub-item was removed) */
-  subWeight?: unknown;
+  subWeight: unknown;
 }
 
 export interface SubItemStatus {
