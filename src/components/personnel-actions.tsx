@@ -448,10 +448,8 @@ export function EditPersonnelButton({
         Edit
       </button>
       {open && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setOpen(false)}
-        >
+        <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/40" onClick={() => setOpen(false)}>
+          <div className="flex min-h-full items-start justify-center p-3 sm:items-center sm:p-4">
           <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md">
             <Card>
               <CardHeader
@@ -598,6 +596,7 @@ export function EditPersonnelButton({
                 </form>
               </CardBody>
             </Card>
+          </div>
           </div>
         </div>
       )}

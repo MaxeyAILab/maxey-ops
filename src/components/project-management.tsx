@@ -248,10 +248,8 @@ export function DeleteProjectButton({ projectId, name }: { projectId: string; na
   if (counts) {
     const lines = Object.entries(counts).filter(([, n]) => n > 0);
     return (
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-        onClick={() => setCounts(null)}
-      >
+      <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/40" onClick={() => setCounts(null)}>
+        <div className="flex min-h-full items-start justify-center p-3 sm:items-center sm:p-4">
         <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md">
           <Card>
             <CardHeader
@@ -294,6 +292,7 @@ export function DeleteProjectButton({ projectId, name }: { projectId: string; na
               </div>
             </CardBody>
           </Card>
+        </div>
         </div>
       </div>
     );
