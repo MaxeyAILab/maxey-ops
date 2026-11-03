@@ -65,8 +65,9 @@ const cell = "w-[5.6rem] rounded-md border border-ink-200 bg-white px-1.5 py-1 t
 
 /**
  * The timekeeper's daily sheet: one line per worker, AM in/out (7:30 – 12:00), PM in/out (1:00 – 5:00), overtime after 5:00 PM,
- * the paid hours as they are typed, who approved it on site, and remarks. "Full day" fills the standard times, so a normal day is
- * one tap per worker; only the exceptions (late, early out, absent, overtime) are typed. Saving writes each worker's clock records.
+ * the paid hours as they are typed, who approved it on site, and remarks. Ticking AM and/or PM for a worker who is in fills the
+ * standard times (7:30–12:00, 1:00–5:00), so a normal day is two ticks; the time boxes stay editable for the exceptions (late,
+ * undertime, overtime). Saving writes each worker's clock records.
  */
 export function TimekeeperSheet({
   projectId,
@@ -95,7 +96,32 @@ export function TimekeeperSheet({
 
   const dirtyIds = workers.filter((w) => !same(rows[w.userId], initial[w.userId])).map((w) => w.userId);
   const set = (id: string, patch: Partial<RowState>) => setRows((r) => ({ ...r, [id]: { ...r[id], ...patch } }));
-  const fullDay = (id: string) => set(id, { amIn: FULL_DAY.amIn, amOut: FULL_DAY.amOut, pmIn: FULL_DAY.pmIn, pmOut: FULL_DAY.pmOut, absent: false });
+  /** a half of the day is "ticked" when both of its times are there */
+  const amTicked = (r: RowState) => !!r.amIn && !!r.amOut;
+  const pmTicked = (r: RowState) => !!r.pmIn && !!r.pmOut;
+  /** Ticking fills the standard times (and un-marks absent); unticking takes the times away. Times already typed are kept when ticking. */
+  const tick = (id: string, half: "AM" | "PM", on: boolean) =>
+    setRows((all) => {
+      const r = all[id];
+      if (half === "AM") return { ...all, [id]: on ? { ...r, absent: false, amIn: r.amIn || FULL_DAY.amIn, amOut: r.amOut || FULL_DAY.amOut } : { ...r, amIn: "", amOut: "" } };
+      return { ...all, [id]: on ? { ...r, absent: false, pmIn: r.pmIn || FULL_DAY.pmIn, pmOut: r.pmOut || FULL_DAY.pmOut } : { ...r, pmIn: "", pmOut: "", ot: "" } };
+    });
+  /** The tick in a column heading ticks (or unticks) that half for every worker who is not marked absent. */
+  const tickAll = (half: "AM" | "PM", on: boolean) =>
+    setRows((all) => {
+      const next = { ...all };
+      for (const w of workers) {
+        const r = next[w.userId];
+        if (r.absent) continue;
+        if (half === "AM") next[w.userId] = on ? { ...r, amIn: r.amIn || FULL_DAY.amIn, amOut: r.amOut || FULL_DAY.amOut } : { ...r, amIn: "", amOut: "" };
+        else next[w.userId] = on ? { ...r, pmIn: r.pmIn || FULL_DAY.pmIn, pmOut: r.pmOut || FULL_DAY.pmOut } : { ...r, pmIn: "", pmOut: "", ot: "" };
+      }
+      return next;
+    });
+  const everyone = (half: "AM" | "PM") => {
+    const live = workers.filter((w) => !rows[w.userId].absent);
+    return live.length > 0 && live.every((w) => (half === "AM" ? amTicked(rows[w.userId]) : pmTicked(rows[w.userId])));
+  };
   const clearRow = (id: string) => set(id, { amIn: "", amOut: "", pmIn: "", pmOut: "", ot: "", approvedBy: "", absent: false });
   const absent = (id: string) => set(id, { amIn: "", amOut: "", pmIn: "", pmOut: "", ot: "", absent: true });
 
@@ -166,24 +192,30 @@ export function TimekeeperSheet({
       {editable && (
         <div className="flex flex-wrap items-center gap-3 text-xs">
           <Button type="button" variant="secondary" className="text-xs" onClick={allPresent}>
-            Everyone not yet recorded: full day
+            Everyone not yet recorded: AM + PM
           </Button>
           <span className="text-ink-500">
-            AM {AM_FROM}–{AM_TO} · PM {PM_FROM}–{PM_TO}. Type only what is different.
+            Tick AM / PM for a worker who is in (AM {AM_FROM}–{AM_TO}, PM {PM_FROM}–{PM_TO}). Change a time box for late arrivals or undertime.
           </span>
         </div>
       )}
 
       <div className="overflow-x-auto rounded-lg border border-ink-100">
-        <table className="w-full min-w-[60rem] text-left text-sm">
+        <table className="w-full min-w-[64rem] text-left text-sm">
           <thead className="bg-ink-50 text-[11px] uppercase tracking-wide text-ink-500 dark:bg-transparent">
             <tr>
               <th className="px-3 py-2">Worker</th>
-              <th className="px-2 py-2" colSpan={2}>
-                AM <span className="font-normal normal-case">in / out</span>
+              <th className="px-2 py-2" colSpan={3}>
+                <label className="inline-flex items-center gap-1.5">
+                  {editable && <input type="checkbox" aria-label="Tick AM for everyone" checked={everyone("AM")} onChange={(e) => tickAll("AM", e.target.checked)} />}
+                  AM <span className="font-normal normal-case">in / out</span>
+                </label>
               </th>
-              <th className="px-2 py-2" colSpan={2}>
-                PM <span className="font-normal normal-case">in / out</span>
+              <th className="px-2 py-2" colSpan={3}>
+                <label className="inline-flex items-center gap-1.5">
+                  {editable && <input type="checkbox" aria-label="Tick PM for everyone" checked={everyone("PM")} onChange={(e) => tickAll("PM", e.target.checked)} />}
+                  PM <span className="font-normal normal-case">in / out</span>
+                </label>
               </th>
               <th className="px-2 py-2">
                 OT <span className="font-normal normal-case">hrs after 5 PM</span>
@@ -208,16 +240,34 @@ export function TimekeeperSheet({
                     {w.saved && !dirty && <div className="text-[11px] text-ink-400">saved by {w.saved.enteredByName}</div>}
                   </td>
                   {r.absent ? (
-                    <td colSpan={5} className="px-2 py-2 align-top">
-                      <span className="inline-flex items-center rounded-sm bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800 dark:bg-red-950/40 dark:text-red-300">Absent</span>
+                    <td colSpan={7} className="px-2 py-2 align-top">
+                      <span className="inline-flex flex-wrap items-center gap-3">
+                        <span className="inline-flex items-center rounded-sm bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800 dark:bg-red-950/40 dark:text-red-300">Absent</span>
+                        {editable && (
+                          <span className="flex gap-3 text-xs text-ink-600">
+                            <label className="inline-flex items-center gap-1">
+                              <input type="checkbox" aria-label={`${w.name} AM present`} checked={false} onChange={() => tick(w.userId, "AM", true)} /> AM in
+                            </label>
+                            <label className="inline-flex items-center gap-1">
+                              <input type="checkbox" aria-label={`${w.name} PM present`} checked={false} onChange={() => tick(w.userId, "PM", true)} /> PM in
+                            </label>
+                          </span>
+                        )}
+                      </span>
                     </td>
                   ) : (
                     <>
+                      <td className="px-2 py-2 align-top">
+                        <input type="checkbox" aria-label={`${w.name} present in the morning`} className="mt-1.5 h-4 w-4" checked={amTicked(r)} disabled={!editable} onChange={(e) => tick(w.userId, "AM", e.target.checked)} />
+                      </td>
                       <td className="px-1 py-2 align-top">
                         <input type="time" aria-label={`${w.name} AM in`} className={cell} value={r.amIn} min={AM_FROM} max={AM_TO} disabled={!editable} onChange={(e) => set(w.userId, { amIn: e.target.value })} />
                       </td>
                       <td className="px-1 py-2 align-top">
                         <input type="time" aria-label={`${w.name} AM out`} className={cell} value={r.amOut} min={AM_FROM} max={AM_TO} disabled={!editable} onChange={(e) => set(w.userId, { amOut: e.target.value })} />
+                      </td>
+                      <td className="px-2 py-2 align-top">
+                        <input type="checkbox" aria-label={`${w.name} present in the afternoon`} className="mt-1.5 h-4 w-4" checked={pmTicked(r)} disabled={!editable} onChange={(e) => tick(w.userId, "PM", e.target.checked)} />
                       </td>
                       <td className="px-1 py-2 align-top">
                         <input type="time" aria-label={`${w.name} PM in`} className={cell} value={r.pmIn} min={PM_FROM} max={PM_TO} disabled={!editable} onChange={(e) => set(w.userId, { pmIn: e.target.value })} />
@@ -245,9 +295,6 @@ export function TimekeeperSheet({
                   </td>
                   {editable && (
                     <td className="whitespace-nowrap px-2 py-2 text-right align-top text-xs">
-                      <button type="button" onClick={() => fullDay(w.userId)} className="mr-2 font-medium text-brand-600 hover:underline">
-                        Full day
-                      </button>
                       <button type="button" onClick={() => absent(w.userId)} className="mr-2 text-ink-600 hover:underline">
                         Absent
                       </button>
@@ -261,7 +308,7 @@ export function TimekeeperSheet({
             })}
             {workers.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-3 py-6 text-center text-sm text-ink-400">
+                <td colSpan={11} className="px-3 py-6 text-center text-sm text-ink-400">
                   No workers without a login are assigned to this project. Workers added without an email are listed here once the Owner assigns them to the project (Attendance → Edit).
                 </td>
               </tr>
@@ -273,7 +320,7 @@ export function TimekeeperSheet({
                 <td className="px-3 py-2">
                   {totals.present} present · {totals.absent} absent · {workers.length - totals.present - totals.absent} not recorded
                 </td>
-                <td colSpan={5} className="px-2 py-2 text-right">
+                <td colSpan={7} className="px-2 py-2 text-right">
                   Overtime recorded {totals.ot > 0 ? `${totals.ot} h` : "—"}
                 </td>
                 <td className="px-2 py-2 text-right tabular-nums">{totals.hours.toFixed(2)}</td>
