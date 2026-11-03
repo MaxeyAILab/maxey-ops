@@ -300,6 +300,7 @@ model User {
   role                Role
   department          Department?
   position            String? // trade/position: Foreman, Mason, Carpenter, Welder, Driver, Office Admin…
+  jobRole             String? // sign-in job on top of the account type: TIMEKEEPER, WAREHOUSEMAN, LEADMAN, GENERAL_FOREMAN, SITE_WORKER (see role-presets.ts)
   employeeNo          String?            @unique // company employee ID printed on the payslip, e.g. VCDC-016
   canRequisition      Boolean            @default(false) // the Owner lets this person raise material requisitions even though their role doesn't already allow it
   canApproveTallyOut  Boolean            @default(false) // may approve tally-out forms (materials leaving the warehouse for a project), like the Owner

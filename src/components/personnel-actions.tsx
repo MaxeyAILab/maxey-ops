@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button, Card, CardBody, CardHeader, Input, Label, Select } from "@/components/ui";
 import { ASSIGNABLE_MENUS, allowedMenus } from "@/lib/access";
 import type { Role } from "@prisma/client";
+import { JOB_ROLES, JOB_ROLE_KEYS, isJobRole, jobRoleTabs, type JobRole } from "@/lib/role-presets";
 
 const ASSIGNABLE_ROLES: { value: Role; label: string }[] = [
   { value: "OFFICE", label: "Office Staff" },
@@ -20,12 +21,16 @@ const ASSIGNABLE_ROLES: { value: Role; label: string }[] = [
  * authoritative list actually granted (can add or remove from the default). */
 function SignInAccessFields({
   role,
-  onRoleChange,
+  jobRole,
+  onPick,
   checkedMenus,
   onCheckedMenusChange,
 }: {
   role: Role;
-  onRoleChange: (r: Role) => void;
+  /** the sign-in job picked on top of the account type, if any */
+  jobRole: JobRole | null;
+  /** an account type (Office Staff, Foreman…) or a job (Timekeeper, Warehouse man…) was picked */
+  onPick: (key: string) => void;
   checkedMenus: Set<string>;
   onCheckedMenusChange: (m: Set<string>) => void;
 }) {
@@ -33,17 +38,23 @@ function SignInAccessFields({
     <div className="space-y-3 rounded-lg border border-ink-100 bg-ink-50/50 p-3">
       <div>
         <Label htmlFor="pRole">Role (only matters if they will log in)</Label>
-        <Select
-          id="pRole"
-          value={role}
-          onChange={(e) => onRoleChange(e.target.value as Role)}
-        >
-          {ASSIGNABLE_ROLES.map((r) => (
-            <option key={r.value} value={r.value}>
-              {r.label}
-            </option>
-          ))}
+        <Select id="pRole" value={jobRole ?? role} onChange={(e) => onPick(e.target.value)}>
+          <optgroup label="Account type">
+            {ASSIGNABLE_ROLES.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.label}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="Site and warehouse jobs">
+            {JOB_ROLE_KEYS.map((k) => (
+              <option key={k} value={k}>
+                {JOB_ROLES[k].label}
+              </option>
+            ))}
+          </optgroup>
         </Select>
+        {jobRole && <p className="mt-1 text-xs text-ink-400">{JOB_ROLES[jobRole].hint}</p>}
       </div>
       <div>
         <Label>Tabs they can access</Label>
@@ -108,16 +119,30 @@ export function AddPersonnelForm({
   const [created, setCreated] = useState("");
   const [department, setDepartment] = useState("SITE");
   const [role, setRole] = useState<Role>("OFFICE");
+  const [jobRole, setJobRole] = useState<JobRole | null>(null);
   const [checkedMenus, setCheckedMenus] = useState<Set<string>>(new Set(allowedMenus("OFFICE", null)));
 
   useEffect(() => {
     setCheckedMenus(new Set(allowedMenus(role, null)));
   }, [role]);
 
+  /** A job sets its account type and starts with that type's tabs plus the job's own; a plain account type clears the job. */
+  function pickAccess(key: string) {
+    if (isJobRole(key)) {
+      setJobRole(key);
+      setRole(JOB_ROLES[key].role);
+      setCheckedMenus(new Set(jobRoleTabs(key, allowedMenus(JOB_ROLES[key].role, null))));
+    } else {
+      setJobRole(null);
+      setRole(key as Role);
+      setCheckedMenus(new Set(allowedMenus(key as Role, null)));
+    }
+  }
+
   function onDepartmentChange(next: string) {
     setDepartment(next);
-    if (next === "DRIVER") setRole("DRIVER");
-    else if (role === "DRIVER") setRole("OFFICE");
+    if (next === "DRIVER") pickAccess("DRIVER");
+    else if (role === "DRIVER") pickAccess("OFFICE");
   }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -141,6 +166,7 @@ export function AddPersonnelForm({
         projectStartDate:
           department === "SITE" && fd.get("projectId") ? fd.get("projectStartDate") : undefined,
         role,
+        jobRole,
         useCustomMenus: true,
         customMenus: Array.from(checkedMenus),
       }),
@@ -150,7 +176,7 @@ export function AddPersonnelForm({
       const j = await res.json();
       setCreated(j.project ? `${j.name} added and assigned to ${j.project}.` : `${j.name} added.`);
       (e.target as HTMLFormElement).reset?.();
-      setRole("OFFICE");
+      pickAccess("OFFICE");
       router.refresh();
       onDone?.();
     } else {
@@ -256,7 +282,8 @@ export function AddPersonnelForm({
       </div>
       <SignInAccessFields
         role={role}
-        onRoleChange={setRole}
+        jobRole={jobRole}
+        onPick={pickAccess}
         checkedMenus={checkedMenus}
         onCheckedMenusChange={setCheckedMenus}
       />
@@ -309,6 +336,7 @@ export function EditPersonnelButton({
   phone,
   email,
   role: initialRole,
+  jobRole: initialJobRole,
   useCustomMenus: initialUseCustomMenus,
   customMenus: initialCustomMenus,
   projects,
@@ -328,6 +356,7 @@ export function EditPersonnelButton({
   phone?: string | null;
   email?: string | null;
   role?: Role;
+  jobRole?: string | null;
   useCustomMenus?: boolean;
   customMenus?: string[];
 }) {
@@ -336,6 +365,7 @@ export function EditPersonnelButton({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [role, setRole] = useState<Role>(initialRole ?? "OFFICE");
+  const [jobRole, setJobRole] = useState<JobRole | null>(isJobRole(initialJobRole) ? initialJobRole : null);
   const [department, setDepartment] = useState(initialDepartment ?? "OFFICE");
   const [projectIds, setProjectIds] = useState<Set<string>>(new Set(assignedProjectIds ?? []));
   const [joinDate, setJoinDate] = useState(new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10)); // today in Manila
@@ -352,9 +382,16 @@ export function EditPersonnelButton({
     )
   );
 
-  function onRoleChange(next: Role) {
-    setRole(next);
-    setCheckedMenus(new Set(allowedMenus(next, null)));
+  function onPick(key: string) {
+    if (isJobRole(key)) {
+      setJobRole(key);
+      setRole(JOB_ROLES[key].role);
+      setCheckedMenus(new Set(jobRoleTabs(key, allowedMenus(JOB_ROLES[key].role, null))));
+    } else {
+      setJobRole(null);
+      setRole(key as Role);
+      setCheckedMenus(new Set(allowedMenus(key as Role, null)));
+    }
   }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -375,6 +412,7 @@ export function EditPersonnelButton({
         phone: fd.get("phone"),
         email: fd.get("email"),
         role,
+        jobRole,
         useCustomMenus: true,
         customMenus: Array.from(checkedMenus),
       }),
@@ -543,7 +581,8 @@ export function EditPersonnelButton({
                   </div>
                   <SignInAccessFields
                     role={role}
-                    onRoleChange={onRoleChange}
+                    jobRole={jobRole}
+                    onPick={onPick}
                     checkedMenus={checkedMenus}
                     onCheckedMenusChange={setCheckedMenus}
                   />

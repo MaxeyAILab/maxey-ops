@@ -110,10 +110,14 @@ export const isTimekeeperPosition = (position: string | null | undefined): boole
 export interface SheetUser {
   role: string;
   position?: string | null;
+  /** the sign-in job: a Timekeeper job counts whatever the position says */
+  jobRole?: string | null;
 }
 
+const isTimekeeper = (u: SheetUser) => u.jobRole === "TIMEKEEPER" || isTimekeeperPosition(u.position);
+
 /** Who may open the timekeeper page: the Owner, the PM and timekeepers. */
-export const canOpenTimesheets = (u: SheetUser): boolean => u.role === "OWNER" || u.role === "PM" || (u.role !== "CLIENT" && isTimekeeperPosition(u.position));
+export const canOpenTimesheets = (u: SheetUser): boolean => u.role === "OWNER" || u.role === "PM" || (u.role !== "CLIENT" && isTimekeeper(u));
 
 /** Days back a timekeeper may still record or correct; the Owner and PM have no limit (but never the future). */
 export const TIMEKEEPER_BACKDATE_DAYS = 14;

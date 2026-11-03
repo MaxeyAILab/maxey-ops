@@ -7,6 +7,7 @@ import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { ASSIGNABLE_MENUS } from "@/lib/access";
 import { validatePassword } from "@/lib/password-policy";
+import { JOB_ROLE_KEYS, resolveAccess } from "@/lib/role-presets";
 
 const ASSIGNABLE_ROLES = ["PM", "FOREMAN", "PURCHASING", "ACCOUNTING", "DRIVER", "OFFICE"] as const;
 const ASSIGNABLE_MENU_HREFS = new Set(ASSIGNABLE_MENUS.map((m) => m.href));
@@ -26,6 +27,8 @@ const createSchema = z.object({
   projectStartDate: z.coerce.date().optional(),
   // Sign-in access — role picker + tab checklist (only meaningful when email is given)
   role: z.enum(ASSIGNABLE_ROLES).optional(),
+  // a sign-in job on top of the account type (Timekeeper, Warehouse man, Leadman, General Foreman, On-site worker)
+  jobRole: z.enum(JOB_ROLE_KEYS as [string, ...string[]]).nullable().optional(),
   useCustomMenus: z.boolean().optional().default(false),
   customMenus: z.array(z.string()).optional().default([]),
 });
@@ -46,8 +49,9 @@ export const POST = handleApi(async (req: NextRequest) => {
   // Role follows the explicit picker when given (sign-in access section);
   // falls back to the old department/position heuristic for placeholder
   // accounts that never log in (no email, no role chosen).
+  const access = resolveAccess({ role: body.role, jobRole: body.jobRole });
   const role =
-    body.role ??
+    access.role ??
     (body.department === "DRIVER"
       ? "DRIVER"
       : body.position.toLowerCase().includes("foreman")
@@ -89,6 +93,7 @@ export const POST = handleApi(async (req: NextRequest) => {
         role,
         department: body.department,
         position: body.position,
+        jobRole: access.jobRole,
         employeeNo,
         dailyRate: body.dailyRate,
         hourlyRate: body.hourlyRate,
@@ -126,6 +131,7 @@ export const POST = handleApi(async (req: NextRequest) => {
       hourlyRate: body.hourlyRate ?? null,
       assignedProject: project?.name ?? null,
       role,
+      jobRole: access.jobRole,
       customMenus: body.useCustomMenus ? customMenus : null,
     },
   });

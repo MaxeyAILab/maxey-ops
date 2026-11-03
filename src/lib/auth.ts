@@ -19,6 +19,8 @@ export interface SessionUser {
   department: Department | null;
   /** the trade/position text the Owner entered (Timekeeper, Leadman, Driver…) */
   position: string | null;
+  /** the sign-in job the Owner gave them (Timekeeper, Warehouse man, Leadman…) — see role-presets.ts */
+  jobRole: string | null;
   clientId: string | null;
   mustChangePassword: boolean;
   useCustomMenus: boolean;
@@ -161,6 +163,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       role: true,
       department: true,
       position: true,
+      jobRole: true,
       clientId: true,
       name: true,
       useCustomMenus: true,
@@ -186,6 +189,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     role: dbUser.role,
     department: dbUser.department,
     position: dbUser.position,
+    jobRole: dbUser.jobRole,
     clientId: dbUser.clientId,
     mustChangePassword: dbUser.mustChangePassword,
     ...withOwnRequisitionsTab(dbUser),

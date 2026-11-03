@@ -1,5 +1,6 @@
 import type { Department, Role } from "@prisma/client";
 import { isOfficeStaff } from "@/lib/cash-expense";
+import { INVENTORY_JOB_ROLES, type JobRole } from "@/lib/role-presets";
 
 /**
  * Tabs an Owner can grant to a staff account via the sign-in checklist
@@ -172,10 +173,13 @@ interface InventoryPerson {
   role: Role;
   department: Department | null;
   position?: string | null;
+  /** the sign-in job (Timekeeper, Warehouse man, Leadman…) */
+  jobRole?: string | null;
   customMenus?: string[];
   useCustomMenus?: boolean;
 }
 
+const hasInventoryJob = (u: InventoryPerson) => INVENTORY_JOB_ROLES.includes(u.jobRole as JobRole);
 const hasInventoryTab = (u: InventoryPerson) => canAccess(u.role, u.department, "/inventory", u.customMenus ?? [], u.useCustomMenus ?? false);
 
 /**
@@ -185,6 +189,8 @@ const hasInventoryTab = (u: InventoryPerson) => canAccess(u.role, u.department, 
  */
 export function canAddInventoryCatalog(u: InventoryPerson): boolean {
   if (["OWNER", "PM", "PURCHASING"].includes(u.role)) return true;
+  // the warehouse man runs the warehouse: adds its stock items and tools
+  if (u.jobRole === "WAREHOUSEMAN" && hasInventoryTab(u)) return true;
   return hasInventoryTab(u) && isOfficeStaff(u);
 }
 
@@ -196,7 +202,7 @@ export function canAddInventoryCatalog(u: InventoryPerson): boolean {
 export function canLogInventoryMovement(u: InventoryPerson): boolean {
   if (["FOREMAN", "PM", "OWNER", "PURCHASING"].includes(u.role)) return true;
   if (!hasInventoryTab(u)) return false;
-  return u.role === "DRIVER" || u.department === "DRIVER" || isOfficeStaff(u) || isTimekeeperOrLeadman(u.position);
+  return u.role === "DRIVER" || u.department === "DRIVER" || isOfficeStaff(u) || isTimekeeperOrLeadman(u.position) || hasInventoryJob(u);
 }
 
 /**

@@ -165,6 +165,7 @@ export default async function AttendancePage() {
       phone: string | null;
       email: string | null;
       role: Role;
+      jobRole: string | null;
       useCustomMenus: boolean;
       customMenus: string[];
       summary: ReturnType<typeof summarize>;
@@ -181,6 +182,7 @@ export default async function AttendancePage() {
     phone: string | null;
     email: string | null;
     role: Role;
+    jobRole: string | null;
     useCustomMenus: boolean;
     customMenus: string[];
     summary: ReturnType<typeof summarize>;
@@ -215,6 +217,7 @@ export default async function AttendancePage() {
                   phone: true,
                   email: true,
                   role: true,
+                  jobRole: true,
                   useCustomMenus: true,
                   customMenus: true,
                 },
@@ -241,6 +244,7 @@ export default async function AttendancePage() {
           phone: true,
           email: true,
           role: true,
+          jobRole: true,
           useCustomMenus: true,
           customMenus: true,
         },
@@ -261,6 +265,7 @@ export default async function AttendancePage() {
           phone: true,
           email: true,
           role: true,
+          jobRole: true,
           useCustomMenus: true,
           customMenus: true,
         },
@@ -319,6 +324,7 @@ export default async function AttendancePage() {
         phone: a.user.phone,
         email: a.user.email,
         role: a.user.role,
+        jobRole: a.user.jobRole,
         useCustomMenus: a.user.useCustomMenus,
         customMenus: a.user.customMenus,
         summary: summarize(
@@ -346,6 +352,7 @@ export default async function AttendancePage() {
       phone: u.phone,
       email: u.email,
       role: u.role,
+      jobRole: u.jobRole,
       useCustomMenus: u.useCustomMenus,
       customMenus: u.customMenus,
       summary: summarize(
@@ -372,6 +379,7 @@ export default async function AttendancePage() {
       phone: u.phone,
       email: u.email,
       role: u.role,
+      jobRole: u.jobRole,
       useCustomMenus: u.useCustomMenus,
       customMenus: u.customMenus,
       summary: summarize(
@@ -497,6 +505,7 @@ export default async function AttendancePage() {
       phone: string | null;
       email: string | null;
       role: Role;
+      jobRole: string | null;
       useCustomMenus: boolean;
       customMenus: string[];
       summary: ReturnType<typeof summarize>;
@@ -558,6 +567,7 @@ export default async function AttendancePage() {
                   phone={r.phone}
                   email={r.email}
                   role={r.role}
+                  jobRole={r.jobRole}
                   useCustomMenus={r.useCustomMenus}
                   customMenus={r.customMenus}
                   projects={projectChoices}

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { ASSIGNABLE_MENUS } from "@/lib/access";
+import { JOB_ROLE_KEYS, resolveAccess } from "@/lib/role-presets";
 
 const ASSIGNABLE_ROLES = ["PM", "FOREMAN", "PURCHASING", "ACCOUNTING", "DRIVER", "OFFICE"] as const;
 const ASSIGNABLE_MENU_HREFS = new Set(ASSIGNABLE_MENUS.map((m) => m.href));
@@ -22,6 +23,8 @@ const updateSchema = z.object({
   email: z.string().email().optional().or(z.literal("")),
   // Sign-in access — role picker + tab checklist
   role: z.enum(ASSIGNABLE_ROLES).optional(),
+  // a sign-in job on top of the account type; null = just the account type
+  jobRole: z.enum(JOB_ROLE_KEYS as [string, ...string[]]).nullable().optional(),
   useCustomMenus: z.boolean().optional(),
   customMenus: z.array(z.string()).optional(),
 });
@@ -38,7 +41,7 @@ export const PATCH = handleApi(
 
     const target = await prisma.user.findUnique({ where: { id: params.id } });
     if (!target) throw new ApiError(404, "Personnel not found");
-    if (body.role && target.role === "OWNER") {
+    if ((body.role || body.jobRole) && target.role === "OWNER") {
       throw new ApiError(400, "The owner account's role cannot be changed");
     }
 
@@ -73,6 +76,18 @@ export const PATCH = handleApi(
         ? (body.monthlySalary === "" ? null : body.monthlySalary) as unknown as typeof target.monthlySalary
         : target.monthlySalary;
 
+    // A job picked in the role list sets its account type and the job together; a plain account type clears the job; nothing sent leaves both.
+    let nextRole = target.role;
+    let nextJob = target.jobRole;
+    if (body.jobRole) {
+      const a = resolveAccess({ jobRole: body.jobRole });
+      nextRole = a.role ?? nextRole;
+      nextJob = a.jobRole;
+    } else if (body.role) {
+      nextRole = body.role;
+      nextJob = null;
+    }
+
     const updated = await prisma.user.update({
       where: { id: target.id },
       data: {
@@ -85,7 +100,8 @@ export const PATCH = handleApi(
         dailyRate,
         hourlyRate,
         monthlySalary,
-        role: body.role ?? target.role,
+        role: nextRole,
+        jobRole: nextJob,
         useCustomMenus: body.useCustomMenus ?? target.useCustomMenus,
         customMenus: customMenus ?? target.customMenus,
       },
@@ -108,6 +124,7 @@ export const PATCH = handleApi(
         phone: updated.phone,
         email: updated.email,
         role: updated.role,
+        jobRole: updated.jobRole,
         customMenus: updated.useCustomMenus ? updated.customMenus : null,
       },
     });
