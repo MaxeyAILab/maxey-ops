@@ -63,6 +63,8 @@ interface AccomplishmentItem {
   weight: number;
   pctComplete: number;
   color: string;
+  /** the parts the work item is made of, when it has been broken down (each weight is its share of the whole project) */
+  subItems?: { name: string; weight: number; pctComplete: number }[];
 }
 
 /**
@@ -157,6 +159,23 @@ export function WorkItemWeightBars({ items }: { items: AccomplishmentItem[] }) {
               }}
             />
           </div>
+          {it.subItems && it.subItems.length > 0 && (
+            <ul className="mt-1.5 space-y-1.5 border-l-2 pl-3" style={{ borderColor: it.color }}>
+              {it.subItems.map((s) => (
+                <li key={s.name}>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-ink-600">{s.name}</span>
+                    <span className="tabular-nums text-ink-400">
+                      {Number(s.weight.toFixed(2))}% weight · {s.pctComplete.toFixed(0)}% done
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-ink-100">
+                    <div className="h-full rounded-full opacity-70" style={{ width: `${Math.max(0, Math.min(100, s.pctComplete))}%`, backgroundColor: it.color }} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       ))}
     </div>

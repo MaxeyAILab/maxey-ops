@@ -157,7 +157,8 @@ export default async function PortalPage() {
 
         {projects.map((p) => {
           const workItemStatuses = computeWorkItemStatuses(p.progressEntries);
-          const timelineEntries = p.progressEntries.slice(0, 20);
+          // "Set sub-items" records are structure, not progress reports — they feed the chart but are not listed as updates
+          const timelineEntries = p.progressEntries.filter((e) => !e.breakdown).slice(0, 20);
           const pendingCOs = p.changeOrders.filter((c) => c.status === "PENDING_CLIENT");
           const dailyReports: DailyReportDisplay[] = p.dailyReports.map((r) => ({
             id: r.id,
@@ -317,7 +318,10 @@ export default async function PortalPage() {
                             <span className="text-xs text-ink-400">{fmtDateTime(e.createdAt)}</span>
                           </div>
                           {e.workItem && (
-                            <div className="font-medium text-ink-800">{e.workItem}</div>
+                            <div className="font-medium text-ink-800">
+                              {e.workItem}
+                              {e.subItem && <span className="text-ink-500"> › {e.subItem}</span>}
+                            </div>
                           )}
                           {e.notes && <p className="text-xs text-ink-500">{e.notes}</p>}
                           {Array.isArray(e.photos) && (e.photos as string[]).length > 0 && (
@@ -332,7 +336,7 @@ export default async function PortalPage() {
                           </div>
                         </li>
                       ))}
-                      {p.progressEntries.length === 0 && (
+                      {timelineEntries.length === 0 && (
                         <p className="text-sm text-ink-400">Updates will appear here.</p>
                       )}
                     </ol>

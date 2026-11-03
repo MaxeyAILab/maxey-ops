@@ -21,7 +21,8 @@ import { PhotoThumbnails } from "@/components/photo-viewer";
 import { LIQUIDATED_PETTY_CASH, pettyCashCost, runGross } from "@/lib/finance";
 import { warehouseIssueCosts } from "@/lib/warehouse-issue-cost";
 import { canAccess } from "@/lib/access";
-import { computeWorkItemStatuses, summarizeProgress, weightTotal } from "@/lib/progress";
+import { computeWorkItemStatuses, currentBreakdown, summarizeProgress, weightTotal } from "@/lib/progress";
+import { SubItemsManager } from "@/components/sub-items-editor";
 import { computeForecast } from "@/lib/forecast";
 import { computeSchedule } from "@/lib/schedule";
 import { buildActionQueue } from "@/lib/action-queue";
@@ -277,6 +278,11 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
 
   // Verified progress counts approved entries only; submitted work is shown beside it.
   const workItemStatuses = computeWorkItemStatuses(p.progressEntries);
+  // the work items already on this project (any status) and the sub-items each is broken into, for the progress form
+  const progressItemOptions = Array.from(new Set(p.progressEntries.map((e) => e.workItem?.trim()).filter((n): n is string => !!n))).map((name) => ({
+    name,
+    subs: currentBreakdown(p.progressEntries, name).map((b) => ({ name: b.name, weight: b.weight })),
+  }));
   const summary = summarizeProgress(p.progressEntries);
   const accomplishmentPct = summary.verifiedPct;
   const hasWeights = p.progressEntries.some((e) => e.workItem && e.weight != null);
@@ -1741,7 +1747,19 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                   <WorkItemWeightBars items={workItemStatuses} />
                 </div>
               </div>
-              {canProgress && <ProgressForm projectId={p.id} />}
+              {canReview && (
+                <SubItemsManager
+                  projectId={p.id}
+                  items={workItemStatuses.map((w) => ({
+                    workItem: w.workItem,
+                    weight: w.weight,
+                    pctComplete: w.pctComplete,
+                    color: w.color,
+                    subs: (w.subItems ?? []).map((s) => ({ name: s.name, weight: s.weight, pctComplete: s.pctComplete })),
+                  }))}
+                />
+              )}
+              {canProgress && <ProgressForm projectId={p.id} items={progressItemOptions} />}
               {!canReview && canProgress && (
                 <p className="text-xs text-ink-500">Entries you submit are reviewed by the PM or Owner before they count as verified progress.</p>
               )}
@@ -1757,6 +1775,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                           <span className={`rounded-sm px-1.5 py-0.5 text-[11px] font-semibold ${REVIEW_TONE[e.reviewStatus]}`}>
                             {REVIEW_LABEL[e.reviewStatus]}
                           </span>
+                          {e.breakdown && <span className="rounded-sm bg-ink-100 px-1.5 py-0.5 text-[11px] font-medium text-ink-600">Sub-items set</span>}
                         </span>
                         <span className="text-xs text-ink-400">
                           {fmtDateTime(e.createdAt)} · {e.submittedBy.name}
@@ -1766,8 +1785,11 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                       {e.workItem && (
                         <div className="font-medium text-ink-800">
                           {e.workItem}
-                          {e.weight != null && (
-                            <span className="ml-1.5 text-xs font-normal text-ink-400">({Number(e.weight).toFixed(0)}% weight)</span>
+                          {e.subItem && <span className="text-ink-500"> › {e.subItem}</span>}
+                          {e.subItem && e.subWeight != null ? (
+                            <span className="ml-1.5 text-xs font-normal text-ink-400">({Number(e.subWeight).toFixed(2).replace(/\.?0+$/, "")}% weight)</span>
+                          ) : (
+                            e.weight != null && <span className="ml-1.5 text-xs font-normal text-ink-400">({Number(e.weight).toFixed(0)}% weight)</span>
                           )}
                         </div>
                       )}
@@ -1795,6 +1817,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                           entry={{
                             id: e.id,
                             workItem: e.workItem,
+                            subItem: e.subItem,
                             weight: e.weight != null ? Number(e.weight) : null,
                             color: e.color,
                             pctComplete: Number(e.pctComplete),

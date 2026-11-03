@@ -284,9 +284,18 @@ export function DeleteChangeOrderButton({ changeOrderId }: { changeOrderId: stri
   );
 }
 
+/** A work item already on the project, with the sub-items it is broken into (none when it is reported as a whole). */
+export interface ProgressItemOption {
+  name: string;
+  subs: { name: string; weight: number }[];
+}
+
 /** PM/foreman daily progress entry — offline-capable, with photos (Spec 6.7). */
-export function ProgressForm({ projectId }: { projectId: string }) {
+export function ProgressForm({ projectId, items = [] }: { projectId: string; items?: ProgressItemOption[] }) {
   const router = useRouter();
+  const [workItem, setWorkItem] = useState("");
+  const matched = items.find((i) => i.name.trim().toLowerCase() === workItem.trim().toLowerCase());
+  const subs = matched?.subs ?? [];
   const [photos, setPhotos] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -304,8 +313,7 @@ export function ProgressForm({ projectId }: { projectId: string }) {
       body: {
         projectId,
         workItem: fd.get("workItem"),
-        weight: fd.get("weight") || undefined,
-        color: fd.get("color") || undefined,
+        ...(subs.length > 0 ? { subItem: fd.get("subItem") } : { weight: fd.get("weight") || undefined, color: fd.get("color") || undefined }),
         pctComplete: Number(fd.get("pctComplete")),
         notes: fd.get("notes"),
         photos,
@@ -320,6 +328,7 @@ export function ProgressForm({ projectId }: { projectId: string }) {
       setMsg("Saved offline — will sync when you're back online.");
     } else {
       (e.target as HTMLFormElement).reset?.();
+      setWorkItem("");
       setPhotos([]);
       router.refresh();
     }
@@ -330,14 +339,35 @@ export function ProgressForm({ projectId }: { projectId: string }) {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
         <div>
           <Label htmlFor="workItem">Work item</Label>
-          <Input id="workItem" name="workItem" placeholder="e.g., Structural works" />
+          <Input id="workItem" name="workItem" placeholder="e.g., Structural works" list="progress-work-items" autoComplete="off" value={workItem} onChange={(e) => setWorkItem(e.target.value)} />
+          <datalist id="progress-work-items">
+            {items.map((i) => (
+              <option key={i.name} value={i.name} />
+            ))}
+          </datalist>
         </div>
+        {subs.length > 0 ? (
+          <div>
+            <Label htmlFor="subItem">Sub-item *</Label>
+            <Select id="subItem" name="subItem" required defaultValue="">
+              <option value="" disabled>
+                Which part?
+              </option>
+              {subs.map((s) => (
+                <option key={s.name} value={s.name}>
+                  {s.name} ({Number(s.weight.toFixed(2))}%)
+                </option>
+              ))}
+            </Select>
+          </div>
+        ) : (
+          <div>
+            <Label htmlFor="weight">Weight (% of project)</Label>
+            <Input id="weight" name="weight" type="number" min="0" max="100" step="0.1" />
+          </div>
+        )}
         <div>
-          <Label htmlFor="weight">Weight (% of project)</Label>
-          <Input id="weight" name="weight" type="number" min="0" max="100" step="0.1" />
-        </div>
-        <div>
-          <Label htmlFor="pctComplete">Item completion % *</Label>
+          <Label htmlFor="pctComplete">{subs.length > 0 ? "Sub-item completion % *" : "Item completion % *"}</Label>
           <Input
             id="pctComplete"
             name="pctComplete"
@@ -348,21 +378,23 @@ export function ProgressForm({ projectId }: { projectId: string }) {
             required
           />
         </div>
-        <div>
-          <Label htmlFor="color">Color</Label>
-          <input
-            id="color"
-            name="color"
-            type="color"
-            defaultValue="#2563eb"
-            className="h-10 w-full cursor-pointer rounded-lg border border-ink-200 p-1 sm:w-14"
-          />
-        </div>
+        {subs.length === 0 && (
+          <div>
+            <Label htmlFor="color">Color</Label>
+            <input
+              id="color"
+              name="color"
+              type="color"
+              defaultValue="#2563eb"
+              className="h-10 w-full cursor-pointer rounded-lg border border-ink-200 p-1 sm:w-14"
+            />
+          </div>
+        )}
       </div>
       <p className="-mt-2 text-xs text-ink-400">
-        Weight is this item&apos;s share of the whole project (e.g. 30 = 30%). Color is this work
-        item&apos;s ring/bar on the accomplishment chart — pick the same color each time you log
-        this item and it stays consistent.
+        {subs.length > 0
+          ? `"${matched?.name}" is broken into sub-items — report the completion of the part you worked on; the item's own completion follows from its parts.`
+          : "Weight is this item's share of the whole project (e.g. 30 = 30%). Color is this work item's ring/bar on the accomplishment chart — pick the same color each time you log this item and it stays consistent."}
       </p>
       <div>
         <Label htmlFor="notes">Notes</Label>
@@ -381,6 +413,8 @@ export function ProgressForm({ projectId }: { projectId: string }) {
 interface ProgressEntryEditable {
   id: string;
   workItem: string | null;
+  /** set when the entry reports one sub-item: then only its completion and notes can be corrected here */
+  subItem?: string | null;
   weight: number | null;
   color: string | null;
   pctComplete: number;
@@ -434,11 +468,19 @@ export function EditProgressEntryButton({ entry }: { entry: ProgressEntryEditabl
 
   return (
     <form onSubmit={onSubmit} className="mt-2 space-y-2 rounded-lg border border-brand-100 bg-brand-50/40 p-3">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
+      {entry.subItem && (
+        <p className="text-xs text-ink-500">
+          {entry.workItem} › {entry.subItem} — its weight and name are set with &quot;Set sub-items&quot;; here you can correct the completion and the notes.
+        </p>
+      )}
+      <div className={`grid grid-cols-2 gap-2 ${entry.subItem ? "" : "sm:grid-cols-[1fr_1fr_1fr_auto]"}`}>
+        {!entry.subItem && (
         <div>
           <Label htmlFor={`ewi-${entry.id}`}>Work item</Label>
           <Input id={`ewi-${entry.id}`} name="workItem" defaultValue={entry.workItem ?? ""} />
         </div>
+        )}
+        {!entry.subItem && (
         <div>
           <Label htmlFor={`ewt-${entry.id}`}>Weight (%)</Label>
           <Input
@@ -451,6 +493,7 @@ export function EditProgressEntryButton({ entry }: { entry: ProgressEntryEditabl
             defaultValue={entry.weight ?? ""}
           />
         </div>
+        )}
         <div>
           <Label htmlFor={`epc-${entry.id}`}>Completion % *</Label>
           <Input
@@ -464,6 +507,7 @@ export function EditProgressEntryButton({ entry }: { entry: ProgressEntryEditabl
             required
           />
         </div>
+        {!entry.subItem && (
         <div>
           <Label htmlFor={`ecl-${entry.id}`}>Color</Label>
           <input
@@ -474,6 +518,7 @@ export function EditProgressEntryButton({ entry }: { entry: ProgressEntryEditabl
             className="h-10 w-full cursor-pointer rounded-lg border border-ink-200 p-1 sm:w-14"
           />
         </div>
+        )}
       </div>
       <div>
         <Label htmlFor={`en-${entry.id}`}>Notes</Label>

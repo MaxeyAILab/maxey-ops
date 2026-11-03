@@ -678,6 +678,12 @@ model ProgressEntry {
   workItem        String?
   weight          Decimal?             @db.Decimal(6, 2) // this work item's share of the project, for the weighted accomplishment rollup
   color           String? // hex color for this work item's ring/bar on the accomplishment chart
+  // A work item can be broken into sub-items (e.g. Earthfilling → materials, spreading, compaction). An entry with a subItem reports
+  // that sub-item's completion %; `weight` stays the MAIN item's share of the project and `subWeight` is the sub-item's share of the
+  // project (the sub-items' weights add up to the main weight). subWeight 0 marks a sub-item that was removed.
+  subItem         String?
+  subWeight       Decimal?             @db.Decimal(6, 2)
+  breakdown       Boolean              @default(false) // set by "Set sub-items": it records how an item is split, not a progress report, so it is left off the client's timeline
   pctComplete     Decimal              @db.Decimal(5, 2) // this entry's completion % for workItem (not the whole project)
   notes           String?
   photos          Json?

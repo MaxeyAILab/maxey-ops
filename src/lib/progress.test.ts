@@ -1,3 +1,4 @@
+import { currentBreakdown, currentWeight, checkBreakdown } from "./progress";
 import { describe, expect, it } from "vitest";
 import {
   approvedWeight,
@@ -142,5 +143,77 @@ describe("checkWeightRules", () => {
   it("excludes the edited entry when checking the total", () => {
     expect(checkWeightRules(list, { workItem: "B", weight: 40, excludeId: "2" }, false)).toBeNull();
     expect(checkWeightRules(list, { workItem: "B", weight: 45, excludeId: "2" }, false)).toMatch(/exceed 100%/);
+  });
+});
+
+describe("work items broken into sub-items", () => {
+  const t = (n: number) => new Date(`2026-10-${String(n).padStart(2, "0")}T08:00:00Z`);
+  const sub = (item: string, subItem: string, subWeight: number, pct: number, day: number, over: Record<string, unknown> = {}) => ({
+    workItem: item, weight: 40, subItem, subWeight, pctComplete: pct, createdAt: t(day), reviewStatus: "APPROVED" as const, color: "#ec4899", ...over,
+  });
+  const whole = (item: string, weight: number, pct: number, day: number, over: Record<string, unknown> = {}) => ({
+    workItem: item, weight, pctComplete: pct, createdAt: t(day), reviewStatus: "APPROVED" as const, ...over,
+  });
+  const earth = [sub("Earthfilling", "Earthfill materials", 15, 100, 5), sub("Earthfilling", "Spreading", 10, 50, 5), sub("Earthfilling", "Compaction", 15, 0, 5)];
+
+  it("the main item's completion is the weighted average of its sub-items", () => {
+    const [it] = computeWorkItemStatuses(earth);
+    expect(it.weight).toBe(40);
+    expect(it.pctComplete).toBe(50); // (15×100 + 10×50 + 15×0) / 40
+    expect(it.subItems?.map((s) => [s.name, s.weight, s.pctComplete])).toEqual([["Compaction", 15, 0], ["Earthfill materials", 15, 100], ["Spreading", 10, 50]]);
+  });
+  it("the project total is the same sum as before (weight × completion), so the chart and the total still agree", () => {
+    const statuses = computeWorkItemStatuses([...earth, whole("Demolition", 20, 60, 6)]);
+    expect(weightedAccomplishment(statuses)).toBeCloseTo(20 + 12, 5); // 40×50% + 20×60%
+  });
+  it("uses each sub-item's latest approved report", () => {
+    const later = [...earth, sub("Earthfilling", "Compaction", 15, 80, 9)];
+    expect(computeWorkItemStatuses(later)[0].pctComplete).toBeCloseTo((1500 + 500 + 1200) / 40, 5);
+  });
+  it("an unapproved report does not count until it is approved", () => {
+    const pending = [...earth, sub("Earthfilling", "Compaction", 15, 100, 9, { reviewStatus: "SUBMITTED" })];
+    expect(computeWorkItemStatuses(pending)[0].pctComplete).toBe(50);
+    expect(summarizeProgress(pending).submittedPct).toBeCloseTo(40 * ((1500 + 500 + 1500) / 40) / 100, 5);
+  });
+  it("until the breakdown is approved the item keeps the whole-item figure it had", () => {
+    const entries = [whole("Earthfilling", 40, 70, 1), ...earth.map((e) => ({ ...e, reviewStatus: "SUBMITTED" as const }))];
+    expect(computeWorkItemStatuses(entries)[0].pctComplete).toBe(70);
+  });
+  it("once it has sub-items, older whole-item reports no longer decide its completion", () => {
+    const entries = [whole("Earthfilling", 40, 70, 1), ...earth];
+    expect(computeWorkItemStatuses(entries)[0].pctComplete).toBe(50);
+  });
+  it("a removed sub-item (weight 0) drops out; with none left the item goes back to its whole-item figure", () => {
+    const removed = [...earth, sub("Earthfilling", "Spreading", 0, 0, 8)];
+    const only = computeWorkItemStatuses([...removed.slice(0, 1), ...removed.slice(2)]);
+    expect(only[0].subItems?.map((s) => s.name)).toEqual(["Compaction", "Earthfill materials"]);
+    const gone = computeWorkItemStatuses([whole("Earthfilling", 40, 70, 1), sub("Earthfilling", "A", 0, 0, 5), sub("Earthfilling", "B", 0, 0, 5), whole("Earthfilling", 40, 55, 6)]);
+    expect(gone[0].pctComplete).toBe(55);
+    expect(gone[0].subItems).toBeUndefined();
+  });
+  it("lists current sub-items and the main weight, latest entry of any status", () => {
+    expect(currentBreakdown(earth, "Earthfilling").map((b) => b.name)).toEqual(["Compaction", "Earthfill materials", "Spreading"]);
+    expect(currentBreakdown(earth, "Other")).toEqual([]);
+    expect(currentWeight(earth, "Earthfilling")).toBe(40);
+  });
+});
+
+describe("rules for setting sub-items", () => {
+  const entries = [{ workItem: "Earthfilling", weight: 40, createdAt: new Date("2026-10-01T00:00:00Z") }, { workItem: "Demolition", weight: 20, createdAt: new Date("2026-10-01T00:00:00Z") }];
+  const ok = { workItem: "Earthfilling", weight: 40, items: [{ name: "Materials", weight: 15 }, { name: "Spreading", weight: 10 }, { name: "Compaction", weight: 15 }] };
+  it("allows sub-items that add up exactly to the main item's weight", () => expect(checkBreakdown(entries, ok)).toBeNull());
+  it("refuses sub-items that do not add up, and says by how much", () => {
+    expect(checkBreakdown(entries, { ...ok, items: [{ name: "A", weight: 15 }, { name: "B", weight: 10 }] })).toMatch(/add up to 25%.*exactly 40%/);
+  });
+  it("needs at least two sub-items, unique names and weights above zero", () => {
+    expect(checkBreakdown(entries, { ...ok, items: [{ name: "A", weight: 40 }] })).toMatch(/at least two/);
+    expect(checkBreakdown(entries, { ...ok, items: [{ name: "A", weight: 20 }, { name: " a ", weight: 20 }] })).toMatch(/twice/);
+    expect(checkBreakdown(entries, { ...ok, items: [{ name: "A", weight: 40 }, { name: "B", weight: 0 }] })).toMatch(/above zero/);
+    expect(checkBreakdown(entries, { ...ok, items: [{ name: "", weight: 20 }, { name: "B", weight: 20 }] })).toMatch(/name/);
+  });
+  it("taking the breakdown away (no sub-items) is allowed", () => expect(checkBreakdown(entries, { ...ok, items: [] })).toBeNull());
+  it("cannot push the project past 100%", () => {
+    const big = { workItem: "Earthfilling", weight: 90, items: [{ name: "A", weight: 45 }, { name: "B", weight: 45 }] };
+    expect(checkBreakdown(entries, big)).toMatch(/100%/);
   });
 });

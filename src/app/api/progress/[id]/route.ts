@@ -46,16 +46,25 @@ export const PATCH = handleApi(
       throw new ApiError(403, "Approved entries can only be corrected by the PM or Owner");
     }
 
-    const projectEntries = await prisma.progressEntry.findMany({
-      where: { projectId: entry.projectId },
-      select: { id: true, workItem: true, weight: true, createdAt: true, reviewStatus: true },
-    });
-    const weightError = checkWeightRules(
-      projectEntries,
-      { workItem: body.workItem || null, weight: body.weight ?? null, excludeId: entry.id },
-      isApprover
-    );
-    if (weightError) throw new ApiError(400, weightError);
+    // An entry that reports a sub-item keeps its work item, sub-item, weights and color: those are the breakdown's (the PM or Owner
+    // changes them with "Set sub-items"). Only the completion and the notes are corrected here.
+    const isSubEntry = !!entry.subItem;
+    const next = isSubEntry
+      ? { workItem: entry.workItem, weight: entry.weight === null ? undefined : Number(entry.weight), color: entry.color ?? "" }
+      : { workItem: body.workItem || null, weight: body.weight, color: body.color || "" };
+
+    if (!isSubEntry) {
+      const projectEntries = await prisma.progressEntry.findMany({
+        where: { projectId: entry.projectId },
+        select: { id: true, workItem: true, weight: true, createdAt: true, reviewStatus: true },
+      });
+      const weightError = checkWeightRules(
+        projectEntries,
+        { workItem: next.workItem, weight: next.weight ?? null, excludeId: entry.id },
+        isApprover
+      );
+      if (weightError) throw new ApiError(400, weightError);
+    }
 
     const resubmitting = entry.reviewStatus === "QUERIED" && isSubmitter && !isApprover;
     const correcting = entry.reviewStatus === "APPROVED";
@@ -63,9 +72,9 @@ export const PATCH = handleApi(
     const updated = await prisma.progressEntry.update({
       where: { id: params.id },
       data: {
-        workItem: body.workItem || null,
-        weight: body.weight ?? null,
-        color: body.color || null,
+        workItem: next.workItem,
+        weight: next.weight ?? null,
+        color: next.color || null,
         pctComplete: body.pctComplete,
         notes: body.notes || null,
         editedById: user.id,
@@ -84,8 +93,8 @@ export const PATCH = handleApi(
       diff: {
         project: entry.project.name,
         status: updated.reviewStatus,
-        from: { workItem: entry.workItem, weight: entry.weight?.toString() ?? null, pctComplete: Number(entry.pctComplete) },
-        to: { workItem: body.workItem || null, weight: body.weight ?? null, pctComplete: body.pctComplete },
+        from: { workItem: entry.workItem, subItem: entry.subItem, weight: entry.weight?.toString() ?? null, pctComplete: Number(entry.pctComplete) },
+        to: { workItem: next.workItem, subItem: entry.subItem, weight: next.weight ?? null, pctComplete: body.pctComplete },
       },
     });
 

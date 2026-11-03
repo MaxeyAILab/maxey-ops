@@ -52,6 +52,17 @@ export const GET = handleApi(async (_req: NextRequest, { params }: { params: { i
       s.color,
       s.lastUpdated.toISOString(),
     ]);
+    // the parts the work item is made of (each weight is its share of the whole project)
+    for (const sub of s.subItems ?? []) {
+      csv += csvRow([
+        `   - ${sub.name}`,
+        sub.weight.toFixed(2),
+        sub.pctComplete.toFixed(2),
+        ((sub.weight * sub.pctComplete) / 100).toFixed(2),
+        "",
+        sub.lastUpdated.toISOString(),
+      ]);
+    }
   }
   if (statuses.length === 0) {
     csv += csvRow(["No weighted work items recorded yet."]);

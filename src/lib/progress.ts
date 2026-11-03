@@ -6,6 +6,10 @@
  * by that item's share of the project (the `weight` field, e.g. 30 = 30%
  * of scope).
  *
+ * A work item can be broken into SUB-ITEMS (e.g. Earthfilling and Compaction → earthfill materials, spreading, compaction). Each
+ * sub-item has its own weight (its share of the whole project; the sub-items' weights add up to the main item's weight) and its own
+ * completion %. The main item's completion is then the sub-items' weighted average, so the project total is the same sum as always.
+ *
  * Review lifecycle: an entry is SUBMITTED by the field, then APPROVED (or
  * QUERIED back) by a PM/Owner. Only APPROVED entries count as verified
  * progress; submitted-but-unreviewed work is reported separately.
@@ -24,6 +28,18 @@ export interface ProgressEntryLike {
    * unreviewed work as verified. */
   reviewStatus: ReviewStatus;
   reviewedAt?: Date | null;
+  /** set when the entry reports one sub-item of the work item */
+  subItem?: string | null;
+  /** that sub-item's share of the whole project (0 = the sub-item was removed) */
+  subWeight?: unknown;
+}
+
+export interface SubItemStatus {
+  name: string;
+  /** this sub-item's share of the whole project */
+  weight: number;
+  pctComplete: number;
+  lastUpdated: Date;
 }
 
 export interface WorkItemStatus {
@@ -32,6 +48,8 @@ export interface WorkItemStatus {
   pctComplete: number;
   color: string;
   lastUpdated: Date;
+  /** the sub-items this item is made of (empty or missing when it is reported as a whole) */
+  subItems?: SubItemStatus[];
 }
 
 // Deterministic fallback so items reported before the color picker existed
@@ -53,23 +71,43 @@ function fallbackColor(name: string): string {
 }
 
 function collapse(entries: ProgressEntryLike[], allowed: ReadonlySet<ReviewStatus>): WorkItemStatus[] {
-  const byItem = new Map<string, WorkItemStatus>();
+  interface Acc {
+    latest: ProgressEntryLike;
+    whole: ProgressEntryLike | null;
+    subs: Map<string, ProgressEntryLike>;
+  }
+  const byItem = new Map<string, Acc>();
   for (const e of entries) {
     if (!allowed.has(e.reviewStatus)) continue;
     const name = e.workItem?.trim();
     if (!name || e.weight == null) continue;
-    const existing = byItem.get(name);
-    if (!existing || e.createdAt > existing.lastUpdated) {
-      byItem.set(name, {
-        workItem: name,
-        weight: Number(e.weight),
-        pctComplete: Number(e.pctComplete),
-        color: e.color || fallbackColor(name),
-        lastUpdated: e.createdAt,
-      });
+    let acc = byItem.get(name);
+    if (!acc) byItem.set(name, (acc = { latest: e, whole: null, subs: new Map() }));
+    if (e.createdAt > acc.latest.createdAt) acc.latest = e;
+    const sub = e.subItem?.trim();
+    if (sub) {
+      const cur = acc.subs.get(sub);
+      if (!cur || e.createdAt > cur.createdAt) acc.subs.set(sub, e);
+    } else if (!acc.whole || e.createdAt > acc.whole.createdAt) acc.whole = e;
+  }
+
+  const out: WorkItemStatus[] = [];
+  for (const [name, acc] of byItem) {
+    const active = [...acc.subs].filter(([, e]) => Number(e.subWeight ?? 0) > 0);
+    if (active.length > 0) {
+      // reported by its sub-items: the weighted average of their completion
+      const subItems: SubItemStatus[] = active
+        .map(([sub, e]) => ({ name: sub, weight: Number(e.subWeight), pctComplete: Number(e.pctComplete), lastUpdated: e.createdAt }))
+        .sort((x, y) => y.weight - x.weight || x.name.localeCompare(y.name));
+      const total = subItems.reduce((sum, x) => sum + x.weight, 0);
+      const pct = total > 0 ? subItems.reduce((sum, x) => sum + x.weight * x.pctComplete, 0) / total : 0;
+      const lastUpdated = subItems.reduce((d, x) => (x.lastUpdated > d ? x.lastUpdated : d), acc.latest.createdAt);
+      out.push({ workItem: name, weight: Number(acc.latest.weight), pctComplete: Math.max(0, Math.min(100, pct)), color: acc.latest.color || fallbackColor(name), lastUpdated, subItems });
+    } else if (acc.whole) {
+      out.push({ workItem: name, weight: Number(acc.whole.weight), pctComplete: Number(acc.whole.pctComplete), color: acc.whole.color || fallbackColor(name), lastUpdated: acc.whole.createdAt });
     }
   }
-  return Array.from(byItem.values()).sort((a, b) => b.weight - a.weight);
+  return out.sort((x, y) => y.weight - x.weight);
 }
 
 const APPROVED_ONLY: ReadonlySet<ReviewStatus> = new Set(["APPROVED"]);
@@ -197,5 +235,84 @@ export function checkWeightRules(
   if (after > 100.01 && after > before + 0.001) {
     return `Work-item weights would total ${after.toFixed(0)}% — they can't exceed 100%.`;
   }
+  return null;
+}
+
+// ---------------------------------------------------------------------------------------------------------- sub-item breakdowns
+
+export interface BreakdownItem {
+  name: string;
+  /** this sub-item's share of the whole project */
+  weight: number;
+  pctComplete: number;
+}
+
+interface BreakdownEntry {
+  workItem: string | null;
+  subItem?: string | null;
+  subWeight?: unknown;
+  pctComplete: unknown;
+  weight?: unknown;
+  createdAt: Date;
+}
+
+/** The sub-items a work item has now (the latest entry of any status for each; removed ones are left out). Empty when it has none. */
+export function currentBreakdown(entries: BreakdownEntry[], workItem: string): BreakdownItem[] {
+  const latest = new Map<string, BreakdownEntry>();
+  for (const e of entries) {
+    const sub = e.subItem?.trim();
+    if (!sub || e.workItem?.trim() !== workItem.trim()) continue;
+    const cur = latest.get(sub);
+    if (!cur || e.createdAt > cur.createdAt) latest.set(sub, e);
+  }
+  return [...latest]
+    .filter(([, e]) => Number(e.subWeight ?? 0) > 0)
+    .map(([name, e]) => ({ name, weight: Number(e.subWeight), pctComplete: Number(e.pctComplete) }))
+    .sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name));
+}
+
+/** The main item's weight now: the latest entry of any kind and status that has one. */
+export function currentWeight(entries: BreakdownEntry[], workItem: string): number | null {
+  let best: BreakdownEntry | null = null;
+  for (const e of entries) {
+    if (e.workItem?.trim() !== workItem.trim() || e.weight == null) continue;
+    if (!best || e.createdAt > best.createdAt) best = e;
+  }
+  return best ? Number(best.weight) : null;
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Rules for setting (or changing) a work item's sub-items. Returns a human-readable error, or null if allowed:
+ *  - at least two sub-items (or none, which takes the breakdown away and goes back to reporting the item as a whole);
+ *  - each with its own name and a weight above zero;
+ *  - the weights add up exactly to the main item's weight, so the sub-items are what make up the item;
+ *  - the project's weights may not be pushed past 100%.
+ */
+export function checkBreakdown(
+  entries: { id?: string; workItem: string | null; weight: unknown; createdAt: Date }[],
+  input: { workItem: string; weight: number; items: { name: string; weight: number }[] }
+): string | null {
+  const name = input.workItem.trim();
+  if (!name) return "Choose the work item to break down.";
+  if (!(input.weight > 0) || input.weight > 100) return "The work item's weight must be between 0 and 100%.";
+  if (input.items.length === 0) return null; // taking the breakdown away
+  if (input.items.length < 2) return "Add at least two sub-items — one sub-item would just be the work item itself.";
+  const seen = new Set<string>();
+  for (const it of input.items) {
+    const n = it.name.trim();
+    if (!n) return "Every sub-item needs a name.";
+    if (seen.has(n.toLowerCase())) return `"${n}" is listed twice.`;
+    seen.add(n.toLowerCase());
+    if (!(it.weight > 0)) return `"${n}" needs a weight above zero.`;
+  }
+  const total = round2(input.items.reduce((s, it) => s + it.weight, 0));
+  if (Math.abs(total - input.weight) > 0.01) {
+    return `The sub-items add up to ${total}% but "${name}" is ${input.weight}% of the project — they must add up to exactly ${input.weight}%.`;
+  }
+  const before = weightTotal(entries, { workItem: null, weight: null });
+  const after = weightTotal(entries, { workItem: name, weight: input.weight });
+  if (after > 100.01 && after > before + 0.001) return `Work-item weights would total ${after.toFixed(0)}% — they cannot exceed 100%.`;
   return null;
 }
