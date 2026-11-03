@@ -432,8 +432,10 @@ export async function computeProjectPayroll(
 
   const entries: PayrollEntry[] = [];
   for (const a of assignments) {
+    // From the day they joined the project — compared by calendar day, so a 7:30 AM clock-in on the very first day (which is before the
+    // start date's midnight-UTC instant) still counts
     const records = attendance.filter(
-      (rec) => rec.userId === a.userId && rec.timeIn >= a.startDate
+      (rec) => rec.userId === a.userId && manilaDayKey(rec.timeIn) >= a.startDate.toISOString().slice(0, 10)
     );
     const entry = buildEntry(
       a.user,

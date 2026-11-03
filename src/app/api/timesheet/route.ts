@@ -53,9 +53,10 @@ export const POST = handleApi(async (req: NextRequest) => {
 
   const roster = await prisma.projectAssignment.findMany({
     where: { projectId: project.id, active: true },
-    select: { user: { select: { id: true, name: true, email: true, department: true, active: true } } },
+    select: { startDate: true, user: { select: { id: true, name: true, email: true, department: true, active: true } } },
   });
   const workers = new Map(roster.map((r) => [r.user.id, r.user]));
+  const joined = new Map(roster.map((r) => [r.user.id, r.startDate.toISOString().slice(0, 10)]));
 
   const results: { userId: string; ok: boolean; error?: string; hours?: number; cleared?: boolean }[] = [];
   let overtimeRows = 0;
@@ -63,6 +64,11 @@ export const POST = handleApi(async (req: NextRequest) => {
     const worker = workers.get(r.userId);
     if (!worker || !worker.active) {
       results.push({ userId: r.userId, ok: false, error: "This person is not on the project's roster" });
+      continue;
+    }
+    // project payroll counts a worker's days from the day they joined the project — recording an earlier day would never be paid
+    if (dayKey < (joined.get(r.userId) ?? "")) {
+      results.push({ userId: r.userId, ok: false, error: `${worker.name} joined this project on ${joined.get(r.userId)} — a day before that would not be paid. Ask the Owner to assign them from an earlier date (Attendance → Edit).` });
       continue;
     }
     if (!isNoLoginAccount(worker.email)) {
@@ -85,9 +91,9 @@ export const POST = handleApi(async (req: NextRequest) => {
       continue;
     }
     try {
-      const saved = await prisma.$transaction((db) => saveSheetRow(db, { userId: worker.id, projectId: project.id, dayKey, input, actor: { id: user.id, name: user.name }, workerName: worker.name }));
+      const saved = await prisma.$transaction((db) => saveSheetRow(db, { userId: worker.id, projectId: project.id, dayKey, input, actor: { id: user.id, name: user.name, role: user.role }, workerName: worker.name }));
       results.push({ userId: r.userId, ok: true, hours: regularHours(dayKey, input, worker.department), cleared: saved.cleared });
-      if ((input.otHours ?? 0) > 0) overtimeRows++;
+      if ((input.otHours ?? 0) > 0 && user.role !== "OWNER") overtimeRows++; // the Owner recording overtime has approved it — no one to tell
       await audit({
         entityType: "TimesheetEntry",
         entityId: saved.entryId || worker.id,

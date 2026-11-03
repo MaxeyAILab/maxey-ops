@@ -31,7 +31,7 @@ export interface SaveRowResult {
  */
 export async function saveSheetRow(
   db: Db,
-  p: { userId: string; projectId: string; dayKey: string; input: SheetInput; actor: { id: string; name: string }; workerName: string }
+  p: { userId: string; projectId: string; dayKey: string; input: SheetInput; actor: { id: string; name: string; role: string }; workerName: string }
 ): Promise<SaveRowResult> {
   const { userId, projectId, dayKey, input, actor } = p;
   const date = new Date(`${dayKey}T00:00:00.000Z`);
@@ -73,7 +73,19 @@ export async function saveSheetRow(
     if (pmRequest) {
       if (pmRequest.status === "PENDING") await db.timeAdjustmentRequest.update({ where: { id: pmRequest.id }, data: { reason } });
     } else {
-      await db.timeAdjustmentRequest.create({ data: { attendanceId: pmId, userId, type: "OVERTIME", reason, requestedById: actor.id } });
+      // The Owner recording the overtime is the Owner approving it (nobody may decide their own request, and the Owner is the one who
+      // decides). Anyone else's overtime waits for the Owner or PM, as before.
+      const byOwner = actor.role === "OWNER";
+      await db.timeAdjustmentRequest.create({
+        data: {
+          attendanceId: pmId,
+          userId,
+          type: "OVERTIME",
+          reason,
+          requestedById: actor.id,
+          ...(byOwner ? { status: "APPROVED" as const, decidedById: actor.id, decidedAt: new Date(), decisionNote: "Recorded by the Owner on the timekeeper sheet", approvedHours: ot } : {}),
+        },
+      });
     }
   }
   // overtime taken off (or the PM shift cleared) while still waiting: the request goes away (deleting the shift already cascades it)

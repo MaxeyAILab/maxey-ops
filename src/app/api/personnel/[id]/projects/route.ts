@@ -7,11 +7,13 @@ import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 const schema = z.object({
   /** every project the person should be on now (an empty list = no project, "TBA") */
   projectIds: z.array(z.string().min(1)).max(30),
+  /** the day they join the projects being added (YYYY-MM-DD); default today. Payroll counts their days from here. */
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 /**
  * PUT /api/personnel/[id]/projects — Owner only. Sets which project rosters a person is on, from the Attendance tab: projects added
- * here put them on that roster from today (at their own rate), projects left out take them off (nothing is deleted — the time
+ * here put them on that roster from the date given (default today, at their own rate), projects left out take them off (nothing is deleted — the time
  * already logged and past payroll stay as they are). No project at all means "TBA". Their department and role are changed in
  * "Edit personnel" as before.
  */
@@ -35,7 +37,11 @@ export const PUT = handleApi(async (req: NextRequest, { params }: { params: { id
   const rate = person.hourlyRate !== null ? Number(person.hourlyRate) : person.dailyRate !== null ? Number(person.dailyRate) / 8 : null;
   if (toAdd.length > 0 && !(rate && rate > 0)) throw new ApiError(400, `Set ${person.name}'s daily rate first (Edit personnel) — the roster needs a rate`);
 
-  const today = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
+  const todayKey = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(new Date());
+  const fromKey = body.startDate ?? todayKey;
+  const today = new Date(`${fromKey}T00:00:00.000Z`);
+  if (Number.isNaN(today.getTime()) || today.toISOString().slice(0, 10) !== fromKey) throw new ApiError(400, "That is not a valid start date");
+  if (fromKey > todayKey) throw new ApiError(400, "The start date cannot be in the future");
   await prisma.$transaction(async (db) => {
     for (const a of toRemove) await db.projectAssignment.update({ where: { id: a.id }, data: { active: false } });
     for (const projectId of toAdd) {

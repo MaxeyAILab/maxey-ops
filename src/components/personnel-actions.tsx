@@ -338,6 +338,7 @@ export function EditPersonnelButton({
   const [role, setRole] = useState<Role>(initialRole ?? "OFFICE");
   const [department, setDepartment] = useState(initialDepartment ?? "OFFICE");
   const [projectIds, setProjectIds] = useState<Set<string>>(new Set(assignedProjectIds ?? []));
+  const [joinDate, setJoinDate] = useState(new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10)); // today in Manila
   const projectsChanged = (() => {
     const before = new Set(assignedProjectIds ?? []);
     return before.size !== projectIds.size || [...projectIds].some((id) => !before.has(id));
@@ -382,7 +383,7 @@ export function EditPersonnelButton({
       const res2 = await fetch(`/api/personnel/${userId}/projects`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectIds: Array.from(projectIds) }),
+        body: JSON.stringify({ projectIds: Array.from(projectIds), startDate: joinDate }),
       });
       if (!res2.ok) {
         setBusy(false);
@@ -490,8 +491,15 @@ export function EditPersonnelButton({
                         {projects.length === 0 && <p className="text-xs text-ink-400">There are no active projects.</p>}
                       </div>
                       <p className="mt-1 text-xs text-ink-400">
-                        {projectIds.size === 0 ? "No project ticked: shown as TBA until assigned." : `On ${projectIds.size} project${projectIds.size === 1 ? "" : "s"} from today, at their daily rate.`} Hours already logged and past payroll stay as they are.
+                        {projectIds.size === 0 ? "No project ticked: shown as TBA until assigned." : `On ${projectIds.size} project${projectIds.size === 1 ? "" : "s"}, at their daily rate.`} Hours already logged and past payroll stay as they are.
                       </p>
+                      {projectsChanged && projectIds.size > 0 && (
+                        <div className="mt-2">
+                          <Label htmlFor={`eJoin-${userId}`}>On the newly ticked project(s) from</Label>
+                          <Input id={`eJoin-${userId}`} type="date" value={joinDate} max={new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10)} onChange={(e) => setJoinDate(e.target.value)} />
+                          <p className="mt-1 text-xs text-ink-400">Payroll counts their days on the project from this date — set it to the day they really started.</p>
+                        </div>
+                      )}
                     </div>
                   )}
                   <div className="grid gap-3 sm:grid-cols-2">
