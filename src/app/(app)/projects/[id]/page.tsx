@@ -24,6 +24,7 @@ import { canAccess } from "@/lib/access";
 import { computeWorkItemStatuses, currentBreakdown, summarizeProgress, weightTotal } from "@/lib/progress";
 import { SubItemsManager } from "@/components/sub-items-editor";
 import { ContractValueEditor } from "@/components/contract-value-editor";
+import { StartDateEditor } from "@/components/start-date-editor";
 import { contractLock } from "@/lib/project-cost";
 import { computeForecast } from "@/lib/forecast";
 import { computeSchedule } from "@/lib/schedule";
@@ -660,7 +661,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
               </p>
             )}
             <p className="text-xs text-ink-500">
-              {p.client.name} · {p.address ?? "no address"} · {p.startDate ? `started ${fmtDate(p.startDate)}` : "not started"}
+              {p.client.name} · {p.address ?? "no address"} · <StartDateEditor projectId={p.id} value={p.startDate ? p.startDate.toISOString() : null} canEdit={user.role === "OWNER"} variant="header" />
               {p.targetEndDate && <> · target finish {fmtDate(p.targetEndDate)}</>}
             </p>
             <p className="text-xs text-ink-500">

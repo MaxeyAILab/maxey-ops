@@ -17,6 +17,7 @@ import {
 } from "@/components/project-management";
 import { FINANCE_ROLES } from "@/lib/rbac";
 import { canAccess } from "@/lib/access";
+import { StartDateEditor } from "@/components/start-date-editor";
 import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
 
 export const metadata = { title: "Projects" };
@@ -127,7 +128,7 @@ export default async function ProjectsPage() {
             <Td className="text-right tabular-nums">
               {weightedAccomplishment(computeWorkItemStatuses(p.progressEntries)).toFixed(0)}%
             </Td>
-            <Td>{fmtDate(p.startDate)}</Td>
+            <Td><StartDateEditor projectId={p.id} value={p.startDate ? p.startDate.toISOString() : null} canEdit={isOwner} /></Td>
             {isOwner && (
               <Td className="text-right">
                 <DeleteProjectButton projectId={p.id} name={p.name} />
@@ -198,7 +199,7 @@ export default async function ProjectsPage() {
                 </Td>
                 <Td>{canManage ? <ProjectStatusSelect projectId={p.id} current={p.status} /> : <Badge value={p.status} />}</Td>
                 <Td className="text-right tabular-nums">{weightedAccomplishment(computeWorkItemStatuses(p.progressEntries)).toFixed(0)}%</Td>
-                <Td>{fmtDate(p.startDate)}</Td>
+                <Td><StartDateEditor projectId={p.id} value={p.startDate ? p.startDate.toISOString() : null} canEdit={isOwner} /></Td>
                 {isOwner && (
                   <Td className="text-right">
                     <DeleteProjectButton projectId={p.id} name={p.name} />
