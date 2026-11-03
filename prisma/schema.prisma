@@ -1699,3 +1699,30 @@ model TallyOut {
   @@index([status])
   @@index([projectId])
 }
+
+/// The timekeeper's daily sheet line for a worker who has no login: AM and PM times, overtime after 5:00 PM and who approved it on
+/// site. Saving it writes the worker's clock-in/out records (amAttendanceId / pmAttendanceId) so payroll counts them like anyone else's
+/// time; overtime also opens the usual overtime request for the Owner or PM to approve.
+model TimesheetEntry {
+  id             String   @id @default(cuid())
+  userId         String // the worker
+  projectId      String
+  date           DateTime // the Manila calendar day, stored as that date at 00:00 UTC
+  amIn           String? // "07:30"
+  amOut          String?
+  pmIn           String?
+  pmOut          String?
+  otHours        Decimal? @db.Decimal(4, 2) // hours worked after 5:00 PM
+  approvedBy     String? // the site/project engineer or foreman who approved the day / the overtime
+  remarks        String?
+  absent         Boolean  @default(false)
+  amAttendanceId String?
+  pmAttendanceId String?
+  enteredById    String
+  enteredByName  String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([userId, projectId, date])
+  @@index([projectId, date])
+}

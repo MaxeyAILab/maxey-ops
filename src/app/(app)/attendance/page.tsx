@@ -22,6 +22,7 @@ import { LocationPin } from "@/components/location-pin";
 import { EditPeriodTotalButton, EditTodayHoursButton } from "@/components/hours-override-button";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
 import { payslipPeriodLabel } from "@/lib/payslip";
+import { canOpenTimesheets } from "@/lib/timesheet";
 import { computeDailyHoursByDay, fetchApprovals, fetchDailyOverrides, withLiveOpenShifts } from "@/lib/payroll";
 import {
   isEarlyStart,
@@ -189,6 +190,9 @@ export default async function AttendancePage() {
   // excluded from every project roster (no assignment) and from the office
   // list below (department is SITE, not OFFICE/DRIVER).
   let tbaRows: typeof officeRows = [];
+  // every active roster a person is on (a person can be on several projects) and the projects the Owner can put people on
+  const assignedByUser = new Map<string, string[]>();
+  let projectChoices: { id: string; name: string }[] = [];
 
   if (isAdmin) {
     const [rosters, officeStaff, tbaWorkers, weekAttendance] = await Promise.all([
@@ -265,6 +269,18 @@ export default async function AttendancePage() {
         where: { OR: [{ timeIn: { gte: fetchStart } }, { timeOut: null }] },
       }),
     ]);
+    if (user.role === "OWNER") {
+      const [activeAssignments, choosable] = await Promise.all([
+        prisma.projectAssignment.findMany({ where: { active: true }, select: { userId: true, project: { select: { id: true, name: true } } } }),
+        prisma.project.findMany({ where: { status: { in: CHARGEABLE_STATUSES } }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+      ]);
+      const byId = new Map(choosable.map((p) => [p.id, p]));
+      for (const a of activeAssignments) {
+        assignedByUser.set(a.userId, [...(assignedByUser.get(a.userId) ?? []), a.project.id]);
+        if (!byId.has(a.project.id)) byId.set(a.project.id, a.project); // a project they are on stays in the list even if it is no longer active
+      }
+      projectChoices = [...byId.values()].sort((x, y) => x.name.localeCompare(y.name));
+    }
     const allUserIds = Array.from(
       new Set([
         ...weekAttendance.map((a) => a.userId),
@@ -544,6 +560,8 @@ export default async function AttendancePage() {
                   role={r.role}
                   useCustomMenus={r.useCustomMenus}
                   customMenus={r.customMenus}
+                  projects={projectChoices}
+                  assignedProjectIds={assignedByUser.get(r.userId) ?? []}
                 />
                 <RemovePersonnelButton userId={r.userId} name={r.name} />
               </Td>
@@ -574,6 +592,11 @@ export default async function AttendancePage() {
           )}
         </div>
         <div className="flex items-center gap-3">
+          {canOpenTimesheets(user) && (
+            <Link href="/attendance/timekeeper" className="text-xs font-medium text-brand-600 hover:underline">
+              Timekeeper sheet →
+            </Link>
+          )}
           {user.role === "OWNER" && (
             <Link href="/attendance/logs" className="text-xs font-medium text-brand-600 hover:underline">
               Staff time logs →

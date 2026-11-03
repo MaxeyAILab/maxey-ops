@@ -311,7 +311,13 @@ export function EditPersonnelButton({
   role: initialRole,
   useCustomMenus: initialUseCustomMenus,
   customMenus: initialCustomMenus,
+  projects,
+  assignedProjectIds,
 }: {
+  /** the projects a person can be put on (the Owner's Edit offers them as tick boxes) */
+  projects?: { id: string; name: string }[];
+  /** the projects the person is on now — none means "TBA" */
+  assignedProjectIds?: string[];
   userId: string;
   name: string;
   position: string;
@@ -331,6 +337,11 @@ export function EditPersonnelButton({
   const [error, setError] = useState("");
   const [role, setRole] = useState<Role>(initialRole ?? "OFFICE");
   const [department, setDepartment] = useState(initialDepartment ?? "OFFICE");
+  const [projectIds, setProjectIds] = useState<Set<string>>(new Set(assignedProjectIds ?? []));
+  const projectsChanged = (() => {
+    const before = new Set(assignedProjectIds ?? []);
+    return before.size !== projectIds.size || [...projectIds].some((id) => !before.has(id));
+  })();
   const isSalaried = department === "OFFICE" || department === "ARCHITECT" || department === "ENGINEER";
   const [checkedMenus, setCheckedMenus] = useState<Set<string>>(
     new Set(
@@ -367,6 +378,19 @@ export function EditPersonnelButton({
         customMenus: Array.from(checkedMenus),
       }),
     });
+    if (res.ok && projects && projectsChanged) {
+      const res2 = await fetch(`/api/personnel/${userId}/projects`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectIds: Array.from(projectIds) }),
+      });
+      if (!res2.ok) {
+        setBusy(false);
+        setError(`Saved, but the projects were not changed: ${(await res2.json().catch(() => ({}))).error ?? "failed"}`);
+        router.refresh();
+        return;
+      }
+    }
     setBusy(false);
     if (res.ok) {
       setOpen(false);
@@ -442,6 +466,34 @@ export function EditPersonnelButton({
                       <option value="ENGINEER">Engineer</option>
                     </Select>
                   </div>
+                  {projects && (
+                    <div>
+                      <Label>Assigned projects</Label>
+                      <div className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-ink-200 p-2">
+                        {projects.map((p) => (
+                          <label key={p.id} className="flex cursor-pointer items-center gap-2 text-sm text-ink-700">
+                            <input
+                              type="checkbox"
+                              checked={projectIds.has(p.id)}
+                              onChange={(e) =>
+                                setProjectIds((cur) => {
+                                  const next = new Set(cur);
+                                  if (e.target.checked) next.add(p.id);
+                                  else next.delete(p.id);
+                                  return next;
+                                })
+                              }
+                            />
+                            {p.name}
+                          </label>
+                        ))}
+                        {projects.length === 0 && <p className="text-xs text-ink-400">There are no active projects.</p>}
+                      </div>
+                      <p className="mt-1 text-xs text-ink-400">
+                        {projectIds.size === 0 ? "No project ticked: shown as TBA until assigned." : `On ${projectIds.size} project${projectIds.size === 1 ? "" : "s"} from today, at their daily rate.`} Hours already logged and past payroll stay as they are.
+                      </p>
+                    </div>
+                  )}
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div>
                       <Label htmlFor={`eRate-${userId}`}>Daily rate (PHP)</Label>
