@@ -141,3 +141,40 @@ export function canEditSheet(
 
 /** Workers the timekeeper records are the ones with no login of their own (a placeholder email made when they were added). */
 export const isNoLoginAccount = (email: string | null | undefined): boolean => !!email && email.toLowerCase().endsWith("@staff.maxeyconstruction.ph");
+
+// ------------------------------------------------------------------------------------------------ adding a worker from the sheet
+
+export interface NewWorkerInput {
+  name: string;
+  position: string;
+  dailyRate: number | null;
+  hourlyRate: number | null;
+}
+
+export const MAX_DAILY_RATE = 20_000;
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * The two rates of a new worker: give either and the other follows (a day is 8 paid hours). Returns the pair, or a reason it
+ * cannot be used.
+ */
+export function workerRates(input: Pick<NewWorkerInput, "dailyRate" | "hourlyRate">): { dailyRate: number; hourlyRate: number } | { error: string } {
+  const d = input.dailyRate && input.dailyRate > 0 ? input.dailyRate : null;
+  const h = input.hourlyRate && input.hourlyRate > 0 ? input.hourlyRate : null;
+  if (!d && !h) return { error: "Enter a daily rate or an hourly rate" };
+  const daily = d ?? r2(h! * 8);
+  const hourly = h ?? r2(d! / 8);
+  if (daily > MAX_DAILY_RATE) return { error: `A daily rate above ₱${MAX_DAILY_RATE.toLocaleString("en-PH")} is not likely — check the amount` };
+  if (d && h && Math.abs(r2(h * 8) - d) > 1) return { error: "The daily rate and the hourly rate do not match (hourly × 8 should equal daily) — enter just one of them" };
+  return { dailyRate: r2(daily), hourlyRate: r2(hourly) };
+}
+
+/** A reason a new worker cannot be added, or null. */
+export function validateNewWorker(i: NewWorkerInput): string | null {
+  if (i.name.trim().length < 2) return "Enter the worker's name";
+  if (i.name.trim().length > 100) return "The name is too long";
+  if (i.position.trim().length < 2) return "Enter the worker's position (Mason, Carpenter, Helper…)";
+  const rates = workerRates(i);
+  return "error" in rates ? rates.error : null;
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { computeEffectiveHours, manilaTime } from "./time-rules";
-import { FULL_DAY, canEditSheet, canOpenTimesheets, isNoLoginAccount, isTimekeeperPosition, regularHours, sheetShifts, validateSheetRow, type SheetInput } from "./timesheet";
+import { validateNewWorker, workerRates, FULL_DAY, canEditSheet, canOpenTimesheets, isNoLoginAccount, isTimekeeperPosition, regularHours, sheetShifts, validateSheetRow, type SheetInput } from "./timesheet";
 
 const row = (over: Partial<SheetInput> = {}): SheetInput => ({ ...FULL_DAY, otHours: null, approvedBy: null, remarks: null, absent: false, ...over });
 const DAY = "2026-11-03";
@@ -89,5 +89,28 @@ describe("who may edit the sheet", () => {
     expect(isNoLoginAccount("juan.dela.cruz.1a2b3c@staff.maxeyconstruction.ph")).toBe(true);
     expect(isNoLoginAccount("juan@gmail.com")).toBe(false);
     expect(isNoLoginAccount(null)).toBe(false);
+  });
+});
+
+describe("adding a worker from the sheet", () => {
+  it("either rate gives the other (a day is 8 hours)", () => {
+    expect(workerRates({ dailyRate: 800, hourlyRate: null })).toEqual({ dailyRate: 800, hourlyRate: 100 });
+    expect(workerRates({ dailyRate: null, hourlyRate: 62.5 })).toEqual({ dailyRate: 500, hourlyRate: 62.5 });
+    expect(workerRates({ dailyRate: 750, hourlyRate: null })).toEqual({ dailyRate: 750, hourlyRate: 93.75 });
+  });
+  it("both rates must agree when both are given", () => {
+    expect(workerRates({ dailyRate: 800, hourlyRate: 100 })).toEqual({ dailyRate: 800, hourlyRate: 100 });
+    expect(workerRates({ dailyRate: 800, hourlyRate: 90 })).toMatchObject({ error: expect.stringMatching(/do not match/) });
+  });
+  it("a rate is needed, and an absurd one is refused", () => {
+    expect(workerRates({ dailyRate: null, hourlyRate: null })).toMatchObject({ error: expect.stringMatching(/Enter a daily rate/) });
+    expect(workerRates({ dailyRate: 0, hourlyRate: 0 })).toHaveProperty("error");
+    expect(workerRates({ dailyRate: 90000, hourlyRate: null })).toHaveProperty("error");
+  });
+  it("a name, a position and a rate are all required", () => {
+    expect(validateNewWorker({ name: "Juan Dela Cruz", position: "Mason", dailyRate: 800, hourlyRate: null })).toBeNull();
+    expect(validateNewWorker({ name: "J", position: "Mason", dailyRate: 800, hourlyRate: null })).toMatch(/name/);
+    expect(validateNewWorker({ name: "Juan", position: "", dailyRate: 800, hourlyRate: null })).toMatch(/position/);
+    expect(validateNewWorker({ name: "Juan", position: "Mason", dailyRate: null, hourlyRate: null })).toMatch(/rate/);
   });
 });

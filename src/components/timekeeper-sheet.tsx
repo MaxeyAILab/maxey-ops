@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui";
+import { Button, Input, Label } from "@/components/ui";
 import { AM_FROM, AM_TO, FULL_DAY, MAX_OVERTIME_HOURS, PM_FROM, PM_TO, regularHours, validateSheetRow, type SheetInput } from "@/lib/timesheet";
 
 export interface SheetWorker {
@@ -10,6 +10,8 @@ export interface SheetWorker {
   name: string;
   position: string;
   department: string | null;
+  /** the times they clocked in on their own that day ("07:32–12:01, 13:00–17:05"), when they did — then the sheet does not add to it */
+  selfClock: string | null;
   /** what is saved for this day (null = nothing recorded yet) */
   saved: {
     amIn: string | null;
@@ -93,6 +95,8 @@ export function TimekeeperSheet({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const editable = canEdit && !lockedReason;
+  /** a worker who clocked in on their own is already counted — the sheet leaves them alone (unless a sheet line was saved before) */
+  const locked = (w: SheetWorker) => !!w.selfClock && !w.saved;
 
   const dirtyIds = workers.filter((w) => !same(rows[w.userId], initial[w.userId])).map((w) => w.userId);
   const set = (id: string, patch: Partial<RowState>) => setRows((r) => ({ ...r, [id]: { ...r[id], ...patch } }));
@@ -112,14 +116,14 @@ export function TimekeeperSheet({
       const next = { ...all };
       for (const w of workers) {
         const r = next[w.userId];
-        if (r.absent) continue;
+        if (r.absent || locked(w)) continue;
         if (half === "AM") next[w.userId] = on ? { ...r, amIn: r.amIn || FULL_DAY.amIn, amOut: r.amOut || FULL_DAY.amOut } : { ...r, amIn: "", amOut: "" };
         else next[w.userId] = on ? { ...r, pmIn: r.pmIn || FULL_DAY.pmIn, pmOut: r.pmOut || FULL_DAY.pmOut } : { ...r, pmIn: "", pmOut: "", ot: "" };
       }
       return next;
     });
   const everyone = (half: "AM" | "PM") => {
-    const live = workers.filter((w) => !rows[w.userId].absent);
+    const live = workers.filter((w) => !rows[w.userId].absent && !locked(w));
     return live.length > 0 && live.every((w) => (half === "AM" ? amTicked(rows[w.userId]) : pmTicked(rows[w.userId])));
   };
   const clearRow = (id: string) => set(id, { amIn: "", amOut: "", pmIn: "", pmOut: "", ot: "", approvedBy: "", absent: false });
@@ -129,6 +133,7 @@ export function TimekeeperSheet({
     setRows((r) => {
       const next = { ...r };
       for (const w of workers) {
+        if (locked(w)) continue;
         const x = next[w.userId];
         if (!x.absent && !x.amIn && !x.amOut && !x.pmIn && !x.pmOut) next[w.userId] = { ...x, amIn: FULL_DAY.amIn, amOut: FULL_DAY.amOut, pmIn: FULL_DAY.pmIn, pmOut: FULL_DAY.pmOut };
       }
@@ -238,8 +243,14 @@ export function TimekeeperSheet({
                     <div className="font-medium text-ink-900">{w.name}</div>
                     <div className="text-xs text-ink-500">{w.position}</div>
                     {w.saved && !dirty && <div className="text-[11px] text-ink-400">saved by {w.saved.enteredByName}</div>}
+                    {w.saved && w.selfClock && <div className="text-[11px] font-medium text-amber-700">also clocked in on their own ({w.selfClock}) — check</div>}
                   </td>
-                  {r.absent ? (
+                  {locked(w) ? (
+                    <td colSpan={7} className="px-2 py-2 align-top text-xs text-ink-600">
+                      <span className="inline-flex items-center rounded-sm bg-sky-100 px-2 py-0.5 font-semibold text-sky-800 dark:bg-sky-950/40 dark:text-sky-300">Clocked in on their own</span>{" "}
+                      <span className="tabular-nums">{w.selfClock}</span> — counted in payroll as clocked.
+                    </td>
+                  ) : r.absent ? (
                     <td colSpan={7} className="px-2 py-2 align-top">
                       <span className="inline-flex flex-wrap items-center gap-3">
                         <span className="inline-flex items-center rounded-sm bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800 dark:bg-red-950/40 dark:text-red-300">Absent</span>
@@ -295,12 +306,16 @@ export function TimekeeperSheet({
                   </td>
                   {editable && (
                     <td className="whitespace-nowrap px-2 py-2 text-right align-top text-xs">
-                      <button type="button" onClick={() => absent(w.userId)} className="mr-2 text-ink-600 hover:underline">
-                        Absent
-                      </button>
-                      <button type="button" onClick={() => clearRow(w.userId)} className="text-ink-400 hover:underline">
-                        Clear
-                      </button>
+                      {!locked(w) && (
+                        <>
+                          <button type="button" onClick={() => absent(w.userId)} className="mr-2 text-ink-600 hover:underline">
+                            Absent
+                          </button>
+                          <button type="button" onClick={() => clearRow(w.userId)} className="text-ink-400 hover:underline">
+                            Clear
+                          </button>
+                        </>
+                      )}
                     </td>
                   )}
                 </tr>
@@ -309,7 +324,7 @@ export function TimekeeperSheet({
             {workers.length === 0 && (
               <tr>
                 <td colSpan={11} className="px-3 py-6 text-center text-sm text-ink-400">
-                  No workers without a login are assigned to this project. Workers added without an email are listed here once the Owner assigns them to the project (Attendance → Edit).
+                  Nobody is assigned to this project yet. Add a worker above, or ask the Owner to assign people to it (Attendance → Edit).
                 </td>
               </tr>
             )}
@@ -348,6 +363,121 @@ export function TimekeeperSheet({
         Paid hours take off the 12:00–1:00 lunch and the two 15-minute breaks, the same as everyone&apos;s time. Overtime is counted in pay only after the Owner or PM approves it
         (Attendance tab). Approved by is the site/project engineer or the foreman who agreed to the day or the overtime.
       </p>
+    </div>
+  );
+}
+
+const SITE_POSITIONS = ["Mason", "Carpenter", "Steelman", "Painter", "Welder", "Electrician", "Plumber", "Helper", "Laborer", "Leadman", "Foreman", "Equipment Operator", "Driver", "Safety Officer"];
+const money = (n: number) => (Number.isFinite(n) ? String(Math.round(n * 100) / 100) : "");
+
+/**
+ * Add a worker who has no login to this project: name, position and the daily or hourly rate (give one — the other follows, a day is
+ * 8 hours). They appear on the sheet at once and are paid by the project's weekly payroll from the date given (default: the day
+ * being shown). For the Owner, the PM and the project's timekeeper.
+ */
+export function AddSheetWorker({ projectId, dayKey, todayKey }: { projectId: string; dayKey: string; todayKey: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [position, setPosition] = useState("");
+  const [daily, setDaily] = useState("");
+  const [hourly, setHourly] = useState("");
+  const [from, setFrom] = useState(dayKey);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState("");
+
+  async function add() {
+    setBusy(true);
+    setError("");
+    setDone("");
+    const res = await fetch("/api/timesheet/workers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, name, position, dailyRate: daily ? Number(daily) : null, hourlyRate: hourly ? Number(hourly) : null, startDate: from }),
+    });
+    setBusy(false);
+    const data = (await res.json().catch(() => null)) as { error?: string; name?: string } | null;
+    if (!res.ok) return setError(data?.error ?? "Could not add the worker");
+    setDone(`${data?.name ?? name} added to this project.`);
+    setName("");
+    setPosition("");
+    setDaily("");
+    setHourly("");
+    router.refresh();
+  }
+
+  return (
+    <div className="rounded-lg border border-ink-100 px-3 py-2 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs text-ink-600">A worker who has no login is not on the sheet yet? Add them here with their position and rate.</span>
+        <button type="button" onClick={() => setOpen((o) => !o)} className="text-xs font-medium text-brand-600 hover:underline">
+          {open ? "Close" : "+ Add a worker"}
+        </button>
+      </div>
+      {open && (
+        <div className="mt-3 space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="sw-name">Full name</Label>
+              <Input id="sw-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} placeholder="e.g. Juan Dela Cruz" />
+            </div>
+            <div>
+              <Label htmlFor="sw-pos">Position</Label>
+              <Input id="sw-pos" list="sw-positions" value={position} onChange={(e) => setPosition(e.target.value)} maxLength={100} placeholder="e.g. Mason" />
+              <datalist id="sw-positions">
+                {SITE_POSITIONS.map((p) => (
+                  <option key={p} value={p} />
+                ))}
+              </datalist>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <Label htmlFor="sw-daily">Daily rate (₱)</Label>
+              <Input
+                id="sw-daily"
+                type="number"
+                min="0"
+                step="0.01"
+                inputMode="decimal"
+                value={daily}
+                onChange={(e) => {
+                  setDaily(e.target.value);
+                  setHourly(e.target.value ? money(Number(e.target.value) / 8) : "");
+                }}
+              />
+            </div>
+            <div>
+              <Label htmlFor="sw-hourly">Hourly rate (₱)</Label>
+              <Input
+                id="sw-hourly"
+                type="number"
+                min="0"
+                step="0.01"
+                inputMode="decimal"
+                value={hourly}
+                onChange={(e) => {
+                  setHourly(e.target.value);
+                  setDaily(e.target.value ? money(Number(e.target.value) * 8) : "");
+                }}
+              />
+            </div>
+            <div>
+              <Label htmlFor="sw-from">On this project from</Label>
+              <Input id="sw-from" type="date" value={from} max={todayKey} onChange={(e) => setFrom(e.target.value)} />
+            </div>
+          </div>
+          <p className="text-xs text-ink-500">Enter the daily rate or the hourly rate — the other fills in (a day is 8 hours). Payroll counts their days on this project from the date above, so set it to the day they really started. The Owner can change the rate later in Attendance → Edit.</p>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          {done && <p className="text-sm text-emerald-700">{done}</p>}
+          <div className="flex justify-end">
+            <Button type="button" className="text-xs" disabled={busy || name.trim().length < 2 || position.trim().length < 2 || (!daily && !hourly)} onClick={add}>
+              {busy ? "Adding…" : "Add worker to the sheet"}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

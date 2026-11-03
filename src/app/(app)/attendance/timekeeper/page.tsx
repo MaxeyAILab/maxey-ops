@@ -3,10 +3,10 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Card, CardBody, CardHeader } from "@/components/ui";
-import { TimekeeperSheet, type SheetWorker } from "@/components/timekeeper-sheet";
+import { AddSheetWorker, TimekeeperSheet, type SheetWorker } from "@/components/timekeeper-sheet";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
-import { manilaDayKey, manilaWeeklySitePeriod } from "@/lib/time-rules";
-import { canEditSheet, canOpenTimesheets, isNoLoginAccount, regularHours } from "@/lib/timesheet";
+import { manilaDayKey, manilaTime, manilaWeeklySitePeriod } from "@/lib/time-rules";
+import { canEditSheet, canOpenTimesheets, regularHours } from "@/lib/timesheet";
 import { dayClosedByPayroll } from "@/lib/timesheet-db";
 
 export const metadata = { title: "Timekeeper sheet" };
@@ -48,7 +48,7 @@ export default async function TimekeeperPage({ searchParams }: { searchParams: {
         ← Attendance
       </Link>
       <h1 className="text-xl font-bold text-ink-900">Timekeeper sheet</h1>
-      <p className="text-sm text-ink-500">The daily time record for workers who have no login. Only the timekeeper, the PM and the Owner can fill it in.</p>
+      <p className="text-sm text-ink-500">The daily time record of everyone assigned to the project. Only the timekeeper, the PM and the Owner can fill it in; a worker who clocked in on their own that day shows their own times.</p>
     </div>
   );
 
@@ -75,8 +75,17 @@ export default async function TimekeeperPage({ searchParams }: { searchParams: {
     prisma.projectAssignment.findFirst({ where: { projectId: project.id, userId: user.id, active: true }, select: { id: true } }),
   ]);
   const people = roster.map((r) => r.user).filter((u) => u.active);
-  const workersOnSheet = people.filter((u) => isNoLoginAccount(u.email));
-  const selfClocking = people.length - workersOnSheet.length;
+  // everyone assigned to the project is on the sheet; a worker who clocked in on their own that day shows what they clocked instead
+  const workersOnSheet = people;
+  const dayStart = manilaTime(dayKey, 0, 0);
+  const selfRecords = await prisma.attendance.findMany({
+    where: { projectId: project.id, userId: { in: people.map((u) => u.id) }, source: { not: "timekeeper" }, timeIn: { gte: dayStart, lt: new Date(dayStart.getTime() + 86_400_000) } },
+    orderBy: { timeIn: "asc" },
+    select: { userId: true, timeIn: true, timeOut: true },
+  });
+  const clock = (d: Date) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Manila", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+  const selfText = new Map<string, string>();
+  for (const r of selfRecords) selfText.set(r.userId, [selfText.get(r.userId), `${clock(r.timeIn)}–${r.timeOut ? clock(r.timeOut) : "still in"}`].filter(Boolean).join(", "));
   const approvers = Array.from(new Set(people.filter((u) => u.role === "FOREMAN" || u.department === "ENGINEER" || FOREMAN_OR_ENGINEER.test(u.position ?? "")).map((u) => u.name)));
 
   const dayEntries = new Map(entries.filter((e) => e.date.toISOString().slice(0, 10) === dayKey).map((e) => [e.userId, e]));
@@ -92,6 +101,7 @@ export default async function TimekeeperPage({ searchParams }: { searchParams: {
       name: u.name,
       position: u.position ?? "—",
       department: u.department,
+      selfClock: selfText.get(u.id) ?? null,
       saved: e
         ? {
             amIn: e.amIn,
@@ -176,9 +186,10 @@ export default async function TimekeeperPage({ searchParams }: { searchParams: {
       </form>
 
       <Card>
-        <CardHeader title={`${project.name} — ${longDay(dayKey)}`} subtitle={`${workersOnSheet.length} worker${workersOnSheet.length === 1 ? "" : "s"} on the sheet${selfClocking > 0 ? ` · ${selfClocking} more on this project clock in themselves (not listed here)` : ""}`} />
-        <CardBody>
-          <TimekeeperSheet key={`${project.id}|${dayKey}`} projectId={project.id} dayKey={dayKey} workers={workers} approvers={approvers} canEdit={allowed.ok} lockedReason={lockedReason} />
+        <CardHeader title={`${project.name} — ${longDay(dayKey)}`} subtitle={`${workersOnSheet.length} worker${workersOnSheet.length === 1 ? "" : "s"} assigned to this project${selfText.size > 0 ? ` · ${selfText.size} clocked in on their own today` : ""}`} />
+        <CardBody className="space-y-3">
+          {allowed.ok && !lockedReason && <AddSheetWorker projectId={project.id} dayKey={dayKey} todayKey={todayKey} />}
+          <TimekeeperSheet key={`${project.id}|${dayKey}|${workers.length}`} projectId={project.id} dayKey={dayKey} workers={workers} approvers={approvers} canEdit={allowed.ok} lockedReason={lockedReason} />
         </CardBody>
       </Card>
 

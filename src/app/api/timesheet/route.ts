@@ -4,8 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { notifyOwner } from "@/lib/notify";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
-import { manilaDayKey } from "@/lib/time-rules";
-import { canEditSheet, isNoLoginAccount, regularHours, validateSheetRow, type SheetInput } from "@/lib/timesheet";
+import { manilaDayKey, manilaTime } from "@/lib/time-rules";
+import { canEditSheet, regularHours, validateSheetRow, type SheetInput } from "@/lib/timesheet";
 import { dayClosedByPayroll, saveSheetRow } from "@/lib/timesheet-db";
 
 const hm = z.string().max(5).nullish().or(z.literal(""));
@@ -56,6 +56,12 @@ export const POST = handleApi(async (req: NextRequest) => {
     select: { startDate: true, user: { select: { id: true, name: true, email: true, department: true, active: true } } },
   });
   const workers = new Map(roster.map((r) => [r.user.id, r.user]));
+  // A worker who has a login and clocked in on their own that day is already counted: adding the sheet on top would pay the day twice.
+  const dayStart = manilaTime(dayKey, 0, 0);
+  const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+  const selfClocked = new Set(
+    (await prisma.attendance.findMany({ where: { projectId: project.id, userId: { in: roster.map((r) => r.user.id) }, source: { not: "timekeeper" }, timeIn: { gte: dayStart, lt: dayEnd } }, select: { userId: true } })).map((a) => a.userId)
+  );
   const joined = new Map(roster.map((r) => [r.user.id, r.startDate.toISOString().slice(0, 10)]));
 
   const results: { userId: string; ok: boolean; error?: string; hours?: number; cleared?: boolean }[] = [];
@@ -71,8 +77,8 @@ export const POST = handleApi(async (req: NextRequest) => {
       results.push({ userId: r.userId, ok: false, error: `${worker.name} joined this project on ${joined.get(r.userId)} — a day before that would not be paid. Ask the Owner to assign them from an earlier date (Attendance → Edit).` });
       continue;
     }
-    if (!isNoLoginAccount(worker.email)) {
-      results.push({ userId: r.userId, ok: false, error: `${worker.name} has a login of their own and clocks in themself` });
+    if (selfClocked.has(worker.id)) {
+      results.push({ userId: r.userId, ok: false, error: `${worker.name} clocked in on their own this day — their own clock-in counts, so the sheet cannot add to it` });
       continue;
     }
     const input: SheetInput = {
