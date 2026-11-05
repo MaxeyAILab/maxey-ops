@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { hasInventoryOwnerPowers } from "@/lib/owner-authority";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { canApproveInventoryRequest } from "@/lib/access";
@@ -29,7 +30,7 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
   // Pricing a movement that already happened (an issue to a project that had no price when it was logged). The value of the
   // movement is what is charged to the project, so the Owner alone changes it, and the audit log keeps what it was before.
   if (body.action === "set_price") {
-    if (user.role !== "OWNER") throw new ApiError(403, "Only the Owner can change the price of a logged movement");
+    if (!hasInventoryOwnerPowers(user)) throw new ApiError(403, "Only the Owner can change the price of a logged movement");
     const mv = await prisma.inventoryMovement.findUnique({ where: { id: params.id }, include: { item: { select: { name: true, unit: true } }, fromProject: { select: { name: true } }, toProject: { select: { name: true } } } });
     if (!mv) throw new ApiError(404, "Movement not found");
     if (mv.status !== "APPLIED") throw new ApiError(400, "Only a movement that has happened can be priced — this one is still waiting for approval or was rejected");
@@ -83,10 +84,10 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
   }
 
   if (!canApproveInventoryRequest(user)) throw new ApiError(403, "Only office staff can approve or reject this");
-  if (mine && user.role !== "OWNER") throw new ApiError(403, "You can't approve your own request — another office staff member must");
-  if (user.role !== "OWNER") {
+  if (mine && !hasInventoryOwnerPowers(user)) throw new ApiError(403, "You can't approve your own request — another office staff member must");
+  if (!hasInventoryOwnerPowers(user)) {
     const asker = await prisma.user.findUnique({ where: { id: m.actorId }, select: { name: true, inventoryRestricted: true } });
-    if (asker?.inventoryRestricted) throw new ApiError(403, `Only the Owner can approve or reject ${asker.name}'s requests`);
+    if (asker?.inventoryRestricted) throw new ApiError(403, `Only the Owner (or a person with the Owner's inventory powers) can approve or reject ${asker.name}'s requests`);
   }
 
   if (body.action === "reject") {

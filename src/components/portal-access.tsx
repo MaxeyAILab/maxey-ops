@@ -292,3 +292,37 @@ export function TallyOutApprovalToggle({ userId, name, allowed }: { userId: stri
     </label>
   );
 }
+
+/**
+ * People page: give this person the Owner's own powers on the Inventory tab or in Cash Expense (both are on for the Owner).
+ * Inventory: movements take effect at once, decides any request, prices movements, deletes stock items and tools, approves tally-outs.
+ * Cash Expense: approves and releases petty cash, runs the fund, approves cash advances, edits and deletes records.
+ */
+export function OwnerPowersToggle({ userId, name, area, allowed }: { userId: string; name: string; area: "inventory" | "cash"; allowed: boolean }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function change(next: boolean) {
+    if (busy) return;
+    if (next && !window.confirm(`Give ${name} the same authority as the Owner ${area === "inventory" ? "on the Inventory tab" : "in Cash Expense"}?`)) return;
+    setBusy(true);
+    setError("");
+    const res = await fetch(`/api/people/${userId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "set-owner-powers", area, allowed: next }),
+    });
+    setBusy(false);
+    if (res.ok) router.refresh();
+    else setError(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? "Failed");
+  }
+
+  return (
+    <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-ink-700">
+      <input type="checkbox" checked={allowed} disabled={busy} onChange={(e) => change(e.target.checked)} aria-label={`${name} has the Owner's powers ${area === "inventory" ? "on the Inventory tab" : "in Cash Expense"}`} />
+      {allowed ? "Yes" : "No"}
+      {error && <span className="text-red-600">{error}</span>}
+    </label>
+  );
+}

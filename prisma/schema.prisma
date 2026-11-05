@@ -309,6 +309,8 @@ model User {
   canApprovePettyCash Boolean            @default(false) // the Owner lets this person approve petty cash requests (the Owner always can)
   canReleasePettyCash Boolean            @default(false) // ...and/or confirm handing out approved petty cash
   canManageCash       Boolean            @default(false) // full Cash Expense access, like Accounting: every request, the fund, verification, cash advances
+  ownerInventory      Boolean            @default(false) // same authority as the Owner on the Inventory tab (instant movements, decides any request, prices movements, deletes items/tools)
+  ownerCash           Boolean            @default(false) // same authority as the Owner in Cash Expense (approve/release petty cash, fund, cash advances, edit/delete records)
   payslipBaselines    PayslipBaseline[]
   pushSubscriptions   PushSubscription[]
   appNotifications    AppNotification[]

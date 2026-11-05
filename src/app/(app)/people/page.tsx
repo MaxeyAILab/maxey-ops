@@ -3,7 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fmtDate } from "@/lib/format";
 import { Badge, Card, CardHeader, Table, Td, Th } from "@/components/ui";
-import { AccountToggleButton, InventoryLimitToggle, TallyOutApprovalToggle, PettyCashAccessToggle, RequisitionAccessToggle, ResetPasswordButton } from "@/components/portal-access";
+import { AccountToggleButton, InventoryLimitToggle, TallyOutApprovalToggle, PettyCashAccessToggle, OwnerPowersToggle, RequisitionAccessToggle, ResetPasswordButton } from "@/components/portal-access";
 import { requisitionAllowedByRole } from "@/lib/requisitions";
 
 export const metadata = { title: "People" };
@@ -89,6 +89,15 @@ export default async function PeoplePage() {
           )}
         </Td>
       ))}
+      {(["inventory", "cash"] as const).map((area) => (
+        <Td key={area}>
+          {u.role === "CLIENT" || u.role === "OWNER" ? (
+            <span className="text-xs text-ink-300">{u.role === "OWNER" ? "Yes — owner" : "—"}</span>
+          ) : (
+            <OwnerPowersToggle userId={u.id} name={u.name} area={area} allowed={area === "inventory" ? u.ownerInventory : u.ownerCash} />
+          )}
+        </Td>
+      ))}
       <Td>
         <Badge value={u.active ? "ACTIVE" : "NOT_ACTIVE"} label={u.active ? "Active" : "Deactivated"} />
       </Td>
@@ -118,6 +127,8 @@ export default async function PeoplePage() {
       <Th>Approves petty cash</Th>
       <Th>Releases petty cash</Th>
       <Th>Full cash expense access</Th>
+      <Th>Owner powers: Inventory</Th>
+      <Th>Owner powers: Cash Expense</Th>
       <Th>Status</Th>
       <Th>Since</Th>
       <Th />
@@ -151,7 +162,7 @@ export default async function PeoplePage() {
             {clients.map(renderRow)}
             {clients.length === 0 && (
               <tr>
-                <Td colSpan={12} className="py-6 text-center text-ink-400">
+                <Td colSpan={15} className="py-6 text-center text-ink-400">
                   No client accounts yet — create one from a project&apos;s Portal Access panel.
                 </Td>
               </tr>

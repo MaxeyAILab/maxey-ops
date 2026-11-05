@@ -177,6 +177,8 @@ interface InventoryPerson {
   jobRole?: string | null;
   customMenus?: string[];
   useCustomMenus?: boolean;
+  /** the Owner gave this person the Owner's powers on the Inventory tab (People page) */
+  ownerInventory?: boolean | null;
 }
 
 const hasInventoryJob = (u: InventoryPerson) => INVENTORY_JOB_ROLES.includes(u.jobRole as JobRole);
@@ -242,7 +244,7 @@ export function canApproveInventoryRequest(u: InventoryPerson): boolean {
  * staff, PM, Purchasing) only a tool that has never been moved — i.e. one registered by mistake (2026-10-21).
  */
 export function canDeleteTool(u: InventoryPerson, movementCount: number): boolean {
-  if (u.role === "OWNER") return true;
+  if (u.role === "OWNER" || u.ownerInventory) return true;
   return canAddInventoryCatalog(u) && movementCount === 0;
 }
 

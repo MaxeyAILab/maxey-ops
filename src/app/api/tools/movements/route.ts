@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { hasInventoryOwnerPowers } from "@/lib/owner-authority";
 import { audit } from "@/lib/audit";
 import { savePhoto, savePhotos } from "@/lib/storage";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
@@ -110,7 +111,7 @@ export const POST = handleApi(async (req: NextRequest) => {
 
   const photoUrl = body.photo ? await savePhoto(body.photo).catch(() => null) : null;
   const photoUrls = await savePhotos(body.photos);
-  const isRequest = toolNeedsApproval(body.type) && user.role !== "OWNER";
+  const isRequest = toolNeedsApproval(body.type) && !hasInventoryOwnerPowers(user);
   const decided = !isRequest && toolNeedsApproval(body.type) ? { decidedById: user.id, decidedByName: user.name, decidedAt: new Date() } : {};
 
   const movement = await prisma.$transaction(async (db) => {

@@ -7,9 +7,10 @@ import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 
 const actionSchema = z.object({
-  action: z.enum(["deactivate", "reactivate", "reset-password", "set-requisition-access", "set-requisition-scope", "set-petty-cash-access", "set-inventory-limits", "set-tally-out-approval"]),
+  action: z.enum(["deactivate", "reactivate", "reset-password", "set-requisition-access", "set-requisition-scope", "set-petty-cash-access", "set-inventory-limits", "set-tally-out-approval", "set-owner-powers"]),
   allowed: z.boolean().optional(),
   kind: z.enum(["approve", "release", "manage"]).optional(), // set-petty-cash-access: which switch
+  area: z.enum(["inventory", "cash"]).optional(), // set-owner-powers: which area
 });
 
 /**
@@ -71,6 +72,23 @@ export const PATCH = handleApi(
         actorName: user.name,
         action: body.allowed ? "TALLYOUT_APPROVAL_GRANTED" : "TALLYOUT_APPROVAL_REMOVED",
         diff: { name: target.name, role: target.role },
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    if (body.action === "set-owner-powers") {
+      if (typeof body.allowed !== "boolean" || !body.area) throw new ApiError(400, "Say which area and whether it's on");
+      if (target.role === "CLIENT") throw new ApiError(400, "A client account can't have the Owner's powers");
+      const field = body.area === "inventory" ? "ownerInventory" : "ownerCash";
+      if (target[field] === body.allowed) return NextResponse.json({ ok: true, alreadyDone: true });
+      await prisma.user.update({ where: { id: target.id }, data: { [field]: body.allowed } });
+      await audit({
+        entityType: "User",
+        entityId: target.id,
+        actorId: user.id,
+        actorName: user.name,
+        action: `OWNER_POWERS_${body.area.toUpperCase()}_${body.allowed ? "GRANTED" : "REMOVED"}`,
+        diff: { name: target.name, role: target.role, area: body.area },
       });
       return NextResponse.json({ ok: true });
     }

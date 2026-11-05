@@ -71,10 +71,11 @@ export interface UserLike {
   role: string;
   department?: string | null;
   canApproveTallyOut?: boolean | null;
+  ownerInventory?: boolean | null;
 }
 
 /** The Owner, and anyone the Owner switched on (People page — Joseph Villamor). */
-export const canApproveTallyOut = (u: UserLike): boolean => u.role === "OWNER" || !!u.canApproveTallyOut;
+export const canApproveTallyOut = (u: UserLike): boolean => u.role === "OWNER" || !!u.canApproveTallyOut || !!u.ownerInventory;
 
 /** Nobody approves their own form, except the Owner. */
 export const canDecideOwnTallyOut = (u: UserLike): boolean => u.role === "OWNER";

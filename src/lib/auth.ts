@@ -38,6 +38,9 @@ export interface SessionUser {
   canReleasePettyCash: boolean;
   /** Full Cash Expense access, as Accounting has it (People page switch). */
   canManageCash: boolean;
+  /** Same authority as the Owner on the Inventory tab / in Cash Expense (People page switches; see owner-authority.ts). */
+  ownerInventory: boolean;
+  ownerCash: boolean;
   /** Single-device login tag, set for every role (the Owner holds one per device type: phone and computer). */
   sessionId?: string;
 }
@@ -175,6 +178,8 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       canApprovePettyCash: true,
       canReleasePettyCash: true,
       canManageCash: true,
+      ownerInventory: true,
+      ownerCash: true,
       currentSessionId: true,
       mobileSessionId: true,
     },
@@ -200,5 +205,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     canApprovePettyCash: dbUser.canApprovePettyCash,
     canReleasePettyCash: dbUser.canReleasePettyCash,
     canManageCash: dbUser.canManageCash,
+    ownerInventory: dbUser.ownerInventory,
+    ownerCash: dbUser.ownerCash,
   };
 }

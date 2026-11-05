@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { hasInventoryOwnerPowers } from "@/lib/owner-authority";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { canAddInventoryCatalog, canDeleteTool, canLogInventoryMovement } from "@/lib/access";
@@ -89,7 +90,7 @@ export const DELETE = handleApi(async (_req: Request, { params }: { params: { id
   });
   if (!tool) throw new ApiError(404, "Tool not found");
   if (!canDeleteTool(user, tool._count.movements)) {
-    throw new ApiError(403, user.role === "OWNER" ? "Not authorized" : tool._count.movements > 0 ? "This tool already has movement history — only the Owner can delete it" : "Not authorized for this action");
+    throw new ApiError(403, hasInventoryOwnerPowers(user) ? "Not authorized" : tool._count.movements > 0 ? "This tool already has movement history — only the Owner can delete it" : "Not authorized for this action");
   }
 
   await prisma.$transaction(async (db) => {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { hasInventoryOwnerPowers } from "@/lib/owner-authority";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { canLogInventoryMovement, canLogInventoryUsage } from "@/lib/access";
@@ -110,7 +111,7 @@ export const POST = handleApi(async (req: NextRequest) => {
   const toLoc = toProject ? toProject.name : body.type === "CONSUMED_ON_SITE" ? "Used on site" : warehouseLabel(shown.warehouse);
 
   // A return or transfer waits for approval — except the Owner's own, which is approved right now.
-  const isRequest = materialNeedsApproval(body.type) && user.role !== "OWNER";
+  const isRequest = materialNeedsApproval(body.type) && !hasInventoryOwnerPowers(user);
   const decided = !isRequest && materialNeedsApproval(body.type) ? { decidedById: user.id, decidedByName: user.name, decidedAt: new Date() } : {};
 
   const photoUrls = await savePhotos(body.photos);

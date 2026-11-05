@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { hasInventoryOwnerPowers } from "@/lib/owner-authority";
 import { audit } from "@/lib/audit";
 import { z } from "zod";
 import { NextRequest } from "next/server";
@@ -86,7 +87,8 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
  * pointing at it. The audit log keeps a full copy of what was removed.
  */
 export const DELETE = handleApi(async (_req: Request, { params }: { params: { id: string } }) => {
-  const user = await requireUser(["OWNER"]);
+  const user = await requireUser();
+  if (!hasInventoryOwnerPowers(user)) throw new ApiError(403, "Only the Owner can delete a stock item");
   const item = await prisma.warehouseItem.findUnique({
     where: { id: params.id },
     include: { _count: { select: { movements: true } }, projectStocks: { select: { qty: true, project: { select: { name: true } } } } },

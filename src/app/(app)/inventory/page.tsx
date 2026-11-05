@@ -22,6 +22,7 @@ import { MovementPriceEditor } from "@/components/movement-price-editor";
 import { PhotoThumbnails } from "@/components/photo-viewer";
 import { photoList } from "@/lib/request-photos";
 import { DEFAULT_WAREHOUSE, countByWarehouse, warehouseFromSlug, warehouseLabel, warehouseSlug } from "@/lib/warehouses";
+import { hasInventoryOwnerPowers } from "@/lib/owner-authority";
 
 export const metadata = { title: "Inventory" };
 export const dynamic = "force-dynamic";
@@ -91,7 +92,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
 
   // for the Owner's "set price": how many other applied movements of each item in the log still have no price
   const unpricedByItem = new Map<string, number>();
-  if (user.role === "OWNER") {
+  if (hasInventoryOwnerPowers(user)) {
     const rows = await prisma.inventoryMovement.groupBy({ by: ["itemId"], where: { status: "APPLIED", unitPrice: null, itemId: { in: [...new Set(movements.map((m) => m.itemId))] } }, _count: true });
     for (const r of rows) unpricedByItem.set(r.itemId, r._count);
   }
@@ -109,7 +110,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
   const canAddCatalog = canAddInventoryCatalog(user);
   const canMove = canLogInventoryMovement(user);
   const canApprove = canApproveInventoryRequest(user);
-  const isOwner = user.role === "OWNER";
+  const isOwner = hasInventoryOwnerPowers(user);
   const pendingByTool = new Map(pendingTools.map((m) => [m.toolId, m]));
   const waitingText = (m: { type: string; actorId: string }) => `${REQUEST_LABEL[m.type] ?? "Request"} requested by ${actorNames.get(m.actorId) ?? "—"} — waiting for approval`;
   const pendingCount = pendingStock.length + pendingTools.length;

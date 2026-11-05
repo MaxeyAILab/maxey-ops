@@ -68,6 +68,8 @@ export interface RecipientUser {
   canReleasePettyCash: boolean;
   canManageCash: boolean;
   canApproveTallyOut: boolean;
+  ownerInventory?: boolean;
+  ownerCash?: boolean;
 }
 
 /** Whether a person's tab access includes the tab a category lives in (always true for categories with no tab). */
@@ -83,10 +85,10 @@ const TOKEN_TEST: Record<AudienceToken, (u: RecipientUser) => boolean> = {
   // whoever may approve a tally-out form: the Owner, and a person the Owner switched on
   // drivers, whether their account is a Driver account or an office account in the Driver department
   drivers: (u) => u.role === "DRIVER" || u.department === "DRIVER",
-  tallyOutApprovers: (u) => u.role === "OWNER" || u.canApproveTallyOut,
-  cashApprovers: (u) => u.role === "OWNER" || u.canApprovePettyCash,
-  cashReleasers: (u) => u.role === "OWNER" || u.canReleasePettyCash,
-  cashCustodians: (u) => u.role === "OWNER" || u.role === "ACCOUNTING" || u.canManageCash,
+  tallyOutApprovers: (u) => u.role === "OWNER" || u.canApproveTallyOut || !!u.ownerInventory,
+  cashApprovers: (u) => u.role === "OWNER" || u.canApprovePettyCash || !!u.ownerCash,
+  cashReleasers: (u) => u.role === "OWNER" || u.canReleasePettyCash || !!u.ownerCash,
+  cashCustodians: (u) => u.role === "OWNER" || u.role === "ACCOUNTING" || u.canManageCash || !!u.ownerCash,
   // whoever may approve a return/transfer request on the Inventory tab
   inventoryApprovers: (u) => canApproveInventoryRequest({ role: u.role, department: u.department as never, customMenus: u.customMenus, useCustomMenus: u.useCustomMenus }),
 };

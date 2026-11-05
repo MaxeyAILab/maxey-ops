@@ -12,6 +12,7 @@ import { EditStockItemButton } from "@/components/inventory-edit";
 import { MATERIAL_CATEGORIES, MATERIAL_CATEGORY_LABEL, categoryFromSlug, isMaterialCategory, summarizeByCategory } from "@/lib/material-category";
 import { WarehouseTabs } from "@/components/warehouse-tabs";
 import { DEFAULT_WAREHOUSE, countByWarehouse, warehouseFromSlug, warehouseLabel, warehouseSlug } from "@/lib/warehouses";
+import { hasInventoryOwnerPowers } from "@/lib/owner-authority";
 
 export const metadata = { title: "Warehouse stock" };
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
   const category = categoryFromSlug(searchParams.category);
   const q = (searchParams.q ?? "").trim().slice(0, 80);
   const canEdit = canAddInventoryCatalog(user);
-  const isOwner = user.role === "OWNER";
+  const isOwner = hasInventoryOwnerPowers(user);
   const showPrices = canSeeStockPrices(user); // prices and the value of the stock: office staff, Owner, PM, Purchasing
   const editPrices = showPrices && searchParams.edit === "prices";
 

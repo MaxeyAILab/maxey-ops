@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { hasInventoryOwnerPowers } from "@/lib/owner-authority";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { canFileTallyOut } from "@/lib/access";
@@ -39,7 +40,7 @@ export const POST = handleApi(async (req: NextRequest) => {
   const lines = mergeLines(body.items.map((i) => ({ itemId: i.itemId, name: byId.get(i.itemId)!.name, unit: byId.get(i.itemId)!.unit, qty: i.qty })));
   if (lines.length === 0) throw new ApiError(400, "Add at least one item with a quantity");
 
-  const approveNow = user.role === "OWNER";
+  const approveNow = hasInventoryOwnerPowers(user);
   const created = await prisma.$transaction(async (db) => {
     const [onHand, reserved] = await Promise.all([onHandOf(db, lines.map((l) => l.itemId)), reservedStock(db)]);
     const short = shortLines(lines, onHand, reserved);
