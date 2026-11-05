@@ -5,6 +5,7 @@ import { audit } from "@/lib/audit";
 import { savePhotos } from "@/lib/storage";
 import { checkWeightRules, currentBreakdown, currentWeight } from "@/lib/progress";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
+import { canInputProgress } from "@/lib/project-input";
 
 const createSchema = z.object({
   clientUuid: z.string().uuid(),
@@ -29,7 +30,8 @@ const createSchema = z.object({
  * Feeds the owner dashboard and the client portal timeline (Spec 6.7).
  */
 export const POST = handleApi(async (req: NextRequest) => {
-  const user = await requireUser(["PM", "FOREMAN", "OWNER"]);
+  const user = await requireUser();
+  if (!canInputProgress(user)) throw new ApiError(403, "Not authorized for this action");
   const body = createSchema.parse(await req.json());
 
   const existing = await prisma.progressEntry.findUnique({

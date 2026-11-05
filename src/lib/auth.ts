@@ -41,6 +41,8 @@ export interface SessionUser {
   /** Same authority as the Owner on the Inventory tab / in Cash Expense (People page switches; see owner-authority.ts). */
   ownerInventory: boolean;
   ownerCash: boolean;
+  /** May put progress, daily reports, documents and potential changes into projects (see project-input.ts). */
+  projectInput: boolean;
   /** Single-device login tag, set for every role (the Owner holds one per device type: phone and computer). */
   sessionId?: string;
 }
@@ -180,6 +182,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       canManageCash: true,
       ownerInventory: true,
       ownerCash: true,
+      projectInput: true,
       currentSessionId: true,
       mobileSessionId: true,
     },
@@ -207,5 +210,6 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     canManageCash: dbUser.canManageCash,
     ownerInventory: dbUser.ownerInventory,
     ownerCash: dbUser.ownerCash,
+    projectInput: dbUser.projectInput,
   };
 }

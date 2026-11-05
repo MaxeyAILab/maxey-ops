@@ -89,12 +89,12 @@ export default async function PeoplePage() {
           )}
         </Td>
       ))}
-      {(["inventory", "cash"] as const).map((area) => (
+      {(["inventory", "cash", "project"] as const).map((area) => (
         <Td key={area}>
           {u.role === "CLIENT" || u.role === "OWNER" ? (
             <span className="text-xs text-ink-300">{u.role === "OWNER" ? "Yes — owner" : "—"}</span>
           ) : (
-            <OwnerPowersToggle userId={u.id} name={u.name} area={area} allowed={area === "inventory" ? u.ownerInventory : u.ownerCash} />
+            <OwnerPowersToggle userId={u.id} name={u.name} area={area} allowed={area === "inventory" ? u.ownerInventory : area === "project" ? u.projectInput : u.ownerCash} />
           )}
         </Td>
       ))}
@@ -129,6 +129,7 @@ export default async function PeoplePage() {
       <Th>Full cash expense access</Th>
       <Th>Owner powers: Inventory</Th>
       <Th>Owner powers: Cash Expense</Th>
+      <Th>Project input (no costs)</Th>
       <Th>Status</Th>
       <Th>Since</Th>
       <Th />
@@ -162,7 +163,7 @@ export default async function PeoplePage() {
             {clients.map(renderRow)}
             {clients.length === 0 && (
               <tr>
-                <Td colSpan={15} className="py-6 text-center text-ink-400">
+                <Td colSpan={16} className="py-6 text-center text-ink-400">
                   No client accounts yet — create one from a project&apos;s Portal Access panel.
                 </Td>
               </tr>

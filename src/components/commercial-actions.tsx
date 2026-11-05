@@ -16,7 +16,7 @@ const link = "text-xs font-medium text-brand-600 hover:underline";
 
 // ---------- potential change (internal; not sent to the client) ----------
 
-export function PotentialChangeForm({ projectId }: { projectId: string }) {
+export function PotentialChangeForm({ projectId, showCost = true }: { projectId: string; showCost?: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -62,10 +62,12 @@ export function PotentialChangeForm({ projectId }: { projectId: string }) {
         <Input id="pc-reason" name="reason" maxLength={2000} placeholder="e.g., Site instruction SI-014, RFI-003" />
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label htmlFor="pc-cost">Estimated cost (PHP, optional)</Label>
-          <Input id="pc-cost" name="estimatedCost" type="number" min="0" step="0.01" />
-        </div>
+        {showCost && (
+          <div>
+            <Label htmlFor="pc-cost">Estimated cost (PHP, optional)</Label>
+            <Input id="pc-cost" name="estimatedCost" type="number" min="0" step="0.01" />
+          </div>
+        )}
         <div>
           <Label htmlFor="pc-days">Time impact (days)</Label>
           <Input id="pc-days" name="timeImpactDays" type="number" min="0" step="1" defaultValue={0} />

@@ -298,14 +298,14 @@ export function TallyOutApprovalToggle({ userId, name, allowed }: { userId: stri
  * Inventory: movements take effect at once, decides any request, prices movements, deletes stock items and tools, approves tally-outs.
  * Cash Expense: approves and releases petty cash, runs the fund, approves cash advances, edits and deletes records.
  */
-export function OwnerPowersToggle({ userId, name, area, allowed }: { userId: string; name: string; area: "inventory" | "cash"; allowed: boolean }) {
+export function OwnerPowersToggle({ userId, name, area, allowed }: { userId: string; name: string; area: "inventory" | "cash" | "project"; allowed: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   async function change(next: boolean) {
     if (busy) return;
-    if (next && !window.confirm(`Give ${name} the same authority as the Owner ${area === "inventory" ? "on the Inventory tab" : "in Cash Expense"}?`)) return;
+    if (next && !window.confirm(area === "project" ? `Let ${name} put progress updates, daily reports, documents and potential changes into projects? They still will not see any costs or margin.` : `Give ${name} the same authority as the Owner ${area === "inventory" ? "on the Inventory tab" : "in Cash Expense"}?`)) return;
     setBusy(true);
     setError("");
     const res = await fetch(`/api/people/${userId}`, {
@@ -320,7 +320,7 @@ export function OwnerPowersToggle({ userId, name, area, allowed }: { userId: str
 
   return (
     <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-ink-700">
-      <input type="checkbox" checked={allowed} disabled={busy} onChange={(e) => change(e.target.checked)} aria-label={`${name} has the Owner's powers ${area === "inventory" ? "on the Inventory tab" : "in Cash Expense"}`} />
+      <input type="checkbox" checked={allowed} disabled={busy} onChange={(e) => change(e.target.checked)} aria-label={area === "project" ? `${name} can put progress, reports, documents and potential changes into projects` : `${name} has the Owner's powers ${area === "inventory" ? "on the Inventory tab" : "in Cash Expense"}`} />
       {allowed ? "Yes" : "No"}
       {error && <span className="text-red-600">{error}</span>}
     </label>

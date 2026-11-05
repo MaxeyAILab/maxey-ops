@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
+import { canInputProgress } from "@/lib/project-input";
 
 const deliverySchema = z.object({
   material: z.string().min(1).max(200),
@@ -37,7 +38,8 @@ const patchSchema = z.object({
  * or Owner/PM. Report No., date submitted, and photos are left as-is. */
 export const PATCH = handleApi(
   async (req: NextRequest, { params }: { params: { id: string } }) => {
-    const user = await requireUser(["OWNER", "PM", "FOREMAN"]);
+    const user = await requireUser();
+    if (!canInputProgress(user)) throw new ApiError(403, "Not authorized for this action");
     const body = patchSchema.parse(await req.json());
 
     const report = await prisma.dailyConstructionReport.findUnique({

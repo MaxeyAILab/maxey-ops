@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
+import { canLogPotentialChange, isProjectManagerRole } from "@/lib/project-input";
 
 const createSchema = z.object({
   projectId: z.string().min(1),
@@ -21,8 +22,16 @@ const createSchema = z.object({
  * approval in the portal (Spec 6.8).
  */
 export const POST = handleApi(async (req: NextRequest) => {
-  const user = await requireUser(["OWNER", "PM"]);
+  const user = await requireUser();
+  const manager = isProjectManagerRole(user);
+  if (!manager && !canLogPotentialChange(user)) throw new ApiError(403, "Not authorized for this action");
   const body = createSchema.parse(await req.json());
+  // someone with project input only logs a potential change: internal, never sent to the client, no cost
+  if (!manager) {
+    if (!body.asPotential) throw new ApiError(403, "Only the Owner or PM sends a change order to the client - log it as a potential change");
+    body.estimatedCost = null;
+    body.costImpact = 0;
+  }
 
   const project = await prisma.project.findUnique({
     where: { id: body.projectId },

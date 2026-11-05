@@ -21,6 +21,7 @@ import { PhotoThumbnails } from "@/components/photo-viewer";
 import { LIQUIDATED_PETTY_CASH, pettyCashCost, runGross } from "@/lib/finance";
 import { warehouseIssueCosts } from "@/lib/warehouse-issue-cost";
 import { canAccess } from "@/lib/access";
+import { canAddDocument, canInputProgress, canLogPotentialChange } from "@/lib/project-input";
 import { computeWorkItemStatuses, currentBreakdown, summarizeProgress, weightTotal } from "@/lib/progress";
 import { SubItemsManager } from "@/components/sub-items-editor";
 import { ContractValueEditor } from "@/components/contract-value-editor";
@@ -186,7 +187,8 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
   const showMargin = user.role === "OWNER";
   const canRecordPayment = ["OWNER", "ACCOUNTING"].includes(user.role);
   const canCreateCO = ["OWNER", "PM"].includes(user.role);
-  const canProgress = ["OWNER", "PM", "FOREMAN"].includes(user.role);
+  // progress updates and daily reports; also a person the Owner gave project input (a Project Engineer) — who still sees no money
+  const canProgress = canInputProgress(user);
   const canReview = ["OWNER", "PM"].includes(user.role);
 
   const contractValue = Number(p.contractValue);
@@ -1514,20 +1516,20 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
               ))}
               {p.changeOrders.length === 0 && <p className="text-sm text-ink-400">No change orders.</p>}
               {canCreateCO && (
-                <>
-                  <details className="rounded-lg border border-dashed border-ink-200 p-3">
-                    <summary className="cursor-pointer text-sm font-medium text-ink-700">+ New change order (sent to the client now)</summary>
-                    <div className="mt-3">
-                      <ChangeOrderForm projectId={p.id} />
-                    </div>
-                  </details>
-                  <details className="rounded-lg border border-dashed border-ink-200 p-3">
-                    <summary className="cursor-pointer text-sm font-medium text-ink-700">+ Log a potential change (internal, not sent)</summary>
-                    <div className="mt-3">
-                      <PotentialChangeForm projectId={p.id} />
-                    </div>
-                  </details>
-                </>
+                <details className="rounded-lg border border-dashed border-ink-200 p-3">
+                  <summary className="cursor-pointer text-sm font-medium text-ink-700">+ New change order (sent to the client now)</summary>
+                  <div className="mt-3">
+                    <ChangeOrderForm projectId={p.id} />
+                  </div>
+                </details>
+              )}
+              {canLogPotentialChange(user) && (
+                <details className="rounded-lg border border-dashed border-ink-200 p-3">
+                  <summary className="cursor-pointer text-sm font-medium text-ink-700">+ Log a potential change (internal, not sent)</summary>
+                  <div className="mt-3">
+                    <PotentialChangeForm projectId={p.id} showCost={showMoney} />
+                  </div>
+                </details>
               )}
             </CardBody>
           </Card>
@@ -2083,11 +2085,11 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                 );
               })}
               {p.documents.length === 0 && <p className="text-sm text-ink-400">No documents registered yet.</p>}
-              {canManageQuality && (
+              {canAddDocument(user) && (
                 <details className="rounded-lg border border-dashed border-ink-200 p-3">
                   <summary className="cursor-pointer text-sm font-medium text-ink-700">+ Add a document</summary>
                   <div className="mt-3">
-                    <AddDocumentForm projectId={p.id} />
+                    <AddDocumentForm projectId={p.id} canShare={canManageQuality} />
                   </div>
                 </details>
               )}

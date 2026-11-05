@@ -5,6 +5,7 @@ import { audit } from "@/lib/audit";
 import { logProjectActivity } from "@/lib/project-activity";
 import { savePhotos } from "@/lib/storage";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
+import { canInputProgress } from "@/lib/project-input";
 
 const deliverySchema = z.object({
   material: z.string().min(1).max(200),
@@ -44,7 +45,8 @@ const createSchema = z.object({
  * sequential per project (e.g. "DCR-023").
  */
 export const POST = handleApi(async (req: NextRequest) => {
-  const user = await requireUser(["OWNER", "PM", "FOREMAN"]);
+  const user = await requireUser();
+  if (!canInputProgress(user)) throw new ApiError(403, "Not authorized for this action");
   const body = createSchema.parse(await req.json());
 
   const project = await prisma.project.findUnique({ where: { id: body.projectId } });

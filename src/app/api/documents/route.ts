@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { fileSourceSchema, resolveFileSource } from "@/lib/document-input";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
+import { canAddDocument, isProjectManagerRole } from "@/lib/project-input";
 
 const createSchema = fileSourceSchema.extend({
   projectId: z.string().min(1),
@@ -15,10 +16,13 @@ const createSchema = fileSourceSchema.extend({
   notes: z.string().max(1000).optional().nullable(),
 });
 
-/** POST /api/documents — Owner/PM register a document with its first revision. Clients see it only if shared. */
+/** POST /api/documents — Owner/PM (and anyone given project input, internal only) register a document with its first revision. Clients see it only if shared. */
 export const POST = handleApi(async (req: NextRequest) => {
-  const user = await requireUser(["OWNER", "PM"]);
+  const user = await requireUser();
+  if (!canAddDocument(user)) throw new ApiError(403, "Not authorized for this action");
   const body = createSchema.parse(await req.json());
+  // sharing with the client stays with the Owner/PM: anyone else adds the document for the team only
+  if (!isProjectManagerRole(user)) body.visibleToClient = false;
   const project = await prisma.project.findUnique({ where: { id: body.projectId }, select: { id: true, name: true } });
   if (!project) throw new ApiError(404, "Project not found");
   const file = await resolveFileSource(body);

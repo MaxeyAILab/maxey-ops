@@ -429,7 +429,7 @@ const CATEGORY_OPTIONS = [
   ["OTHER", "Other"],
 ] as const;
 
-export function AddDocumentForm({ projectId }: { projectId: string }) {
+export function AddDocumentForm({ projectId, canShare = true }: { projectId: string; canShare?: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -500,9 +500,13 @@ export function AddDocumentForm({ projectId }: { projectId: string }) {
         <Label htmlFor="doc-notes">Notes</Label>
         <Input id="doc-notes" name="notes" maxLength={1000} placeholder="e.g., Issued for construction" />
       </div>
-      <label className="flex items-center gap-2 text-sm text-ink-700">
-        <input type="checkbox" name="visibleToClient" className="h-4 w-4" /> Share with the client in their portal
-      </label>
+      {canShare ? (
+        <label className="flex items-center gap-2 text-sm text-ink-700">
+          <input type="checkbox" name="visibleToClient" className="h-4 w-4" /> Share with the client in their portal
+        </label>
+      ) : (
+        <p className="text-xs text-ink-500">The document is kept for the team. The Owner or PM decides whether the client sees it.</p>
+      )}
       {error && <p className="text-sm text-red-600">{error}</p>}
       <Button type="submit" disabled={busy} className="w-full">
         {busy ? "Saving…" : "Add document"}
