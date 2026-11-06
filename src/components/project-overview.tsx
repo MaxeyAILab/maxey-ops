@@ -170,10 +170,15 @@ export function ActivityFeed({ rows }: { rows: ActivityRow[] }) {
 
 // ---------- section navigation ----------
 
-/** Section tabs across the project page; the section you're scrolled to is highlighted in orange. */
-export function ProjectSectionNav({ sections }: { sections: { id: string; label: string }[] }) {
+/**
+ * Section tabs across the project page, pinned under the app's top bar while the page scrolls; the section you're scrolled to is
+ * highlighted in orange. Once the page header has scrolled away, the project's name shows at the left so you know where you are.
+ */
+export function ProjectSectionNav({ sections, title }: { sections: { id: string; label: string }[]; title?: string }) {
   const [active, setActive] = useState(sections[0]?.id ?? "");
+  const [scrolled, setScrolled] = useState(false);
   const navRef = useRef<HTMLElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
 
   // Scroll-spy: the active section is the last one whose top has passed just below the sticky bar. At the very
   // bottom of the page the last section wins, since a short final section may never reach the bar.
@@ -194,6 +199,7 @@ export function ProjectSectionNav({ sections }: { sections: { id: string; label:
       }
       if (atBottom && sections.length) current = sections[sections.length - 1].id;
       setActive(current);
+      setScrolled(window.scrollY > 140);
     };
     const onScroll = () => {
       if (!frame) frame = requestAnimationFrame(update);
@@ -210,15 +216,17 @@ export function ProjectSectionNav({ sections }: { sections: { id: string; label:
 
   // Keep the highlighted tab visible when the bar scrolls sideways (phones, narrow windows).
   useEffect(() => {
-    const el = navRef.current?.querySelector<HTMLElement>(`[data-section="${active}"]`);
-    const nav = navRef.current;
+    const el = tabsRef.current?.querySelector<HTMLElement>(`[data-section="${active}"]`);
+    const nav = tabsRef.current;
     if (!el || !nav) return;
     const left = el.offsetLeft - nav.clientWidth / 2 + el.clientWidth / 2;
     nav.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
   }, [active]);
 
   return (
-    <nav ref={navRef} aria-label="Project sections" className="sticky top-[3.6rem] z-10 -mx-4 overflow-x-auto border-b border-ink-200 bg-ink-100/95 px-4 backdrop-blur md:top-0">
+    <nav ref={navRef} aria-label="Project sections" className="sticky top-[3.6rem] z-10 -mx-4 flex items-center gap-3 border-b border-ink-200 bg-ink-100/95 px-4 backdrop-blur">
+      {title && scrolled && <span className="hidden max-w-[14rem] shrink-0 truncate text-sm font-bold text-ink-900 lg:block" title={title}>{title}</span>}
+      <div ref={tabsRef} className="min-w-0 flex-1 overflow-x-auto">
       <ul className="flex gap-1 whitespace-nowrap py-1.5 text-sm">
         {sections.map((s) => {
           const on = s.id === active;
@@ -239,6 +247,7 @@ export function ProjectSectionNav({ sections }: { sections: { id: string; label:
           );
         })}
       </ul>
+      </div>
     </nav>
   );
 }

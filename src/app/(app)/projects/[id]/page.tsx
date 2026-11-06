@@ -684,7 +684,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
           </div>
         </div>
 
-        <ProjectSectionNav sections={sections} />
+        <ProjectSectionNav sections={sections} title={p.name} />
 
         {/* ---------- Overview ---------- */}
         <section id="overview" className="scroll-mt-14 space-y-4">
