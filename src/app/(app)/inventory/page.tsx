@@ -19,6 +19,7 @@ import { REQUEST_LABEL, decisionText } from "@/lib/inventory-labels";
 import { WarehouseTabs } from "@/components/warehouse-tabs";
 import { RequestPhotos } from "@/components/request-photos-ui";
 import { MovementPriceEditor } from "@/components/movement-price-editor";
+import { UsedQtyEditor } from "@/components/used-qty-editor";
 import { PhotoThumbnails } from "@/components/photo-viewer";
 import { photoList } from "@/lib/request-photos";
 import { DEFAULT_WAREHOUSE, countByWarehouse, warehouseFromSlug, warehouseLabel, warehouseSlug } from "@/lib/warehouses";
@@ -459,6 +460,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                 <Td>{m.item.name}</Td>
                 <Td className="text-right tabular-nums">
                   {Number(m.qty)} {m.item.unit}
+                  {isOwner && m.type === "CONSUMED_ON_SITE" && m.status === "APPLIED" && <UsedQtyEditor id={m.id} itemName={m.item.name} unit={m.item.unit} current={Number(m.qty)} project={m.fromLoc} />}
                 </Td>
                 <Td className="text-xs">
                   {m.fromLoc} → {m.toLoc}
