@@ -27,12 +27,16 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  * 15, spreading 10, compaction 15). Afterwards each sub-item is reported like any other progress entry and the work item's
  * completion is the weighted average of its parts.
  */
-export function SubItemsManager({ projectId, items }: { projectId: string; items: SubItemsManagerItem[] }) {
+export function SubItemsManager({ projectId, items, bare = false }: { projectId: string; items: SubItemsManagerItem[]; bare?: boolean }) {
   if (items.length === 0) return null;
   return (
-    <div className="space-y-2 rounded-lg border border-ink-100 p-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">Sub-items of a work item</p>
-      <p className="text-xs text-ink-500">Break a work item into its parts so the client sees more detail. The parts&apos; weights must add up to the item&apos;s weight.</p>
+    <div className={bare ? "space-y-2" : "space-y-2 rounded-lg border border-ink-100 p-3"}>
+      {!bare && (
+        <>
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">Sub-items of a work item</p>
+          <p className="text-xs text-ink-500">Break a work item into its parts so the client sees more detail. The parts&apos; weights must add up to the item&apos;s weight.</p>
+        </>
+      )}
       <ul className="divide-y divide-ink-100">
         {items.map((it) => (
           // the key includes the sub-items, so the editor starts again from the saved figures after a save

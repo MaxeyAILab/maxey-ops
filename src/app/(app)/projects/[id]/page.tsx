@@ -24,6 +24,7 @@ import { canAccess } from "@/lib/access";
 import { canAddDocument, canInputProgress, canLogPotentialChange } from "@/lib/project-input";
 import { computeWorkItemStatuses, currentBreakdown, summarizeProgress, weightTotal } from "@/lib/progress";
 import { SubItemsManager } from "@/components/sub-items-editor";
+import { CollapsibleCard } from "@/components/collapsible-card";
 import { ContractValueEditor } from "@/components/contract-value-editor";
 import { StartDateEditor } from "@/components/start-date-editor";
 import { contractLock } from "@/lib/project-cost";
@@ -1740,43 +1741,61 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
           </Card>
         )}
 
-        <div className="grid gap-6 lg:grid-cols-2 [&>*]:min-w-0">
+        <div className="space-y-6">
+          <div id="progress" className="scroll-mt-14" />
+          {/* the accomplishment chart with the work items' sub-items beside it (the PM/Owner set them) */}
+          <div className={`grid gap-6 [&>*]:min-w-0 ${canReview ? "lg:grid-cols-2" : ""}`}>
+            <Card>
+              <CardHeader
+                title="Weighted accomplishment by work item (approved)"
+                subtitle="Each work item counts by its weight in the whole project."
+                action={
+                  <a
+                    href={`/api/projects/${p.id}/accomplishment-export`}
+                    className="shrink-0 rounded-lg border border-ink-200 px-3 py-1.5 text-xs font-medium text-ink-600 hover:bg-ink-50"
+                  >
+                    Export accomplishment (CSV)
+                  </a>
+                }
+              />
+              <CardBody>
+                <div className={`flex flex-col items-center gap-4 rounded-lg bg-ink-50 p-4 ${canReview ? "xl:flex-row xl:items-start" : "sm:flex-row sm:items-start"}`}>
+                  <AccomplishmentRadial items={workItemStatuses} />
+                  <div className="w-full flex-1">
+                    <WorkItemWeightBars items={workItemStatuses} />
+                  </div>
+                </div>
+              </CardBody>
+            </Card>
+            {canReview && (
+              <Card>
+                <CardHeader
+                  title="Sub-items of a work item"
+                  subtitle="Break a work item into its parts so the client sees more detail. The parts' weights must add up to the item's weight."
+                />
+                <CardBody>
+                  <SubItemsManager
+                    bare
+                    projectId={p.id}
+                    items={workItemStatuses.map((w) => ({
+                      workItem: w.workItem,
+                      weight: w.weight,
+                      pctComplete: w.pctComplete,
+                      color: w.color,
+                      subs: (w.subItems ?? []).map((s) => ({ name: s.name, weight: s.weight, pctComplete: s.pctComplete })),
+                    }))}
+                  />
+                </CardBody>
+              </Card>
+            )}
+          </div>
+
           <Card>
             <CardHeader
               title={`Progress timeline (${p.progressEntries.length})`}
               subtitle="Every entry timestamped and attributed. Only approved entries count as verified and appear in the client portal."
-              action={
-                <a
-                  href={`/api/projects/${p.id}/accomplishment-export`}
-                  className="rounded-lg border border-ink-200 px-3 py-1.5 text-xs font-medium text-ink-600 hover:bg-ink-50"
-                >
-                  Export accomplishment (CSV)
-                </a>
-              }
             />
             <CardBody className="space-y-4">
-              <div id="progress" className="scroll-mt-14" />
-              <div className="flex flex-col items-center gap-4 rounded-lg bg-ink-50 p-4 sm:flex-row sm:items-start">
-                <AccomplishmentRadial items={workItemStatuses} />
-                <div className="w-full flex-1">
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
-                    Weighted accomplishment by work item (approved)
-                  </p>
-                  <WorkItemWeightBars items={workItemStatuses} />
-                </div>
-              </div>
-              {canReview && (
-                <SubItemsManager
-                  projectId={p.id}
-                  items={workItemStatuses.map((w) => ({
-                    workItem: w.workItem,
-                    weight: w.weight,
-                    pctComplete: w.pctComplete,
-                    color: w.color,
-                    subs: (w.subItems ?? []).map((s) => ({ name: s.name, weight: s.weight, pctComplete: s.pctComplete })),
-                  }))}
-                />
-              )}
               {canProgress && <ProgressForm projectId={p.id} items={progressItemOptions} />}
               {!canReview && canProgress && (
                 <p className="text-xs text-ink-500">Entries you submit are reviewed by the PM or Owner before they count as verified progress.</p>
@@ -1851,10 +1870,8 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
             </CardBody>
           </Card>
 
-          <Card>
-            <CardHeader title={`Requisitions (${p.requisitions.length})`} subtitle="A requisition is a request — only approved ones count as committed cost" />
-            <CardBody className="space-y-2">
-              <div id="requisitions" className="scroll-mt-14" />
+          <CollapsibleCard id="requisitions" title={`Requisitions log (${p.requisitions.length})`} subtitle="A requisition is a request — only approved ones count as committed cost">
+            <>
               {p.requisitions.map((r) => (
                 <Link
                   key={r.id}
@@ -1875,8 +1892,8 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                 </Link>
               ))}
               {p.requisitions.length === 0 && <p className="text-sm text-ink-400">No requisitions for this project.</p>}
-            </CardBody>
-          </Card>
+            </>
+          </CollapsibleCard>
         </div>
 
         {/* ---------- Quality & safety ---------- */}
