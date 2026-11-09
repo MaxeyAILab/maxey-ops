@@ -6,7 +6,8 @@ import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { canAddInventoryCatalog } from "@/lib/access";
 import { TOOL_CONDITIONS, TOOL_CONDITION_LABEL, type ToolConditionValue } from "@/lib/tool-condition";
 import { WAREHOUSE_VALUES, warehouseLabel } from "@/lib/warehouses";
-import { TOOL_CATEGORIES, normalizeToolCategory } from "@/lib/tool-category";
+import { TOOL_CATEGORIES, isCountedCategory, normalizeToolCategory } from "@/lib/tool-category";
+import { wholeQty } from "@/lib/tool-lots";
 
 const createSchema = z.object({
   name: z.string().min(1).max(200),
@@ -16,6 +17,8 @@ const createSchema = z.object({
   workingStatus: z.enum(TOOL_CONDITIONS).default("WORKING"),
   /** the warehouse it starts in, and returns to (the Main Warehouse when not said) */
   warehouse: z.enum(WAREHOUSE_VALUES).default("MAIN"),
+  /** pieces being added — only for a counted category (Scaffolding & Shoring) */
+  quantity: z.union([z.number(), z.string()]).optional(),
 });
 
 /**
@@ -30,6 +33,29 @@ export const POST = handleApi(async (req: NextRequest) => {
   // every tool goes in one of the four groups (older wording like "Power Tool" is accepted and saved under its proper name)
   const category = normalizeToolCategory(body.category);
   if (!category) throw new ApiError(400, `Choose a category: ${TOOL_CATEGORIES.map((c) => c.label).join(", ")}`);
+
+  // Scaffolding & Shoring is counted: "100 base jacks" is one entry with a quantity, and adding the same item again adds to it.
+  if (isCountedCategory(category)) {
+    const pieces = wholeQty(body.quantity);
+    if (pieces === null) throw new ApiError(400, "Enter how many pieces — a whole number, 1 or more");
+    const name = body.name.trim();
+    const pool = await prisma.$transaction(async (db) => {
+      const existing = await db.toolAsset.findFirst({
+        where: { name: { equals: name, mode: "insensitive" }, category, warehouse: body.warehouse, status: "IN_WAREHOUSE", currentProjectId: null },
+      });
+      if (existing) return { tool: await db.toolAsset.update({ where: { id: existing.id }, data: { quantity: { increment: pieces } } }), added: true, before: existing.quantity };
+      return { tool: await db.toolAsset.create({ data: { name, category, warehouse: body.warehouse, quantity: pieces, workingStatus: "WORKING" } }), added: false, before: 0 };
+    });
+    await audit({
+      entityType: "ToolAsset",
+      entityId: pool.tool.id,
+      actorId: user.id,
+      actorName: user.name,
+      action: pool.added ? "TOOL_PIECES_ADDED" : "TOOL_REGISTERED",
+      diff: { name, warehouse: warehouseLabel(body.warehouse), category, pieces, before: pool.before, now: pool.tool.quantity },
+    });
+    return NextResponse.json(pool.tool, { status: 201 });
+  }
 
   const tool = await prisma.toolAsset.create({
     data: {

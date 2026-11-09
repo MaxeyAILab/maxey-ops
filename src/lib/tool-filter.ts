@@ -22,6 +22,8 @@ export interface ToolRow {
   workingStatus: string;
   /** the project it is at, or "Warehouse" */
   location: string;
+  /** pieces this row stands for (a counted tool); 1 when not given */
+  quantity?: number;
 }
 
 /** Not working, flagged for repair or disposal, under repair, or lost. */
@@ -56,5 +58,5 @@ export function filterTools<T extends ToolRow>(tools: T[], filter: ToolFilterKey
 
 /** How many tools each filter button would show (before any search). */
 export function toolFilterCounts(tools: ToolRow[]): Record<ToolFilterKey, number> {
-  return Object.fromEntries(TOOL_FILTERS.map((f) => [f.key, tools.filter((t) => toolMatchesFilter(t, f.key)).length])) as Record<ToolFilterKey, number>;
+  return Object.fromEntries(TOOL_FILTERS.map((f) => [f.key, tools.filter((t) => toolMatchesFilter(t, f.key)).reduce((s, t) => s + (t.quantity ?? 1), 0)])) as Record<ToolFilterKey, number>;
 }

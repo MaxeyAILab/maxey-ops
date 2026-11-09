@@ -9,6 +9,8 @@ import { canLogInventoryMovement } from "@/lib/access";
 import { toolNeedsApproval } from "@/lib/inventory-requests";
 import { MAX_NEW_REQUEST_PHOTOS } from "@/lib/request-photos";
 import { TOOL_CONDITION_LABEL, blocksCheckout, conditionAfterMovement } from "@/lib/tool-condition";
+import { isCountedCategory } from "@/lib/tool-category";
+import { moveLotPieces, shortagePhrase, wholeQty } from "@/lib/tool-lots";
 import type { ToolStatus } from "@prisma/client";
 
 const TOOL_MOVEMENT_TYPES = [
@@ -26,6 +28,7 @@ const createSchema = z.object({
   toolId: z.string().min(1),
   type: z.enum(TOOL_MOVEMENT_TYPES),
   toProjectId: z.string().optional().or(z.literal("")), // required for checkout/transfer
+  qty: z.union([z.number(), z.string()]).optional(), // pieces to move — counted tools (Scaffolding & Shoring) only
   condition: z.string().max(300).optional().or(z.literal("")),
   photo: z.string().optional(), // single compressed data URL (damage/condition proof)
   photos: z.array(z.string()).max(MAX_NEW_REQUEST_PHOTOS).optional(), // compressed data URLs: the tool being returned / transferred
@@ -53,8 +56,21 @@ export const POST = handleApi(async (req: NextRequest) => {
   const tool = await prisma.toolAsset.findUnique({ where: { id: body.toolId } });
   if (!tool) throw new ApiError(404, "Tool not found");
 
-  const waiting = await prisma.toolMovement.findFirst({ where: { toolId: tool.id, status: "PENDING" }, select: { id: true } });
-  if (waiting) throw new ApiError(400, `${tool.name} already has a request waiting for approval — wait until it is decided`);
+  // A counted tool (Scaffolding & Shoring) moves a number of pieces out of the pool where they are; several requests may wait for the
+  // same pool as long as together they do not ask for more pieces than it holds. An individual tool allows one request at a time.
+  const counted = isCountedCategory(tool.category);
+  let qty = 1;
+  if (counted) {
+    const asked = wholeQty(body.qty);
+    if (asked === null) throw new ApiError(400, "Enter how many pieces — a whole number, 1 or more");
+    qty = asked;
+    const waitingPieces = (await prisma.toolMovement.aggregate({ where: { toolId: tool.id, status: "PENDING" }, _sum: { qty: true } }))._sum.qty ?? 0;
+    const short = shortagePhrase(tool.name, qty, tool.quantity, waitingPieces);
+    if (short) throw new ApiError(400, short);
+  } else {
+    const waiting = await prisma.toolMovement.findFirst({ where: { toolId: tool.id, status: "PENDING" }, select: { id: true } });
+    if (waiting) throw new ApiError(400, `${tool.name} already has a request waiting for approval — wait until it is decided`);
+  }
 
   const toProjectId = body.toProjectId || null;
   const fromProjectId = tool.currentProjectId; // derived from actual state, not client input
@@ -120,6 +136,7 @@ export const POST = handleApi(async (req: NextRequest) => {
         clientUuid: body.clientUuid,
         toolId: tool.id,
         type: body.type,
+        qty,
         fromProjectId,
         toProjectId: ["CHECKOUT_TO_SITE", "TRANSFER_SITE_TO_SITE"].includes(body.type)
           ? toProjectId
@@ -133,7 +150,9 @@ export const POST = handleApi(async (req: NextRequest) => {
         ...decided,
       },
     });
-    if (!isRequest) {
+    if (!isRequest && counted) {
+      await moveLotPieces(db, tool, qty, { status: nextStatus, currentProjectId: nextProjectId });
+    } else if (!isRequest) {
       await db.toolAsset.update({
         where: { id: tool.id },
         data: {
@@ -153,7 +172,7 @@ export const POST = handleApi(async (req: NextRequest) => {
     actorId: user.id,
     actorName: user.name,
     action: isRequest ? "TOOL_REQUEST_SUBMITTED" : `TOOL_${body.type}`,
-    diff: { tool: tool.name, type: body.type, condition: body.condition || null, photos: photoUrls.length },
+    diff: { tool: tool.name, type: body.type, ...(counted ? { pieces: qty } : {}), condition: body.condition || null, photos: photoUrls.length },
   });
 
   return NextResponse.json(movement, { status: 201 });

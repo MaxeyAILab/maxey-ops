@@ -8,6 +8,8 @@ import { canApproveInventoryRequest } from "@/lib/access";
 import { toolNeedsApproval } from "@/lib/inventory-requests";
 import { savePhotos } from "@/lib/storage";
 import { MAX_NEW_REQUEST_PHOTOS, photoRoom, withPhotos } from "@/lib/request-photos";
+import { isCountedCategory } from "@/lib/tool-category";
+import { moveLotPieces } from "@/lib/tool-lots";
 
 const patchSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("approve") }),
@@ -69,14 +71,15 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
   }
   if (m.type === "TRANSFER_SITE_TO_SITE" && (!m.toProjectId || m.toProjectId === m.tool.currentProjectId)) throw new ApiError(400, "This transfer has no valid destination");
   const toWarehouse = m.type === "RETURN_TO_WAREHOUSE";
+  const counted = isCountedCategory(m.tool.category);
+  if (counted && m.tool.quantity < m.qty) throw new ApiError(409, `Only ${m.tool.quantity} ${m.tool.name} ${m.tool.quantity === 1 ? "is" : "are"} there now, ${m.qty} were asked for — reject this request and ask for a new one`);
   await prisma.$transaction(async (db) => {
     const done = await db.toolMovement.updateMany({ where: { id: m.id, status: "PENDING" }, data: { status: "APPLIED", decidedById: user.id, decidedByName: user.name, decidedAt: now } });
     if (done.count === 0) throw new ApiError(409, "This request was just decided by someone else");
-    await db.toolAsset.update({
-      where: { id: m.toolId },
-      data: toWarehouse ? { status: "IN_WAREHOUSE", currentProjectId: null } : { status: "ON_SITE", currentProjectId: m.toProjectId },
-    });
+    const dest = toWarehouse ? { status: "IN_WAREHOUSE" as const, currentProjectId: null } : { status: "ON_SITE" as const, currentProjectId: m.toProjectId };
+    if (counted) await moveLotPieces(db, m.tool, m.qty, dest);
+    else await db.toolAsset.update({ where: { id: m.toolId }, data: dest });
   });
-  await audit({ entityType: "ToolMovement", entityId: m.id, actorId: user.id, actorName: user.name, action: "TOOL_REQUEST_APPROVED", diff: { tool: m.tool.name, type: m.type } });
+  await audit({ entityType: "ToolMovement", entityId: m.id, actorId: user.id, actorName: user.name, action: "TOOL_REQUEST_APPROVED", diff: { tool: m.tool.name, type: m.type, ...(counted ? { pieces: m.qty } : {}) } });
   return NextResponse.json({ ok: true });
 });

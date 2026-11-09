@@ -10,7 +10,7 @@ import { canAccess, canAddInventoryCatalog, canDeleteTool, canLogInventoryMoveme
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
 import { TOOL_CONDITION_LABEL } from "@/lib/tool-condition";
 import { TOOL_FILTERS, filterTools, isToolFilter, toolFilterCounts } from "@/lib/tool-filter";
-import { NO_TOOL_CATEGORY, TOOL_CATEGORIES, TOOL_CATEGORY_LABEL, summarizeToolCategories, toolCategoryFromSlug, toolCategoryKey, toolCategorySlug } from "@/lib/tool-category";
+import { NO_TOOL_CATEGORY, TOOL_CATEGORIES, TOOL_CATEGORY_LABEL, isCountedCategory, summarizeToolCategories, toolCategoryFromSlug, toolCategoryKey, toolCategorySlug } from "@/lib/tool-category";
 import { DEFAULT_WAREHOUSE, countByWarehouse, warehouseFromSlug, warehouseLabel, warehouseSlug } from "@/lib/warehouses";
 import { REQUEST_LABEL } from "@/lib/inventory-labels";
 
@@ -34,7 +34,8 @@ export default async function ToolsPage({ searchParams }: { searchParams: { cate
   const q = (searchParams.toolq ?? "").trim().slice(0, 80);
 
   const [everything, projects, pendingTools] = await Promise.all([
-    prisma.toolAsset.findMany({ orderBy: { name: "asc" }, include: { currentProject: { select: { name: true } }, _count: { select: { movements: true } } } }),
+    // an empty pool of a counted tool (all its pieces moved elsewhere) is kept for the history but not shown
+    prisma.toolAsset.findMany({ where: { quantity: { gt: 0 } }, orderBy: { name: "asc" }, include: { currentProject: { select: { name: true } }, _count: { select: { movements: true } } } }),
     prisma.project.findMany({ where: { status: { in: CHARGEABLE_STATUSES } }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.toolMovement.findMany({ where: { status: "PENDING" }, select: { toolId: true, type: true, actorId: true } }),
   ]);
@@ -86,13 +87,13 @@ export default async function ToolsPage({ searchParams }: { searchParams: { cate
       <WarehouseTabs current={wh} counts={toolWarehouseCounts} path="/inventory/tools" params={{ category: searchParams.category && category ? searchParams.category : undefined, tool: statusFilter !== "all" ? statusFilter : undefined, toolq: q || undefined }} noun="tools" />
 
       <div className="flex flex-wrap items-center gap-2">
-        {categoryTab(null, "All", inWarehouse.length)}
+        {categoryTab(null, "All", inWarehouse.reduce((s, t) => s + t.quantity, 0))}
         {TOOL_CATEGORIES.map((c) => categoryTab(c.slug, c.label, counts[c.value].tools))}
         {counts[NO_TOOL_CATEGORY].tools > 0 && categoryTab(toolCategorySlug(NO_TOOL_CATEGORY), TOOL_CATEGORY_LABEL[NO_TOOL_CATEGORY], counts[NO_TOOL_CATEGORY].tools)}
       </div>
 
       <Card>
-        <CardHeader title={`${category ? TOOL_CATEGORY_LABEL[category] : "All categories"} (${visible.length}${visible.length !== inCategory.length ? ` of ${inCategory.length}` : ""})`} subtitle="Individually tracked — each unit checked out to a project and returned to its warehouse" />
+        <CardHeader title={`${category ? TOOL_CATEGORY_LABEL[category] : "All categories"} (${visible.length}${visible.length !== inCategory.length ? ` of ${inCategory.length}` : ""})`} subtitle={category === "SCAFFOLD" ? "Counted by quantity — pieces are checked out to projects, returned and transferred by number" : "Individually tracked — each unit checked out to a project and returned to its warehouse. Scaffolding & Shoring is counted by quantity"} />
         <CardBody className="space-y-3 border-b border-ink-100">
           <div className="flex flex-wrap items-center gap-2">
             {TOOL_FILTERS.map((f) => (
@@ -128,6 +129,7 @@ export default async function ToolsPage({ searchParams }: { searchParams: { cate
             <tr>
               <Th sticky>Tool</Th>
               <Th className="hidden sm:table-cell">Tag</Th>
+              <Th>Qty</Th>
               {!category && <Th>Category</Th>}
               <Th>Status</Th>
               <Th>Condition</Th>
@@ -143,18 +145,19 @@ export default async function ToolsPage({ searchParams }: { searchParams: { cate
                   {t.assetTag && <div className="text-xs font-semibold text-ink-500 sm:hidden">{t.assetTag}</div>}
                 </Td>
                 <Td className="hidden text-ink-500 sm:table-cell">{t.assetTag ?? "—"}</Td>
+                <Td className="tabular-nums font-medium">{t.quantity}</Td>
                 {!category && <Td className="text-ink-500">{TOOL_CATEGORY_LABEL[toolCategoryKey(t.category)]}</Td>}
                 <Td>
                   <Badge value={t.status} />
                   {t.condition && <div className="mt-0.5 text-[11px] text-ink-400">{t.condition}</div>}
                 </Td>
-                <Td>{canMove ? <ToolConditionControl toolId={t.id} value={t.workingStatus} /> : <Badge value={t.workingStatus} label={TOOL_CONDITION_LABEL[t.workingStatus]} />}</Td>
+                <Td>{isCountedCategory(t.category) ? <span className="text-xs text-ink-400">counted</span> : canMove ? <ToolConditionControl toolId={t.id} value={t.workingStatus} /> : <Badge value={t.workingStatus} label={TOOL_CONDITION_LABEL[t.workingStatus]} />}</Td>
                 <Td className="text-ink-600">{t.currentProject?.name ?? warehouseLabel(t.warehouse)}</Td>
                 {canMove && (
                   <Td>
                     <div className="flex flex-wrap items-center gap-3">
-                      <ToolActions toolId={t.id} status={t.status} currentProjectId={t.currentProjectId} projects={projectOptions} pending={pendingByTool.get(t.id) ? waitingText(pendingByTool.get(t.id)!) : undefined} />
-                      {canAddCatalog && <EditToolButton id={t.id} name={t.name} assetTag={t.assetTag} category={t.category} warehouse={t.warehouse} />}
+                      <ToolActions toolId={t.id} status={t.status} currentProjectId={t.currentProjectId} projects={projectOptions} counted={isCountedCategory(t.category)} quantity={t.quantity} pending={pendingByTool.get(t.id) ? waitingText(pendingByTool.get(t.id)!) : undefined} />
+                      {canAddCatalog && <EditToolButton id={t.id} name={t.name} assetTag={t.assetTag} category={t.category} warehouse={t.warehouse} quantity={isCountedCategory(t.category) ? t.quantity : undefined} />}
                       {canDeleteTool(user, t._count.movements) && <DeleteToolButton toolId={t.id} name={t.name} movements={t._count.movements} />}
                     </div>
                   </Td>
@@ -163,7 +166,7 @@ export default async function ToolsPage({ searchParams }: { searchParams: { cate
             ))}
             {visible.length === 0 && (
               <tr>
-                <Td colSpan={canMove ? 7 : 6} className="py-8 text-center text-ink-400">
+                <Td colSpan={canMove ? 8 : 7} className="py-8 text-center text-ink-400">
                   {inWarehouse.length === 0 ? `No tools are kept in the ${whName} yet.` : q || statusFilter !== "all" ? "No tools match — try another filter or fewer words." : "No tools in this category yet."}
                 </Td>
               </tr>

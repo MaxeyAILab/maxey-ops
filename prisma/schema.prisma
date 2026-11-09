@@ -908,6 +908,9 @@ model ToolAsset {
   warehouse        Warehouse     @default(MAIN) // its home warehouse — where it sits when not on a project, and where it returns to
   currentProjectId String? // null = in its warehouse
   currentProject   Project?      @relation("ToolCurrentProject", fields: [currentProjectId], references: [id])
+  // How many pieces this row stands for. Always 1 for an individually tracked tool. For a counted category (Scaffolding & Shoring)
+  // each row is the pool of that item at one place (warehouse, a project, under repair, lost); moving pieces moves the number.
+  quantity         Int           @default(1)
   createdAt        DateTime      @default(now())
 
   movements ToolMovement[]
@@ -919,6 +922,7 @@ model ToolMovement {
   toolId         String
   tool           ToolAsset        @relation(fields: [toolId], references: [id])
   type           ToolMovementType
+  qty            Int              @default(1) // pieces moved (counted tools); 1 for an individual tool
   fromProjectId  String?
   fromProject    Project?         @relation("ToolMoveFrom", fields: [fromProjectId], references: [id])
   toProjectId    String?

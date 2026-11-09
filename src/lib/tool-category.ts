@@ -1,17 +1,24 @@
 /**
  * The four groups tools and equipment are sorted into — like the four material categories. The Inventory tab shows only these
  * groups; the tools of each group are on the tools page (/inventory/tools). The category is stored as text on the tool (older
- * entries said "Power Tool", "Hand Tool"…), so it is matched loosely and anything that fits none of the four counts as
+ * entries said "Power Tool", "Hand Tool"…), so it is matched loosely and anything that fits none of the groups counts as
  * "Not categorized" until someone chooses one.
+ *
+ * Most groups hold individually tracked units (one row per tool). Scaffolding & Shoring is COUNTED: shoring jacks, base jacks,
+ * scaffolding frames, braces, platforms… come in hundreds, so each item is kept as a quantity per place (see tool-lots.ts).
  */
 export const TOOL_CATEGORIES = [
   { value: "HAND", label: "Hand Tools", slug: "hand-tools", icon: "🔨", hint: "hammers, saws, wrenches, trowels…" },
   { value: "POWER", label: "Power Tools", slug: "power-tools", icon: "🔌", hint: "drills, grinders, cut-off machines, mixers…" },
   { value: "HEAVY", label: "Heavy Equipment", slug: "heavy-equipment", icon: "🚜", hint: "compactors, excavators, loaders, generators…" },
   { value: "SAFETY", label: "Safety Equipment", slug: "safety-equipment", icon: "🦺", hint: "helmets, harnesses, boots, barriers…" },
+  { value: "SCAFFOLD", label: "Scaffolding & Shoring", slug: "scaffolding-shoring", icon: "🏗️", hint: "shoring jacks, base jacks, scaffolding frames, braces, platforms… counted by quantity" },
 ] as const;
 
 export type ToolCategoryValue = (typeof TOOL_CATEGORIES)[number]["value"];
+/** Tools of this group are counted by quantity instead of tracked one by one. */
+export const isCountedCategory = (text: string | null | undefined): boolean => toolCategoryKey(text) === "SCAFFOLD";
+
 /** A tool whose category is empty or fits none of the four. */
 export const NO_TOOL_CATEGORY = "NONE" as const;
 export type ToolCategoryKey = ToolCategoryValue | typeof NO_TOOL_CATEGORY;
@@ -25,6 +32,7 @@ export const TOOL_CATEGORY_LABEL: Record<ToolCategoryKey, string> = {
 /** Which group a stored category text belongs to: "Power Tool", "power tools", "POWER TOOLS" → POWER; unknown or empty → NONE. */
 export function toolCategoryKey(text: string | null | undefined): ToolCategoryKey {
   const t = (text ?? "").toLowerCase();
+  if (/scaffold|shoring/.test(t)) return "SCAFFOLD";
   if (/safety/.test(t)) return "SAFETY";
   if (/heavy/.test(t)) return "HEAVY";
   if (/power/.test(t)) return "POWER";
@@ -56,14 +64,16 @@ export interface ToolCategorySummary {
 }
 
 /** How many tools are in each group, and how many are in the warehouse, out on a site, or need attention — for the tiles. */
-export function summarizeToolCategories(rows: { category: string | null; status: string; workingStatus: string }[]): Record<ToolCategoryKey, ToolCategorySummary> {
+export function summarizeToolCategories(rows: { category: string | null; status: string; workingStatus: string; quantity?: number }[]): Record<ToolCategoryKey, ToolCategorySummary> {
   const out = Object.fromEntries([...TOOL_CATEGORIES.map((c) => c.value), NONE].map((k) => [k, { tools: 0, inWarehouse: 0, onSite: 0, attention: 0 }])) as Record<ToolCategoryKey, ToolCategorySummary>;
   for (const r of rows) {
     const s = out[toolCategoryKey(r.category)];
-    s.tools += 1;
-    if (r.status === "IN_WAREHOUSE") s.inWarehouse += 1;
-    if (r.status === "ON_SITE") s.onSite += 1;
-    if (r.workingStatus !== "WORKING" || r.status === "UNDER_REPAIR" || r.status === "LOST") s.attention += 1;
+    const n = r.quantity ?? 1; // a counted pool stands for many pieces
+    if (n <= 0) continue;
+    s.tools += n;
+    if (r.status === "IN_WAREHOUSE") s.inWarehouse += n;
+    if (r.status === "ON_SITE") s.onSite += n;
+    if (r.workingStatus !== "WORKING" || r.status === "UNDER_REPAIR" || r.status === "LOST") s.attention += n;
   }
   return out;
 }

@@ -121,7 +121,7 @@ export function EditStockItemButton({ id, name, unit, category, qty, price, canP
 }
 
 /** Fix a tool/equipment entry after it was added: name, asset tag, category (e.g. one that was forgotten). */
-export function EditToolButton({ id, name, assetTag, category, warehouse = "MAIN" }: { id: string; name: string; assetTag: string | null; category: string | null; warehouse?: WarehouseValue }) {
+export function EditToolButton({ id, name, assetTag, category, warehouse = "MAIN", quantity }: { id: string; name: string; assetTag: string | null; category: string | null; warehouse?: WarehouseValue; /** set for a counted tool: the pieces in this pool */ quantity?: number }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -132,7 +132,7 @@ export function EditToolButton({ id, name, assetTag, category, warehouse = "MAIN
     const fd = new FormData(e.currentTarget);
     setBusy(true);
     setError("");
-    const err = await patch(`/api/tools/${id}`, { name: fd.get("name"), assetTag: fd.get("assetTag") ?? "", category: fd.get("category") ?? "", warehouse: fd.get("warehouse") });
+    const err = await patch(`/api/tools/${id}`, { name: fd.get("name"), assetTag: fd.get("assetTag") ?? "", category: fd.get("category") ?? "", warehouse: fd.get("warehouse"), ...(quantity !== undefined ? { quantity: Number(fd.get("quantity")) } : {}) });
     setBusy(false);
     if (err) return setError(err);
     setOpen(false);
@@ -163,10 +163,18 @@ export function EditToolButton({ id, name, assetTag, category, warehouse = "MAIN
               <p className="mt-1 text-xs text-ink-500">Its home warehouse — where it sits when it is not on a project, and where it returns to.</p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <Label htmlFor={`tt-${id}`}>Asset tag</Label>
-                <Input id={`tt-${id}`} name="assetTag" defaultValue={assetTag ?? ""} placeholder="e.g., WM-002" />
-              </div>
+              {quantity !== undefined ? (
+                <div>
+                  <Label htmlFor={`tq-${id}`}>Pieces here</Label>
+                  <Input id={`tq-${id}`} name="quantity" type="number" min="0" step="1" inputMode="numeric" required defaultValue={quantity} />
+                  <p className="mt-1 text-xs text-ink-500">Corrects the count of this pool only. Pieces are normally added or moved with the actions on the row.</p>
+                </div>
+              ) : (
+                <div>
+                  <Label htmlFor={`tt-${id}`}>Asset tag</Label>
+                  <Input id={`tt-${id}`} name="assetTag" defaultValue={assetTag ?? ""} placeholder="e.g., WM-002" />
+                </div>
+              )}
               <div>
                 <Label htmlFor={`tc-${id}`}>Category</Label>
                 <Select id={`tc-${id}`} name="category" defaultValue={toolCategoryKey(category) === NO_TOOL_CATEGORY ? "" : TOOL_CATEGORY_LABEL[toolCategoryKey(category)]}>

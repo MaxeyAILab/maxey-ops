@@ -7,7 +7,7 @@ import { Badge, Card, CardBody, CardHeader, Table, Td, Th } from "@/components/u
 import { AddItemForm, MovementForm, ProjectMaterialQuickActions } from "@/components/inventory-forms";
 import { AddToolForm, ToolActions } from "@/components/tool-forms";
 import { TOOL_CONDITION_LABEL } from "@/lib/tool-condition";
-import { NO_TOOL_CATEGORY, TOOL_CATEGORIES, TOOL_CATEGORY_LABEL, summarizeToolCategories, toolCategorySlug, type ToolCategoryKey } from "@/lib/tool-category";
+import { NO_TOOL_CATEGORY, TOOL_CATEGORIES, TOOL_CATEGORY_LABEL, isCountedCategory, summarizeToolCategories, toolCategorySlug, type ToolCategoryKey } from "@/lib/tool-category";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
 import { canAccess, canAddInventoryCatalog, canApproveInventoryRequest, canLogInventoryMovement, canLogInventoryUsage, canSeeStockPrices } from "@/lib/access";
 import { issuedFromWarehouse, lineValue, summarizeValue } from "@/lib/warehouse-value";
@@ -59,10 +59,11 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
           where: { qty: { gt: 0 } },
           include: { item: { select: { id: true, name: true, unit: true, category: true, warehouse: true } } },
         },
-        toolAssets: true,
+        toolAssets: { where: { quantity: { gt: 0 } } },
       },
     }),
     prisma.toolAsset.findMany({
+      where: { quantity: { gt: 0 } }, // an emptied pool of a counted tool is kept for the history, not shown
       orderBy: { name: "asc" },
       include: { currentProject: { select: { name: true } }, _count: { select: { movements: true } } },
     }),
@@ -71,7 +72,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
       orderBy: { createdAt: "desc" },
       take: 20,
       include: {
-        tool: { select: { name: true, warehouse: true } },
+        tool: { select: { name: true, warehouse: true, category: true } },
         fromProject: { select: { name: true } },
         toProject: { select: { name: true } },
       },
@@ -81,7 +82,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
     prisma.toolMovement.findMany({
       where: { status: "PENDING" },
       orderBy: { createdAt: "asc" },
-      include: { tool: { select: { name: true, assetTag: true, warehouse: true } }, fromProject: { select: { name: true } }, toProject: { select: { name: true } } },
+      include: { tool: { select: { name: true, assetTag: true, warehouse: true, category: true } }, fromProject: { select: { name: true } }, toProject: { select: { name: true } } },
     }),
     // the items this person logged most recently (offered first in the item picker)
     prisma.inventoryMovement.findMany({ where: { actorId: user.id }, orderBy: { createdAt: "desc" }, take: 60, select: { itemId: true } }),
@@ -178,6 +179,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                 <div>
                   <div className="font-medium text-ink-900">
                     {REQUEST_LABEL[m.type]} · {m.tool.name}
+                    {isCountedCategory(m.tool.category) ? ` × ${m.qty} pcs` : ""}
                     {m.tool.assetTag ? ` (${m.tool.assetTag})` : ""}
                     <span className="ml-1.5 rounded bg-ink-100 px-1.5 py-0.5 text-[11px] font-medium text-ink-600">{warehouseLabel(m.tool.warehouse)}</span>
                   </div>
@@ -275,7 +277,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
 
       <Card id="tools" className="scroll-mt-16">
         <CardHeader
-          title={`Tools & Equipment (${tools.length})`}
+          title={`Tools & Equipment (${tools.reduce((s, t) => s + t.quantity, 0)})`}
           subtitle={`${whName} — by category, open one to see its tools`}
           action={
             <Link href={toolsHref()} className="text-sm font-medium text-brand-600 hover:underline">
@@ -391,6 +393,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                       >
                         <div>
                           <span className="font-medium text-ink-800">{t.name}</span>
+                          {isCountedCategory(t.category) && <span className="ml-1.5 font-semibold tabular-nums text-ink-700">× {t.quantity} pcs</span>}
                           {t.assetTag && <span className="ml-1 text-xs text-ink-400">({t.assetTag})</span>}
                           {t.warehouse !== DEFAULT_WAREHOUSE && <span className="ml-1.5 rounded bg-ink-100 px-1.5 py-0.5 text-[11px] font-medium text-ink-600">{warehouseLabel(t.warehouse)}</span>}
                           <Badge value={t.status} />
@@ -402,6 +405,8 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                             status={t.status}
                             currentProjectId={t.currentProjectId}
                             projects={projectOptions}
+                            counted={isCountedCategory(t.category)}
+                            quantity={t.quantity}
                             pending={pendingByTool.get(t.id) ? waitingText(pendingByTool.get(t.id)!) : undefined}
                           />
                         )}
@@ -513,7 +518,10 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
             {toolMovements.map((m) => (
               <tr key={m.id}>
                 <Td className="text-xs">{fmtDateTime(m.createdAt)}</Td>
-                <Td>{m.tool.name}</Td>
+                <Td>
+                  {m.tool.name}
+                  {isCountedCategory(m.tool.category) && <span className="ml-1 font-semibold tabular-nums text-ink-600">× {m.qty} pcs</span>}
+                </Td>
                 <Td className="text-xs">
                   {labelize(m.type)}
                   {m.condition && <div className="text-[11px] text-ink-400">{m.condition}</div>}

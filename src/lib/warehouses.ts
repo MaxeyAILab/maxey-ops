@@ -31,8 +31,9 @@ export function warehouseFromSlug(slug: string | null | undefined): WarehouseVal
 export const warehouseSlug = (value: string): string => WAREHOUSES.find((w) => w.value === value)?.slug ?? WAREHOUSES[0].slug;
 
 /** How many of each warehouse's things there are, e.g. for the numbers on the tabs. Warehouses with nothing count 0. */
-export function countByWarehouse(rows: { warehouse: string }[]): Record<WarehouseValue, number> {
+export function countByWarehouse(rows: { warehouse: string; quantity?: number }[]): Record<WarehouseValue, number> {
   const out = Object.fromEntries(WAREHOUSES.map((w) => [w.value, 0])) as Record<WarehouseValue, number>;
-  for (const r of rows) out[isWarehouse(r.warehouse) ? r.warehouse : DEFAULT_WAREHOUSE] += 1;
+  // a row may stand for several pieces (a counted tool); an empty one counts nothing
+  for (const r of rows) out[isWarehouse(r.warehouse) ? r.warehouse : DEFAULT_WAREHOUSE] += Math.max(r.quantity ?? 1, 0);
   return out;
 }

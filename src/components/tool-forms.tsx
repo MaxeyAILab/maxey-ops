@@ -7,7 +7,7 @@ import { Button, Input, Label, Select } from "@/components/ui";
 import { PhotoInput } from "@/components/photo-input";
 import { TOOL_CONDITIONS, TOOL_CONDITION_LABEL, type ToolConditionValue } from "@/lib/tool-condition";
 import { WAREHOUSES, type WarehouseValue } from "@/lib/warehouses";
-import { TOOL_CATEGORIES } from "@/lib/tool-category";
+import { TOOL_CATEGORIES, isCountedCategory } from "@/lib/tool-category";
 
 interface ProjectOption {
   id: string;
@@ -19,6 +19,8 @@ export function AddToolForm({ warehouse = "MAIN" }: { warehouse?: WarehouseValue
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [category, setCategory] = useState("");
+  const counted = isCountedCategory(category);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -32,13 +34,15 @@ export function AddToolForm({ warehouse = "MAIN" }: { warehouse?: WarehouseValue
         name: fd.get("name"),
         assetTag: fd.get("assetTag"),
         category: fd.get("category"),
-        workingStatus: fd.get("workingStatus"),
+        workingStatus: counted ? "WORKING" : fd.get("workingStatus"),
         warehouse: fd.get("warehouse"),
+        ...(counted ? { quantity: fd.get("quantity") } : {}),
       }),
     });
     setBusy(false);
     if (res.ok) {
       (e.target as HTMLFormElement).reset?.();
+      setCategory("");
       router.refresh();
     } else setError((await res.json()).error ?? "Failed to add tool");
   }
@@ -56,16 +60,23 @@ export function AddToolForm({ warehouse = "MAIN" }: { warehouse?: WarehouseValue
         </Select>
       </div>
       <div className="sm:col-span-2">
-        <Label htmlFor="toolName">Tool / equipment name</Label>
-        <Input id="toolName" name="name" required placeholder="e.g., Welding Machine" />
+        <Label htmlFor="toolName">{counted ? "Item name" : "Tool / equipment name"}</Label>
+        <Input id="toolName" name="name" required placeholder={counted ? "e.g., Base jack, Shoring jack, Scaffolding frame" : "e.g., Welding Machine"} />
       </div>
-      <div>
-        <Label htmlFor="toolTag">Asset tag (optional)</Label>
-        <Input id="toolTag" name="assetTag" placeholder="e.g., WM-002" />
-      </div>
+      {counted ? (
+        <div>
+          <Label htmlFor="toolQty">How many pieces</Label>
+          <Input id="toolQty" name="quantity" type="number" min="1" step="1" inputMode="numeric" required placeholder="e.g., 120" />
+        </div>
+      ) : (
+        <div>
+          <Label htmlFor="toolTag">Asset tag (optional)</Label>
+          <Input id="toolTag" name="assetTag" placeholder="e.g., WM-002" />
+        </div>
+      )}
       <div>
         <Label htmlFor="toolCategory">Category</Label>
-        <Select id="toolCategory" name="category" required defaultValue="">
+        <Select id="toolCategory" name="category" required value={category} onChange={(e) => setCategory(e.target.value)}>
           <option value="" disabled>
             Choose a category…
           </option>
@@ -76,27 +87,30 @@ export function AddToolForm({ warehouse = "MAIN" }: { warehouse?: WarehouseValue
           ))}
         </Select>
       </div>
-      <div>
-        <Label htmlFor="toolStatus">Status</Label>
-        <Select id="toolStatus" name="workingStatus" defaultValue="WORKING">
-          {TOOL_CONDITIONS.map((c) => (
-            <option key={c} value={c}>
-              {TOOL_CONDITION_LABEL[c]}
-            </option>
-          ))}
-        </Select>
-      </div>
+      {!counted && (
+        <div>
+          <Label htmlFor="toolStatus">Status</Label>
+          <Select id="toolStatus" name="workingStatus" defaultValue="WORKING">
+            {TOOL_CONDITIONS.map((c) => (
+              <option key={c} value={c}>
+                {TOOL_CONDITION_LABEL[c]}
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
+      {counted && <p className="text-xs text-ink-500 sm:col-span-5">Scaffolding &amp; Shoring is counted by quantity. Adding an item that is already in this warehouse adds the pieces to it; the pieces are then checked out to projects, returned and transferred by number.</p>}
       {error && <p className="text-sm text-red-600 sm:col-span-5">{error}</p>}
       <div className="sm:col-span-5">
         <Button type="submit" variant="secondary" disabled={busy}>
-          {busy ? "Adding…" : "+ Add tool / equipment"}
+          {busy ? "Adding…" : counted ? "+ Add pieces" : "+ Add tool / equipment"}
         </Button>
       </div>
     </form>
   );
 }
 
-type Mode = "idle" | "checkout" | "transfer" | "return" | "repair" | "lost";
+type Mode = "idle" | "checkout" | "transfer" | "return" | "repair" | "lost" | "available";
 
 /**
  * Per-tool action row — checkout/return/transfer, or flag under repair/lost
@@ -109,6 +123,8 @@ export function ToolActions({
   currentProjectId,
   projects,
   pending,
+  counted = false,
+  quantity = 1,
 }: {
   toolId: string;
   status: "IN_WAREHOUSE" | "ON_SITE" | "UNDER_REPAIR" | "LOST";
@@ -116,6 +132,9 @@ export function ToolActions({
   projects: ProjectOption[];
   /** set while a return/transfer request for this tool is waiting for approval: says who asked */
   pending?: string;
+  /** a counted tool (Scaffolding & Shoring): every action asks how many pieces, out of `quantity` held here */
+  counted?: boolean;
+  quantity?: number;
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("idle");
@@ -123,11 +142,29 @@ export function ToolActions({
   const [error, setError] = useState("");
   const [photos, setPhotos] = useState<string[]>([]);
   const [proof, setProof] = useState<string[]>([]); // photos of the tool being returned / transferred
+  const [qty, setQty] = useState("");
 
   const transferTargets = projects.filter((p) => p.id !== currentProjectId);
 
-  // While a request is waiting, the tool stays where it is and nothing else can be asked of it.
-  if (pending) return <span className="text-xs font-medium text-amber-700">⏳ {pending}</span>;
+  // While a request is waiting, an individual tool stays where it is and nothing else can be asked of it.
+  // A counted tool can still have other pieces moved, so the note is shown beside its actions instead.
+  if (pending && !counted) return <span className="text-xs font-medium text-amber-700">⏳ {pending}</span>;
+  const qtyField = counted ? (
+    <input
+      type="number"
+      name="qty"
+      min={1}
+      max={quantity}
+      step={1}
+      inputMode="numeric"
+      required
+      value={qty}
+      onChange={(e) => setQty(e.target.value)}
+      placeholder={`How many (of ${quantity})`}
+      aria-label="How many pieces"
+      className="min-h-[32px] w-32 rounded-lg border border-ink-200 bg-white px-2 text-xs text-ink-900"
+    />
+  ) : null;
 
   async function act(type: string, body: Record<string, unknown> = {}) {
     setBusy(true);
@@ -135,7 +172,7 @@ export function ToolActions({
     const result = await submitOrQueue({
       url: "/api/tools/movements",
       label: `Tool ${type.toLowerCase()}`,
-      body: { toolId, type, ...body },
+      body: { toolId, type, ...(counted ? { qty: Number(qty) } : {}), ...body },
     });
     setBusy(false);
     if (!result.ok) {
@@ -143,6 +180,7 @@ export function ToolActions({
       return;
     }
     setMode("idle");
+    setQty("");
     setPhotos([]);
     setProof([]);
     router.refresh();
@@ -162,6 +200,7 @@ export function ToolActions({
         className={mode === "transfer" ? "space-y-2 rounded-lg bg-ink-50 p-2" : "flex items-center gap-2"}
       >
         <div className="flex flex-wrap items-center gap-2">
+          {qtyField}
           <Select name="toProjectId" required className="min-h-[32px] py-0 text-xs">
             {(mode === "checkout" ? projects : transferTargets).map((p) => (
               <option key={p.id} value={p.id}>
@@ -191,6 +230,7 @@ export function ToolActions({
         }}
         className="space-y-2 rounded-lg bg-ink-50 p-2"
       >
+        {qtyField}
         <PhotoInput label="Photo of the tool being returned (recommended — the approver sees it)" max={4} onChange={setProof} />
         <div className="flex items-center gap-3">
           <button type="submit" disabled={busy} className="text-xs font-medium text-emerald-600 hover:underline">
@@ -201,6 +241,27 @@ export function ToolActions({
           </button>
           {error && <span className="text-xs text-red-600">{error}</span>}
         </div>
+      </form>
+    );
+  }
+
+  if (mode === "available") {
+    return (
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          act("MARK_AVAILABLE");
+        }}
+        className="flex flex-wrap items-center gap-2 rounded-lg bg-ink-50 p-2"
+      >
+        {qtyField}
+        <button type="submit" disabled={busy} className="text-xs font-medium text-emerald-600 hover:underline">
+          {busy ? "…" : "Back to the warehouse"}
+        </button>
+        <button type="button" onClick={() => setMode("idle")} className="text-xs text-ink-400 hover:text-ink-600">
+          Cancel
+        </button>
+        {error && <span className="text-xs text-red-600">{error}</span>}
       </form>
     );
   }
@@ -218,6 +279,7 @@ export function ToolActions({
         }}
         className="space-y-2 rounded-lg bg-ink-50 p-2"
       >
+        {qtyField}
         <Input name="condition" placeholder="What happened? (optional)" className="min-h-[32px] text-xs" />
         <PhotoInput max={1} onChange={setPhotos} />
         <div className="flex items-center gap-2">
@@ -235,30 +297,46 @@ export function ToolActions({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {pending && counted && <span className="text-xs font-medium text-amber-700">⏳ {pending}</span>}
       {status === "IN_WAREHOUSE" && (
         <button onClick={() => setMode("checkout")} className="text-xs font-medium text-brand-600 hover:underline">
-          Checkout to project
+          {counted ? "Check out pieces to a project" : "Checkout to project"}
         </button>
+      )}
+      {status === "IN_WAREHOUSE" && counted && (
+        <>
+          <button onClick={() => setMode("repair")} className="text-xs text-amber-600 hover:underline">
+            Mark pieces under repair
+          </button>
+          <button onClick={() => setMode("lost")} className="text-xs text-red-500 hover:underline">
+            Mark pieces lost
+          </button>
+        </>
       )}
       {status === "ON_SITE" && (
         <>
           <button onClick={() => setMode("return")} title="Office staff approve it before the tool is back in the warehouse" className="text-xs font-medium text-emerald-600 hover:underline">
-            Return to warehouse (request)
+            {counted ? "Return pieces to warehouse (request)" : "Return to warehouse (request)"}
           </button>
           <button onClick={() => setMode("transfer")} title="Office staff approve it before the tool moves" className="text-xs font-medium text-brand-600 hover:underline">
-            Transfer (request)
+            {counted ? "Transfer pieces (request)" : "Transfer (request)"}
           </button>
           <button onClick={() => setMode("repair")} className="text-xs text-amber-600 hover:underline">
-            Mark under repair
+            {counted ? "Mark pieces under repair" : "Mark under repair"}
           </button>
           <button onClick={() => setMode("lost")} className="text-xs text-red-500 hover:underline">
-            Mark lost
+            {counted ? "Mark pieces lost" : "Mark lost"}
           </button>
         </>
       )}
-      {(status === "UNDER_REPAIR" || status === "LOST") && (
+      {(status === "UNDER_REPAIR" || status === "LOST") && !counted && (
         <button onClick={() => act("MARK_AVAILABLE")} disabled={busy} className="text-xs font-medium text-emerald-600 hover:underline">
           Mark available (repaired)
+        </button>
+      )}
+      {(status === "UNDER_REPAIR" || status === "LOST") && counted && (
+        <button onClick={() => setMode("available")} className="text-xs font-medium text-emerald-600 hover:underline">
+          Mark pieces available (repaired / found)
         </button>
       )}
       {error && <span className="text-xs text-red-600">{error}</span>}
