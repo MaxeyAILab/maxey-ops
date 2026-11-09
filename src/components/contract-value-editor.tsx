@@ -7,9 +7,9 @@ import { Button, Input, Label } from "@/components/ui";
 const peso = (n: number) => `₱${n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /**
- * The project cost (contract value). The Owner can revise it while the project is still in Site Survey or Mobilization — with a
- * reason, which goes in the audit log. Once construction has started it is final: this shows a notice instead, and additional work
- * goes through a client request or a change order the client approves.
+ * The project cost (contract value). The Owner can revise it at any time — with a reason, which goes in the audit log. Once
+ * construction has started it is "final" for everyone else: they see a notice, and additional work goes through a client request or
+ * a change order the client approves. The Owner still gets the editor, with a reminder that a change order is the usual route.
  */
 export function ContractValueEditor({
   projectId,
@@ -31,7 +31,7 @@ export function ContractValueEditor({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  if (lock.locked) {
+  if (lock.locked && !canEdit) {
     return (
       <p className="rounded-lg border border-ink-100 bg-ink-50 px-3 py-2 text-xs text-ink-600 dark:bg-transparent">
         <span className="font-semibold text-ink-800">Contract value is final.</span> {lock.message}
@@ -59,7 +59,9 @@ export function ContractValueEditor({
     <div className="rounded-lg border border-ink-100 px-3 py-2 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs text-ink-600">
-          The contract value can still be revised by the Owner until construction starts. Once the project is On-going Construction it is final.
+          {lock.locked
+            ? "Construction has started, so the contract value is final for everyone else — additional work normally goes on a change order the client approves. As Owner you can still correct it here; it is recorded with your reason."
+            : "The contract value can be revised by the Owner. Once the project is On-going Construction it is final for everyone else."}
         </span>
         <button type="button" onClick={() => setOpen((o) => !o)} className="text-xs font-medium text-brand-600 hover:underline">
           {open ? "Close" : "Edit contract value"}

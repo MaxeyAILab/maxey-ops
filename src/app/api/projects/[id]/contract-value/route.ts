@@ -12,9 +12,10 @@ const patchSchema = z.object({
 });
 
 /**
- * PATCH /api/projects/[id]/contract-value — Owner only. Revises the project cost (contract value) while the project is still in
- * Site Survey or Mobilization. Once construction has started it is final and this refuses; from then on the contract value only
- * changes through a change order the client approves. Every revision is recorded with the old and new value and the reason.
+ * PATCH /api/projects/[id]/contract-value — Owner only. Revises the project cost (contract value) in any status. Before construction
+ * starts this is the normal way; once it has started the value is "final" for everyone else (they use a change order the client
+ * approves) but the Owner may still correct it. Every revision is recorded with the old and new value, the reason, and whether
+ * construction had already started.
  */
 export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { id: string } }) => {
   const user = await requireUser(["OWNER"]);
@@ -24,18 +25,14 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
   if (!project) throw new ApiError(404, "Project not found");
   if (project.client.name === "Non-corporate (internal)") throw new ApiError(400, "A non-corporate job has no contract value");
   const lock = contractLock(project);
-  if (lock.locked) throw new ApiError(409, lock.message ?? "The contract value is final");
 
   const before = Number(project.contractValue);
   const next = Math.round(body.contractValue * 100) / 100;
   if (before === next) return NextResponse.json({ ok: true, unchanged: true });
 
-  // the claim re-checks the lock, so a status change made a moment ago cannot be overtaken by this edit
-  const done = await prisma.project.updateMany({
-    where: { id: project.id, costLockedAt: null, status: { in: ["SITE_SURVEY", "MOBILIZATION", "NOT_ACTIVE", "ON_HOLD"] } },
-    data: { contractValue: next },
-  });
-  if (done.count === 0) throw new ApiError(409, "The contract value was just locked — construction has started");
+  // only if nobody changed it in the meantime (e.g. a change order accepted a moment ago)
+  const done = await prisma.project.updateMany({ where: { id: project.id, contractValue: project.contractValue }, data: { contractValue: next } });
+  if (done.count === 0) throw new ApiError(409, "The contract value just changed — reload the page and try again");
 
   const approved = await prisma.changeOrder.aggregate({ where: { projectId: project.id, status: "APPROVED" }, _count: true, _sum: { costImpact: true } });
   await audit({
@@ -51,6 +48,7 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
       to: next,
       reason: body.reason,
       approvedChangeOrdersIncluded: approved._count,
+      afterConstructionStarted: lock.locked,
     } as never,
   });
   return NextResponse.json({ ok: true, from: before, to: next });
