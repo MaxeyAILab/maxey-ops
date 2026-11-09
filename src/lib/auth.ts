@@ -43,6 +43,8 @@ export interface SessionUser {
   ownerCash: boolean;
   /** May put progress, daily reports, documents and potential changes into projects (see project-input.ts). */
   projectInput: boolean;
+  /** Sees committed cost, margin and the Commitments card on projects (People page switch). */
+  seeProjectCosts: boolean;
   /** Single-device login tag, set for every role (the Owner holds one per device type: phone and computer). */
   sessionId?: string;
 }
@@ -183,6 +185,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       ownerInventory: true,
       ownerCash: true,
       projectInput: true,
+      seeProjectCosts: true,
       currentSessionId: true,
       mobileSessionId: true,
     },
@@ -211,5 +214,6 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     ownerInventory: dbUser.ownerInventory,
     ownerCash: dbUser.ownerCash,
     projectInput: dbUser.projectInput,
+    seeProjectCosts: dbUser.seeProjectCosts,
   };
 }

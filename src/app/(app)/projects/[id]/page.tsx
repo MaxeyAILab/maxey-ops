@@ -185,7 +185,8 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
   // Committed cost and margin reveal the company's actual profitability on
   // the job — kept to Owner only, even though Accounting/PM see the rest of
   // the money figures (contract value, received, progress).
-  const showMargin = user.role === "OWNER";
+  // The Owner, plus a PM the Owner switched on ("Sees project costs & margin" on People) — only with the money view they already have.
+  const showMargin = user.role === "OWNER" || (showMoney && !!user.seeProjectCosts);
   const canRecordPayment = ["OWNER", "ACCOUNTING"].includes(user.role);
   const canCreateCO = ["OWNER", "PM"].includes(user.role);
   // progress updates and daily reports; also a person the Owner gave project input (a Project Engineer) — who still sees no money
@@ -201,6 +202,16 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
   const warehouseIssued = (await warehouseIssueCosts([p.id])).get(p.id);
   const warehouseCost = warehouseIssued?.cost ?? 0;
   const warehouseUnpriced = warehouseIssued?.unpriced ?? 0;
+  // Not committed yet, but shown on the Commitments card so nothing looks missing: payroll still waiting for approval,
+  // and petty cash that was released but whose report is not verified yet.
+  const [draftPayrollRuns, openPettyCash] = showMargin
+    ? await Promise.all([
+        prisma.payrollRun.findMany({ where: { projectId: p.id, status: { in: ["DRAFT", "REVIEW"] } }, select: { entries: true } }),
+        prisma.pettyCashRequest.findMany({ where: { projectId: p.id, status: { in: ["RELEASED", "FOR_LIQUIDATION"] } }, select: { amount: true } }),
+      ])
+    : [[], []];
+  const draftPayroll = draftPayrollRuns.reduce((s, r) => s + runGross(r.entries), 0);
+  const openPettyCashTotal = openPettyCash.reduce((s, r) => s + Number(r.amount), 0);
   const committed =
     laborCost +
     pettyCash +
@@ -1676,6 +1687,22 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                     <span className="text-ink-700">+ Materials from the warehouse and other projects (net of returns and of what was passed on)</span>
                     <span className="tabular-nums"><Fig>{php(warehouseCost)}</Fig></span>
                   </div>
+                  {(draftPayroll > 0 || openPettyCashTotal > 0) && (
+                    <div className="space-y-1 border-t border-ink-100 pt-2 text-ink-500">
+                      {draftPayroll > 0 && (
+                        <div className="flex justify-between gap-3">
+                          <span>Payroll awaiting approval ({draftPayrollRuns.length}) — not committed yet</span>
+                          <span className="tabular-nums"><Fig>{php(draftPayroll)}</Fig></span>
+                        </div>
+                      )}
+                      {openPettyCashTotal > 0 && (
+                        <div className="flex justify-between gap-3">
+                          <span>Petty cash released, report not verified ({openPettyCash.length}) — counts once verified</span>
+                          <span className="tabular-nums"><Fig>{php(openPettyCashTotal)}</Fig></span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="flex justify-between gap-3 border-t border-ink-100 pt-2 font-semibold text-ink-900">
                     <span>= Committed cost</span>
                     <span className="tabular-nums"><Fig>{php(commitments.committedTotal + laborCost + pettyCash + warehouseCost)}</Fig></span>
