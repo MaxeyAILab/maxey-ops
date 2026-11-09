@@ -45,6 +45,8 @@ export interface SessionUser {
   projectInput: boolean;
   /** Sees committed cost, margin and the Commitments card on projects (People page switch). */
   seeProjectCosts: boolean;
+  /** Works the timekeeper sheet and generates payroll runs; never approves (People page switch). */
+  payrollAssist: boolean;
   /** Single-device login tag, set for every role (the Owner holds one per device type: phone and computer). */
   sessionId?: string;
 }
@@ -186,6 +188,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       ownerCash: true,
       projectInput: true,
       seeProjectCosts: true,
+      payrollAssist: true,
       currentSessionId: true,
       mobileSessionId: true,
     },
@@ -215,5 +218,6 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     ownerCash: dbUser.ownerCash,
     projectInput: dbUser.projectInput,
     seeProjectCosts: dbUser.seeProjectCosts,
+    payrollAssist: dbUser.payrollAssist,
   };
 }

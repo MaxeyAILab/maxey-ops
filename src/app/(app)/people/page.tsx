@@ -89,12 +89,12 @@ export default async function PeoplePage() {
           )}
         </Td>
       ))}
-      {(["inventory", "cash", "project", "costs"] as const).map((area) => (
+      {(["inventory", "cash", "project", "costs", "payroll"] as const).map((area) => (
         <Td key={area}>
           {u.role === "CLIENT" || u.role === "OWNER" ? (
             <span className="text-xs text-ink-300">{u.role === "OWNER" ? "Yes — owner" : "—"}</span>
           ) : (
-            <OwnerPowersToggle userId={u.id} name={u.name} area={area} allowed={area === "inventory" ? u.ownerInventory : area === "project" ? u.projectInput : area === "costs" ? u.seeProjectCosts : u.ownerCash} />
+            <OwnerPowersToggle userId={u.id} name={u.name} area={area} allowed={area === "inventory" ? u.ownerInventory : area === "project" ? u.projectInput : area === "costs" ? u.seeProjectCosts : area === "payroll" ? u.payrollAssist : u.ownerCash} />
           )}
         </Td>
       ))}
@@ -131,6 +131,7 @@ export default async function PeoplePage() {
       <Th>Owner powers: Cash Expense</Th>
       <Th>Project input (no costs)</Th>
       <Th>Sees project costs &amp; margin</Th>
+      <Th>Timekeeper sheet &amp; payroll runs (no approvals)</Th>
       <Th>Status</Th>
       <Th>Since</Th>
       <Th />

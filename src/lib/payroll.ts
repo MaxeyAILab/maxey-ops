@@ -103,7 +103,8 @@ export function computeDailyHoursByDay(
     const flags = approvals.get(r.id);
     // an approved early start lifts the 8-hour day cap too — otherwise the early hours it credits would vanish into the cap
     if (flags?.overtimeApproved || flags?.weekendApproved || flags?.earlyStartApproved) approvedDays.add(key);
-    const hours = computeEffectiveHours(r.timeIn, r.timeOut, ruleset, flags);
+    // a record made by the timekeeper sheet is a half-day: AM and PM are each paid as exactly 4 hours
+    const hours = computeEffectiveHours(r.timeIn, r.timeOut, ruleset, flags, r.source === "timekeeper");
     byDay.set(key, (byDay.get(key) ?? 0) + hours);
   }
   for (const [key, hours] of byDay) {

@@ -44,8 +44,9 @@ describe("what the sheet becomes in payroll", () => {
     expect(computeEffectiveHours(at("07:30"), at("17:00"), "SITE")).toBeCloseTo(8, 6);
   });
   it("a half day and a late arrival are paid for what was worked", () => {
-    expect(regularHours(DAY, row({ pmIn: null, pmOut: null }))).toBe(4.25); // 4.5 h minus the 10:00 break
-    expect(regularHours(DAY, row({ amIn: "08:30" }))).toBe(7); // an hour less
+    expect(regularHours(DAY, row({ pmIn: null, pmOut: null }))).toBe(4); // the whole morning is exactly 4 hours
+    expect(regularHours(DAY, row({ amIn: null, amOut: null }))).toBe(4); // and the whole afternoon exactly 4 hours
+    expect(regularHours(DAY, row({ amIn: "08:30" }))).toBe(7); // an hour late: an hour less
   });
   it("overtime is not paid until it is approved: the day stays at 8 hours", () => {
     expect(regularHours(DAY, row({ otHours: 2, approvedBy: "Foreman" }))).toBe(8);
@@ -67,11 +68,15 @@ describe("who may edit the sheet", () => {
     for (const p of ["Timekeeper", "Time Keeper", "time-keeper", "Timekeeper/Electrician"]) expect(isTimekeeperPosition(p), p).toBe(true);
     for (const p of ["Foreman", "Leadman", "Mason", null, ""]) expect(isTimekeeperPosition(p), String(p)).toBe(false);
   });
-  it("only the timekeeper, the PM and the Owner can open it", () => {
+  it("the timekeeper, PM, Owner, the staff sharing the work, the foreman and the project engineer can open it", () => {
     expect(canOpenTimesheets({ role: "OWNER" })).toBe(true);
     expect(canOpenTimesheets({ role: "PM" })).toBe(true);
     expect(canOpenTimesheets(timekeeper)).toBe(true);
-    for (const u of [{ role: "FOREMAN", position: "General Foreman" }, { role: "PURCHASING" }, { role: "ACCOUNTING" }, { role: "OFFICE", position: "Mason" }, { role: "CLIENT", position: "Timekeeper" }]) expect(canOpenTimesheets(u), JSON.stringify(u)).toBe(false);
+    expect(canOpenTimesheets({ role: "FOREMAN", position: "General Foreman" })).toBe(true);
+    expect(canOpenTimesheets({ role: "OFFICE", position: "Project Engineer" })).toBe(true);
+    expect(canOpenTimesheets({ role: "OFFICE", position: "Admin Asst.", payrollAssist: true })).toBe(true);
+    expect(canOpenTimesheets({ role: "PURCHASING", position: "Purchasing", payrollAssist: true })).toBe(true);
+    for (const u of [{ role: "PURCHASING" }, { role: "ACCOUNTING" }, { role: "OFFICE", position: "Mason" }, { role: "CLIENT", position: "Timekeeper" }]) expect(canOpenTimesheets(u), JSON.stringify(u)).toBe(false);
   });
   it("a timekeeper edits only a project they are assigned to", () => {
     expect(canEditSheet(timekeeper, ctx()).ok).toBe(true);

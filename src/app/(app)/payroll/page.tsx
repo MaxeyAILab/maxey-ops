@@ -34,8 +34,8 @@ export default async function PayrollPage() {
   // this same admin view (read-only on those two actions) because PM can
   // edit a run's entries once inside it — canManageRuns gates the two forms
   // below, canViewAdminPayroll gates the whole admin layout vs. "My Pay".
-  const canManageRuns = ["OWNER", "ACCOUNTING"].includes(user.role);
-  const canViewAdminPayroll = ["OWNER", "ACCOUNTING", "PM"].includes(user.role);
+  const canManageRuns = ["OWNER", "ACCOUNTING"].includes(user.role) || user.payrollAssist;
+  const canViewAdminPayroll = ["OWNER", "ACCOUNTING", "PM"].includes(user.role) || user.payrollAssist;
   const canDeleteRuns = user.role === "OWNER";
   const runs = await prisma.payrollRun.findMany({
     orderBy: { periodStart: "desc" },

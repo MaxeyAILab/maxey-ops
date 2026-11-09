@@ -6,7 +6,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui";
 import { AddSheetWorker, TimekeeperSheet, type SheetWorker } from "@/components/timekeeper-sheet";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
 import { manilaDayKey, manilaTime, manilaWeeklySitePeriod } from "@/lib/time-rules";
-import { canEditSheet, canOpenTimesheets, regularHours } from "@/lib/timesheet";
+import { canApproveSheet, canEditSheet, canOpenTimesheets, canReviewSheet, lineStage, regularHours, worksSheetFreely } from "@/lib/timesheet";
 import { dayClosedByPayroll } from "@/lib/timesheet-db";
 
 export const metadata = { title: "Timekeeper sheet" };
@@ -31,7 +31,7 @@ export default async function TimekeeperPage({ searchParams }: { searchParams: {
   const todayKey = manilaDayKey(new Date());
   const requested = searchParams.date && /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date) ? searchParams.date : todayKey;
   const dayKey = requested > todayKey ? todayKey : requested;
-  const sees = user.role === "OWNER" || user.role === "PM";
+  const sees = worksSheetFreely(user);
 
   const projects = await prisma.project.findMany({
     where: sees
@@ -48,7 +48,9 @@ export default async function TimekeeperPage({ searchParams }: { searchParams: {
         ← Attendance
       </Link>
       <h1 className="text-xl font-bold text-ink-900">Timekeeper sheet</h1>
-      <p className="text-sm text-ink-500">The daily time record of everyone assigned to the project. Only the timekeeper, the PM and the Owner can fill it in; a worker who clocked in on their own that day shows their own times.</p>
+      <p className="text-sm text-ink-500">
+        The daily time record of everyone assigned to the project. The timekeeper fills it in; then the foreman ticks <b>Checked and reviewed</b> and the project engineer ticks <b>Approved</b>. A worker who clocked in on their own that day shows their own times.
+      </p>
     </div>
   );
 
@@ -115,12 +117,18 @@ export default async function TimekeeperPage({ searchParams }: { searchParams: {
             enteredByName: e.enteredByName,
             otStatus: ot ? (ot.status as "PENDING" | "APPROVED" | "REJECTED") : null,
             otCredited: ot?.approvedHours != null ? Number(ot.approvedHours) : null,
+            stage: lineStage(e),
+            reviewedByName: e.reviewedByName,
+            reviewedAt: e.reviewedAt ? e.reviewedAt.toISOString() : null,
+            approvedByName: e.engineerApprovedByName,
+            approvedAt: e.engineerApprovedAt ? e.engineerApprovedAt.toISOString() : null,
           }
         : null,
     };
   });
 
   const allowed = canEditSheet(user, { assignedToProject: !!mine, dayKey, todayKey });
+  const reviewCtx = { assignedToProject: !!mine };
   const closed = await dayClosedByPayroll(prisma, project.id, dayKey);
   const lockedReason = closed ? "Payroll for this project has already been approved for this day, so its sheet is closed." : allowed.ok ? null : allowed.reason;
 
@@ -189,7 +197,7 @@ export default async function TimekeeperPage({ searchParams }: { searchParams: {
         <CardHeader title={`${project.name} — ${longDay(dayKey)}`} subtitle={`${workersOnSheet.length} worker${workersOnSheet.length === 1 ? "" : "s"} assigned to this project${selfText.size > 0 ? ` · ${selfText.size} clocked in on their own today` : ""}`} />
         <CardBody className="space-y-3">
           {allowed.ok && !lockedReason && <AddSheetWorker projectId={project.id} dayKey={dayKey} todayKey={todayKey} />}
-          <TimekeeperSheet key={`${project.id}|${dayKey}|${workers.length}`} projectId={project.id} dayKey={dayKey} workers={workers} approvers={approvers} canEdit={allowed.ok} lockedReason={lockedReason} />
+          <TimekeeperSheet key={`${project.id}|${dayKey}|${workers.length}`} projectId={project.id} dayKey={dayKey} workers={workers} approvers={approvers} canEdit={allowed.ok} lockedReason={lockedReason} canReview={canReviewSheet(user, reviewCtx) && !closed} canApprove={canApproveSheet(user, reviewCtx) && !closed} />
         </CardBody>
       </Card>
 

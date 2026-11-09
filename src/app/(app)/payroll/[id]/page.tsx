@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
  * hours, rate, and every deduction while the run is still DRAFT/REVIEW. */
 export default async function PayrollRunPage({ params }: { params: { id: string } }) {
   const user = await getSessionUser();
-  if (!user || !["OWNER", "ACCOUNTING", "PM"].includes(user.role)) redirect("/payroll");
+  if (!user || !(["OWNER", "ACCOUNTING", "PM"].includes(user.role) || user.payrollAssist)) redirect("/payroll");
 
   const run = await prisma.payrollRun.findUnique({
     where: { id: params.id },

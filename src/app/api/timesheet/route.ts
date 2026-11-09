@@ -5,7 +5,7 @@ import { audit } from "@/lib/audit";
 import { notifyOwner } from "@/lib/notify";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { manilaDayKey, manilaTime } from "@/lib/time-rules";
-import { canEditSheet, regularHours, validateSheetRow, type SheetInput } from "@/lib/timesheet";
+import { canEditSheet, regularHours, validateSheetRow, worksSheetFreely, type SheetInput } from "@/lib/timesheet";
 import { dayClosedByPayroll, saveSheetRow } from "@/lib/timesheet-db";
 
 const hm = z.string().max(5).nullish().or(z.literal(""));
@@ -97,7 +97,7 @@ export const POST = handleApi(async (req: NextRequest) => {
       continue;
     }
     try {
-      const saved = await prisma.$transaction((db) => saveSheetRow(db, { userId: worker.id, projectId: project.id, dayKey, input, actor: { id: user.id, name: user.name, role: user.role }, workerName: worker.name }));
+      const saved = await prisma.$transaction((db) => saveSheetRow(db, { userId: worker.id, projectId: project.id, dayKey, input, actor: { id: user.id, name: user.name, role: user.role }, workerName: worker.name, canChangeApproved: worksSheetFreely(user) }));
       results.push({ userId: r.userId, ok: true, hours: regularHours(dayKey, input, worker.department), cleared: saved.cleared });
       if ((input.otHours ?? 0) > 0 && user.role !== "OWNER") overtimeRows++; // the Owner recording overtime has approved it — no one to tell
       await audit({

@@ -29,7 +29,10 @@ const createSchema = z
  * against the project's committed cost automatically.
  */
 export const POST = handleApi(async (req: NextRequest) => {
-  const user = await requireUser(["OWNER", "ACCOUNTING"]);
+  // The Owner and Accounting, and the office staff the Owner switched on to share this work (People → "Timekeeper sheet & payroll runs").
+  // Generating only makes a DRAFT: approving stays with the Owner.
+  const user = await requireUser();
+  if (!(["OWNER", "ACCOUNTING"].includes(user.role) || user.payrollAssist)) throw new ApiError(403, "Not authorized for this action");
   const body = createSchema.parse(await req.json());
 
   const isWeekly = !!body.projectId || body.department === "DRIVER";

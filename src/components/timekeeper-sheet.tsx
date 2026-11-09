@@ -26,8 +26,16 @@ export interface SheetWorker {
     /** the overtime's standing with the Owner / PM */
     otStatus: "PENDING" | "APPROVED" | "REJECTED" | null;
     otCredited: number | null;
+    /** where the line stands: recorded → checked and reviewed by the foreman → approved by the project engineer */
+    stage: "recorded" | "reviewed" | "approved";
+    reviewedByName: string | null;
+    reviewedAt: string | null;
+    approvedByName: string | null;
+    approvedAt: string | null;
   } | null;
 }
+
+const stamp = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "");
 
 interface RowState {
   amIn: string;
@@ -78,6 +86,8 @@ export function TimekeeperSheet({
   approvers,
   canEdit,
   lockedReason,
+  canReview = false,
+  canApprove = false,
 }: {
   projectId: string;
   dayKey: string;
@@ -87,6 +97,10 @@ export function TimekeeperSheet({
   canEdit: boolean;
   /** why the sheet cannot be edited, when it cannot */
   lockedReason: string | null;
+  /** this person may tick the foreman's "Checked and reviewed" box here */
+  canReview?: boolean;
+  /** this person may tick the project engineer's "Approved" box here */
+  canApprove?: boolean;
 }) {
   const router = useRouter();
   const initial = useMemo(() => Object.fromEntries(workers.map((w) => [w.userId, fromSaved(w)])), [workers]);
@@ -99,6 +113,30 @@ export function TimekeeperSheet({
   const locked = (w: SheetWorker) => !!w.selfClock && !w.saved;
 
   const dirtyIds = workers.filter((w) => !same(rows[w.userId], initial[w.userId])).map((w) => w.userId);
+  const [ticking, setTicking] = useState(false);
+  const [tickMsg, setTickMsg] = useState("");
+  const stageOf = (w: SheetWorker) => w.saved?.stage ?? null;
+  const recorded = workers.filter((w) => w.saved);
+  const nReviewed = recorded.filter((w) => stageOf(w) !== "recorded").length;
+  const nApproved = recorded.filter((w) => stageOf(w) === "approved").length;
+  const anyUnsaved = dirtyIds.length > 0;
+
+  /** The foreman's / engineer's boxes act at once (not with the timekeeper's Save): one line, or the box in the heading for all of them. */
+  async function tickReview(step: "review" | "approve", checked: boolean, userId?: string) {
+    if (ticking) return;
+    setTicking(true);
+    setTickMsg("");
+    const res = await fetch("/api/timesheet/review", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, date: dayKey, step, checked, ...(userId ? { userIds: [userId] } : {}) }),
+    });
+    const data = (await res.json().catch(() => null)) as { error?: string; changed?: number; skipped?: { name: string; why: string }[] } | null;
+    setTicking(false);
+    if (!data || (!res.ok && !data.skipped)) return setTickMsg(data?.error ?? "Could not save the tick");
+    if (data.skipped && data.skipped.length > 0) setTickMsg(data.skipped.map((s) => `${s.name}: ${s.why}`).join(" · "));
+    router.refresh();
+  }
   const set = (id: string, patch: Partial<RowState>) => setRows((r) => ({ ...r, [id]: { ...r[id], ...patch } }));
   /** a half of the day is "ticked" when both of its times are there */
   const amTicked = (r: RowState) => !!r.amIn && !!r.amOut;
@@ -194,6 +232,52 @@ export function TimekeeperSheet({
         ))}
       </datalist>
 
+      {recorded.length > 0 && (
+        <div className="rounded-lg border border-ink-100 p-3">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+            <label className={`inline-flex items-center gap-2 text-sm font-medium ${canReview && !anyUnsaved ? "text-ink-900" : "text-ink-400"}`}>
+              <input
+                type="checkbox"
+                className="h-5 w-5"
+                aria-label="Checked and reviewed — everyone"
+                checked={nReviewed === recorded.length}
+                disabled={!canReview || ticking || anyUnsaved || (nApproved > 0 && nReviewed === recorded.length)}
+                onChange={(e) => tickReview("review", e.target.checked)}
+              />
+              Checked and reviewed <span className="font-normal text-ink-500">(foreman) — all</span>
+              <span className="rounded-full bg-ink-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-ink-700">
+                {nReviewed}/{recorded.length}
+              </span>
+            </label>
+            <label className={`inline-flex items-center gap-2 text-sm font-medium ${canApprove && !anyUnsaved ? "text-ink-900" : "text-ink-400"}`}>
+              <input
+                type="checkbox"
+                className="h-5 w-5"
+                aria-label="Approved — everyone"
+                checked={nApproved === recorded.length}
+                disabled={!canApprove || ticking || anyUnsaved || (nReviewed === 0 && nApproved === 0)}
+                onChange={(e) => tickReview("approve", e.target.checked)}
+              />
+              Approved <span className="font-normal text-ink-500">(project engineer) — all</span>
+              <span className="rounded-full bg-ink-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-ink-700">
+                {nApproved}/{recorded.length}
+              </span>
+            </label>
+          </div>
+          <p className="mt-2 text-xs text-ink-500">
+            {anyUnsaved
+              ? "Save the timekeeper's changes first — the boxes are for the saved sheet."
+              : nApproved === recorded.length
+                ? "The project engineer approved the whole day."
+                : nReviewed === recorded.length
+                  ? "The foreman has checked and reviewed the day — it is waiting for the project engineer's approval."
+                  : "Order: the timekeeper records the day → the foreman ticks Checked and reviewed → the project engineer ticks Approved. Changing a line's times clears its ticks."}
+            {!canReview && !canApprove && " You can see the ticks but not change them."}
+          </p>
+          {tickMsg && <p className="mt-1 text-xs text-red-600">{tickMsg}</p>}
+        </div>
+      )}
+
       {editable && (
         <div className="flex flex-wrap items-center gap-3 text-xs">
           <Button type="button" variant="secondary" className="text-xs" onClick={allPresent}>
@@ -206,10 +290,16 @@ export function TimekeeperSheet({
       )}
 
       <div className="overflow-x-auto rounded-lg border border-ink-100">
-        <table className="w-full min-w-[64rem] text-left text-sm">
+        <table className="w-full min-w-[74rem] text-left text-sm">
           <thead className="bg-ink-50 text-[11px] uppercase tracking-wide text-ink-500 dark:bg-transparent">
             <tr>
               <th className="px-3 py-2">Worker</th>
+              <th className="px-2 py-2 text-center">
+                Checked &amp; reviewed <span className="block font-normal normal-case">foreman</span>
+              </th>
+              <th className="px-2 py-2 text-center">
+                Approved <span className="block font-normal normal-case">project engineer</span>
+              </th>
               <th className="px-2 py-2" colSpan={3}>
                 <label className="inline-flex items-center gap-1.5">
                   {editable && <input type="checkbox" aria-label="Tick AM for everyone" checked={everyone("AM")} onChange={(e) => tickAll("AM", e.target.checked)} />}
@@ -244,6 +334,40 @@ export function TimekeeperSheet({
                     <div className="text-xs text-ink-500">{w.position}</div>
                     {w.saved && !dirty && <div className="text-[11px] text-ink-400">saved by {w.saved.enteredByName}</div>}
                     {w.saved && w.selfClock && <div className="text-[11px] font-medium text-amber-700">also clocked in on their own ({w.selfClock}) — check</div>}
+                  </td>
+                  <td className="px-2 py-2 text-center align-top">
+                    {w.saved && !dirty ? (
+                      <>
+                        <input
+                          type="checkbox"
+                          className="h-5 w-5"
+                          aria-label={`${w.name} checked and reviewed`}
+                          checked={w.saved.stage !== "recorded"}
+                          disabled={!canReview || ticking || w.saved.stage === "approved"}
+                          onChange={(e) => tickReview("review", e.target.checked, w.userId)}
+                        />
+                        {w.saved.reviewedByName && <div className="mt-0.5 text-[10px] leading-tight text-ink-500">{w.saved.reviewedByName.split(" ")[0]} · {stamp(w.saved.reviewedAt)}</div>}
+                      </>
+                    ) : (
+                      <span className="text-ink-300">—</span>
+                    )}
+                  </td>
+                  <td className="px-2 py-2 text-center align-top">
+                    {w.saved && !dirty ? (
+                      <>
+                        <input
+                          type="checkbox"
+                          className="h-5 w-5"
+                          aria-label={`${w.name} approved`}
+                          checked={w.saved.stage === "approved"}
+                          disabled={!canApprove || ticking || w.saved.stage === "recorded"}
+                          onChange={(e) => tickReview("approve", e.target.checked, w.userId)}
+                        />
+                        {w.saved.approvedByName && <div className="mt-0.5 text-[10px] leading-tight text-ink-500">{w.saved.approvedByName.split(" ")[0]} · {stamp(w.saved.approvedAt)}</div>}
+                      </>
+                    ) : (
+                      <span className="text-ink-300">—</span>
+                    )}
                   </td>
                   {locked(w) ? (
                     <td colSpan={7} className="px-2 py-2 align-top text-xs text-ink-600">
@@ -323,7 +447,7 @@ export function TimekeeperSheet({
             })}
             {workers.length === 0 && (
               <tr>
-                <td colSpan={11} className="px-3 py-6 text-center text-sm text-ink-400">
+                <td colSpan={13} className="px-3 py-6 text-center text-sm text-ink-400">
                   Nobody is assigned to this project yet. Add a worker above, or ask the Owner to assign people to it (Attendance → Edit).
                 </td>
               </tr>
@@ -332,7 +456,7 @@ export function TimekeeperSheet({
           {workers.length > 0 && (
             <tfoot className="bg-ink-50 text-xs font-medium text-ink-700 dark:bg-transparent">
               <tr>
-                <td className="px-3 py-2">
+                <td colSpan={3} className="px-3 py-2">
                   {totals.present} present · {totals.absent} absent · {workers.length - totals.present - totals.absent} not recorded
                 </td>
                 <td colSpan={7} className="px-2 py-2 text-right">
@@ -360,8 +484,8 @@ export function TimekeeperSheet({
         </div>
       )}
       <p className="text-xs text-ink-500">
-        Paid hours take off the 12:00–1:00 lunch and the two 15-minute breaks, the same as everyone&apos;s time. Overtime is counted in pay only after the Owner or PM approves it
-        (Attendance tab). Approved by is the site/project engineer or the foreman who agreed to the day or the overtime.
+        Each half-day is paid as exactly 4 hours (AM {AM_FROM}–{AM_TO}, PM {PM_FROM}–{PM_TO}), so a full day is 8.00. Overtime is counted in pay only after the Owner approves it
+        (Attendance tab). The &quot;Approved by&quot; box is the site/project engineer or the foreman who agreed to the overtime.
       </p>
     </div>
   );

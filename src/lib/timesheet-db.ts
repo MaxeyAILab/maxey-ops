@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { ApiError } from "@/lib/rbac";
 import { manilaTime } from "@/lib/time-rules";
-import { sheetShifts, type SheetInput } from "@/lib/timesheet";
+import { changesRecord, sheetShifts, type SheetInput } from "@/lib/timesheet";
 
 type Db = Prisma.TransactionClient;
 
@@ -31,11 +31,16 @@ export interface SaveRowResult {
  */
 export async function saveSheetRow(
   db: Db,
-  p: { userId: string; projectId: string; dayKey: string; input: SheetInput; actor: { id: string; name: string; role: string }; workerName: string }
+  p: { userId: string; projectId: string; dayKey: string; input: SheetInput; actor: { id: string; name: string; role: string }; workerName: string; /** the Owner, PM and staff sharing the work may still change a line the engineer approved (it then needs reviewing again) */ canChangeApproved?: boolean }
 ): Promise<SaveRowResult> {
   const { userId, projectId, dayKey, input, actor } = p;
   const date = new Date(`${dayKey}T00:00:00.000Z`);
   const existing = await db.timesheetEntry.findUnique({ where: { userId_projectId_date: { userId, projectId, date } } });
+  // What the foreman and engineer signed is what they saw: once the engineer approved a line the timekeeper cannot change it.
+  const changed = existing ? changesRecord({ ...existing, otHours: existing.otHours ? Number(existing.otHours) : null }, input) : true;
+  if (existing?.engineerApprovedAt && changed && !p.canChangeApproved) {
+    throw new ApiError(409, `${p.workerName}'s line was already approved by ${existing.engineerApprovedByName ?? "the project engineer"} — ask the PM, the Owner or the office to change it`);
+  }
   const { am, pm } = sheetShifts(dayKey, input);
   const ot = Math.max(0, input.otHours ?? 0);
 
@@ -112,6 +117,8 @@ export async function saveSheetRow(
     pmAttendanceId: pmId,
     enteredById: actor.id,
     enteredByName: actor.name,
+    // a real change to the times, overtime or absence needs the foreman and the engineer to look at it again
+    ...(changed ? { reviewedById: null, reviewedByName: null, reviewedAt: null, engineerApprovedById: null, engineerApprovedByName: null, engineerApprovedAt: null } : {}),
   };
   const entry = existing
     ? await db.timesheetEntry.update({ where: { id: existing.id }, data })

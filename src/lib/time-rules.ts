@@ -30,7 +30,7 @@ export interface AdjustmentFlags {
   earlyStartHours?: number | null;
 }
 
-const NO_ADJUSTMENTS: AdjustmentFlags = {
+export const NO_ADJUSTMENTS: AdjustmentFlags = {
   earlyStartApproved: false,
   overtimeApproved: false,
   weekendApproved: false,
@@ -83,6 +83,10 @@ const SITE_BREAKS = [
   { startH: 10, startM: 0, endH: 10, endM: 15 }, // morning break
   { startH: 15, startM: 0, endH: 15, endM: 15 }, // afternoon break
 ];
+// A timekeeper-sheet worker is recorded in two halves (AM 7:30–12:00, PM 1:00–5:00) and each half is paid as exactly 4 hours, so a
+// worker who is in only half a day shows 4.00 — not 4.25 or 3.75. The two 15-minute breaks are taken off the morning together
+// (7:30–12:00 less 30 minutes = 4.00) and the afternoon (1:00–5:00 = 4.00) loses nothing. A whole day is still 8 hours.
+const HALF_DAY_BREAKS = [{ startH: 10, startM: 0, endH: 10, endM: 30 }];
 
 function overlapMs(aStart: number, aEnd: number, bStart: number, bEnd: number): number {
   return Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart));
@@ -104,7 +108,9 @@ export function computeEffectiveHours(
   timeIn: Date,
   timeOut: Date,
   ruleset: TimeRuleset,
-  flags: AdjustmentFlags = NO_ADJUSTMENTS
+  flags: AdjustmentFlags = NO_ADJUSTMENTS,
+  /** a shift recorded on the timekeeper sheet: each half-day is exactly 4 hours (see HALF_DAY_BREAKS) */
+  halfDays = false
 ): number {
   // An approved weekend-work day is unscheduled bonus work by definition —
   // no start clamp, no breaks, no 5pm cutoff, just the raw span.
@@ -138,7 +144,7 @@ export function computeEffectiveHours(
   ms -= overlapMs(effStart, effEnd, lunchStart, lunchEnd);
 
   if (ruleset === "SITE") {
-    for (const b of SITE_BREAKS) {
+    for (const b of halfDays ? HALF_DAY_BREAKS : SITE_BREAKS) {
       const bs = manilaTime(dayKey, b.startH, b.startM).getTime();
       const be = manilaTime(dayKey, b.endH, b.endM).getTime();
       ms -= overlapMs(effStart, effEnd, bs, be);

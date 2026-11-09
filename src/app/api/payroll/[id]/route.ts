@@ -244,10 +244,11 @@ export const PATCH = handleApi(
       return NextResponse.json(updated);
     }
 
-    const user =
-      body.status === "APPROVED"
-        ? await requireUser(["OWNER"])
-        : await requireUser(["OWNER", "ACCOUNTING"]);
+    // Approving is the Owner's alone. Sending a draft to review (not approving it) may also be done by the staff sharing the payroll work.
+    const user = body.status === "APPROVED" ? await requireUser(["OWNER"]) : await requireUser();
+    if (body.status !== "APPROVED" && !(["OWNER", "ACCOUNTING"].includes(user.role) || (user.payrollAssist && body.status === "REVIEW"))) {
+      throw new ApiError(403, "Not authorized for this action");
+    }
 
     const run = await prisma.payrollRun.findUnique({ where: { id: params.id } });
     if (!run) throw new ApiError(404, "Payroll run not found");
