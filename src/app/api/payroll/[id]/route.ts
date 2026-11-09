@@ -38,6 +38,13 @@ const patchSchema = z.discriminatedUnion("action", [
   }),
 ]);
 
+/** Who may change the lines of a draft run (hours, rates, deductions, adding a person): the Owner and PM, and the office staff the Owner switched on to share the payroll work (People page). Approving stays the Owner's. */
+async function requireRunEditor() {
+  const user = await requireUser();
+  if (!(["OWNER", "PM"].includes(user.role) || user.payrollAssist)) throw new ApiError(403, "Not authorized for this action");
+  return user;
+}
+
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
@@ -55,7 +62,7 @@ export const PATCH = handleApi(
     const body = patchSchema.parse(await req.json());
 
     if (body.action === "recalculate_hours") {
-      const user = await requireUser(["OWNER", "PM"]);
+      const user = await requireRunEditor();
       const run = await prisma.payrollRun.findUnique({ where: { id: params.id } });
       if (!run) throw new ApiError(404, "Payroll run not found");
       if (!["DRAFT", "REVIEW"].includes(run.status)) throw new ApiError(400, `A run that's already ${run.status} is a record — its hours can't be recalculated`);
@@ -91,7 +98,7 @@ export const PATCH = handleApi(
     }
 
     if (body.action === "update_entries") {
-      const user = await requireUser(["OWNER", "PM"]);
+      const user = await requireRunEditor();
       const run = await prisma.payrollRun.findUnique({ where: { id: params.id } });
       if (!run) throw new ApiError(404, "Payroll run not found");
       if (!["DRAFT", "REVIEW"].includes(run.status)) {
@@ -174,7 +181,7 @@ export const PATCH = handleApi(
     }
 
     if (body.action === "add_person") {
-      const user = await requireUser(["OWNER", "PM"]);
+      const user = await requireRunEditor();
       const result = await prisma.$transaction(async (db) => {
         // Lock the run so two edits at once can't overwrite each other's version of the entries.
         await db.$queryRaw`SELECT id FROM "PayrollRun" WHERE id = ${params.id} FOR UPDATE`;

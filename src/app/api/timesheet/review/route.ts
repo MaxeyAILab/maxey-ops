@@ -5,6 +5,7 @@ import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { canApproveSheet, canReviewSheet, lineStage, nextStage } from "@/lib/timesheet";
 import { dayClosedByPayroll } from "@/lib/timesheet-db";
+import { alertReviewFinished } from "@/lib/timesheet-notify";
 
 const schema = z.object({
   projectId: z.string().min(1),
@@ -87,6 +88,13 @@ export const POST = handleApi(async (req: NextRequest) => {
       action: body.step === "review" ? (body.checked ? "TIMESHEET_REVIEWED" : "TIMESHEET_REVIEW_REMOVED") : body.checked ? "TIMESHEET_APPROVED" : "TIMESHEET_APPROVAL_REMOVED",
       diff: { project: project.name, date: body.date, workers: done, count: done.length } as never,
     });
+  }
+  // the foreman has now checked and reviewed the whole day: the project engineer is told it waits for his approval
+  if (body.step === "review" && body.checked && done.length > 0) {
+    const all = await prisma.timesheetEntry.findMany({ where: { projectId: project.id, date }, select: { reviewedAt: true } });
+    if (all.length > 0 && all.every((e) => e.reviewedAt)) {
+      await alertReviewFinished({ projectId: project.id, projectName: project.name, dayKey: body.date, actorId: user.id, actorName: user.name });
+    }
   }
   return NextResponse.json({ ok: skipped.length === 0, changed: done.length, skipped });
 });

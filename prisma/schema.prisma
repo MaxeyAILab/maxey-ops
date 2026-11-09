@@ -1736,6 +1736,12 @@ model TimesheetEntry {
   engineerApprovedById   String?
   engineerApprovedByName String?
   engineerApprovedAt     DateTime?
+  // Sunday work waits for the Owner: a line recorded on a Sunday by anyone but the Owner is PENDING (no clock records, so no pay) until
+  // the Owner approves it; the Owner's own Sunday lines are approved on the spot. null on every other day.
+  weekendStatus          String? // PENDING | APPROVED | REJECTED
+  weekendDecidedById     String?
+  weekendDecidedByName   String?
+  weekendDecidedAt       DateTime?
   enteredById    String
   enteredByName  String
   createdAt      DateTime @default(now())

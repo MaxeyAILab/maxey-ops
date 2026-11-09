@@ -26,7 +26,7 @@ export default async function PayrollRunPage({ params }: { params: { id: string 
   if (!run) notFound();
 
   const entries = normalizeEntries(run.entries as unknown as PayrollEntry[]);
-  const canEdit = ["OWNER", "PM"].includes(user.role) && ["DRAFT", "REVIEW"].includes(run.status);
+  const canEdit = (["OWNER", "PM"].includes(user.role) || user.payrollAssist) && ["DRAFT", "REVIEW"].includes(run.status);
   const payslipsReady = run.status === "APPROVED" || run.status === "PAID";
   const totals = entries.reduce(
     (acc, e) => ({

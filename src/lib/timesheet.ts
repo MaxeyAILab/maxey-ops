@@ -249,3 +249,36 @@ export function changesRecord(before: { amIn: string | null; amOut: string | nul
   const n = (v: string | null | undefined) => (v ? v : null);
   return n(before.amIn) !== n(after.amIn) || n(before.amOut) !== n(after.amOut) || n(before.pmIn) !== n(after.pmIn) || n(before.pmOut) !== n(after.pmOut) || (before.otHours ?? 0) !== (after.otHours ?? 0) || before.absent !== after.absent;
 }
+
+// ---------------------------------------------------------------------------------------------------- Sunday work and late approval
+
+/** Whether a Manila calendar day ("2026-11-08") is a Sunday. */
+export const isSundayKey = (dayKey: string): boolean => new Date(`${dayKey}T12:00:00.000Z`).getUTCDay() === 0;
+
+export type WeekendStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+/**
+ * What happens to a Sunday line when it is saved. Only the Owner approves Sunday work: his own lines are approved at once; anyone
+ * else's wait (PENDING) and make no clock records, so they are not paid until he approves. A line already approved stays approved
+ * if nothing about it changed; a real change sends it back for approval, and a rejected line stays rejected until it is changed.
+ * Returns null on any other day.
+ */
+export function sundayStatusOnSave(p: { dayKey: string; actorIsOwner: boolean; existing: WeekendStatus | null; changed: boolean }): WeekendStatus | null {
+  if (!isSundayKey(p.dayKey)) return null;
+  if (p.actorIsOwner) return "APPROVED";
+  if (p.existing === "APPROVED" && !p.changed) return "APPROVED";
+  if (p.existing === "REJECTED" && !p.changed) return "REJECTED";
+  return "PENDING";
+}
+
+/** True when a day has passed but the project engineer has not approved everything that was recorded for it. */
+export function approvalOverdue(dayKey: string, todayKey: string, progress: { recorded: number; allApproved: boolean }): boolean {
+  return dayKey < todayKey && progress.recorded > 0 && !progress.allApproved;
+}
+
+/** The sentence for the banner / alert, naming who is holding things up. */
+export function overdueText(p: { reviewed: number; approved: number; recorded: number }): string {
+  if (p.approved >= p.recorded) return "";
+  if (p.reviewed < p.recorded) return `${p.recorded - p.reviewed} of ${p.recorded} lines are not checked and reviewed by the foreman yet, and ${p.recorded - p.approved} are not approved by the project engineer`;
+  return `the foreman has checked and reviewed it, but ${p.recorded - p.approved} of ${p.recorded} lines are still waiting for the project engineer's approval`;
+}

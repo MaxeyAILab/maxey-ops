@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { ApiError } from "@/lib/rbac";
 import { manilaTime } from "@/lib/time-rules";
-import { changesRecord, sheetShifts, type SheetInput } from "@/lib/timesheet";
+import { changesRecord, sheetShifts, sundayStatusOnSave, type SheetInput, type WeekendStatus } from "@/lib/timesheet";
 
 type Db = Prisma.TransactionClient;
 
@@ -21,6 +21,8 @@ export interface SaveRowResult {
   entryId: string;
   /** true when nothing is left on the sheet for this worker and day (a cleared row) */
   cleared: boolean;
+  /** Sunday lines only: APPROVED (Owner's own, or already approved), PENDING (waits for the Owner, no pay yet), REJECTED; null on other days */
+  weekend?: WeekendStatus | null;
 }
 
 /**
@@ -43,6 +45,11 @@ export async function saveSheetRow(
   }
   const { am, pm } = sheetShifts(dayKey, input);
   const ot = Math.max(0, input.otHours ?? 0);
+  // Sunday work waits for the Owner: until he approves it the line makes no clock records, so nothing is paid for it.
+  const weekend = sundayStatusOnSave({ dayKey, actorIsOwner: actor.role === "OWNER", existing: (existing?.weekendStatus as WeekendStatus | null) ?? null, changed });
+  const hold = weekend === "PENDING" || weekend === "REJECTED";
+  const amShift = hold ? null : am;
+  const pmShift = hold ? null : pm;
 
   const upsertShift = async (id: string | null | undefined, shift: { in: Date; out: Date } | null): Promise<string | null> => {
     if (!shift) {
@@ -65,13 +72,13 @@ export async function saveSheetRow(
     : null;
   const wasOt = Number(existing?.otHours ?? 0);
   if (pmRequest && pmRequest.status !== "PENDING") {
-    if (!pm || Math.abs(wasOt - ot) > 1e-9) {
+    if (!pmShift || Math.abs(wasOt - ot) > 1e-9) {
       throw new ApiError(409, `The overtime for ${p.workerName} on this day was already ${pmRequest.status === "APPROVED" ? "approved" : "decided"} — ask the Owner or PM to change the credited hours instead`);
     }
   }
 
-  const amId = await upsertShift(existing?.amAttendanceId, am);
-  const pmId = await upsertShift(existing?.pmAttendanceId, pm);
+  const amId = await upsertShift(existing?.amAttendanceId, amShift);
+  const pmId = await upsertShift(existing?.pmAttendanceId, pmShift);
 
   if (pmId && ot > 0) {
     const reason = `Timekeeper sheet — ${ot} h overtime on ${dayKey}, approved on site by ${input.approvedBy?.trim()}`;
@@ -101,8 +108,20 @@ export async function saveSheetRow(
   const cleared = !input.absent && !am && !pm && !(input.remarks && input.remarks.trim());
   if (cleared) {
     if (existing) await db.timesheetEntry.delete({ where: { id: existing.id } });
-    return { entryId: existing?.id ?? "", cleared: true };
+    return { entryId: existing?.id ?? "", cleared: true, weekend: null };
   }
+
+  const now = new Date();
+  const weekendData =
+    weekend === null
+      ? { weekendStatus: null, weekendDecidedById: null, weekendDecidedByName: null, weekendDecidedAt: null }
+      : weekend === "APPROVED"
+        ? existing?.weekendStatus === "APPROVED" && actor.role !== "OWNER"
+          ? {}
+          : { weekendStatus: "APPROVED", weekendDecidedById: actor.id, weekendDecidedByName: actor.name, weekendDecidedAt: now }
+        : weekend === "PENDING"
+          ? { weekendStatus: "PENDING", weekendDecidedById: null, weekendDecidedByName: null, weekendDecidedAt: null }
+          : {};
 
   const data = {
     amIn: am ? input.amIn : null,
@@ -117,11 +136,12 @@ export async function saveSheetRow(
     pmAttendanceId: pmId,
     enteredById: actor.id,
     enteredByName: actor.name,
+    ...weekendData,
     // a real change to the times, overtime or absence needs the foreman and the engineer to look at it again
     ...(changed ? { reviewedById: null, reviewedByName: null, reviewedAt: null, engineerApprovedById: null, engineerApprovedByName: null, engineerApprovedAt: null } : {}),
   };
   const entry = existing
     ? await db.timesheetEntry.update({ where: { id: existing.id }, data })
     : await db.timesheetEntry.create({ data: { userId, projectId, date, ...data } });
-  return { entryId: entry.id, cleared: false };
+  return { entryId: entry.id, cleared: false, weekend };
 }

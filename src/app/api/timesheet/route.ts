@@ -7,6 +7,7 @@ import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { manilaDayKey, manilaTime } from "@/lib/time-rules";
 import { canEditSheet, regularHours, validateSheetRow, worksSheetFreely, type SheetInput } from "@/lib/timesheet";
 import { dayClosedByPayroll, saveSheetRow } from "@/lib/timesheet-db";
+import { alertReadyForReview, alertSundayPending } from "@/lib/timesheet-notify";
 
 const hm = z.string().max(5).nullish().or(z.literal(""));
 const rowSchema = z.object({
@@ -66,6 +67,8 @@ export const POST = handleApi(async (req: NextRequest) => {
 
   const results: { userId: string; ok: boolean; error?: string; hours?: number; cleared?: boolean }[] = [];
   let overtimeRows = 0;
+  let linesSaved = 0;
+  let sundayWaiting = 0;
   for (const r of body.rows) {
     const worker = workers.get(r.userId);
     if (!worker || !worker.active) {
@@ -99,6 +102,8 @@ export const POST = handleApi(async (req: NextRequest) => {
     try {
       const saved = await prisma.$transaction((db) => saveSheetRow(db, { userId: worker.id, projectId: project.id, dayKey, input, actor: { id: user.id, name: user.name, role: user.role }, workerName: worker.name, canChangeApproved: worksSheetFreely(user) }));
       results.push({ userId: r.userId, ok: true, hours: regularHours(dayKey, input, worker.department), cleared: saved.cleared });
+      if (!saved.cleared) linesSaved++;
+      if (saved.weekend === "PENDING") sundayWaiting++;
       if ((input.otHours ?? 0) > 0 && user.role !== "OWNER") overtimeRows++; // the Owner recording overtime has approved it — no one to tell
       await audit({
         entityType: "TimesheetEntry",
@@ -112,6 +117,9 @@ export const POST = handleApi(async (req: NextRequest) => {
       results.push({ userId: r.userId, ok: false, error: e instanceof ApiError ? e.message : "Could not save this line" });
     }
   }
+  // the foreman is told the day is ready to check; the Owner is told Sunday work is waiting for him
+  if (linesSaved > 0) await alertReadyForReview({ projectId: project.id, projectName: project.name, dayKey, lines: linesSaved, actorId: user.id, actorName: user.name });
+  if (sundayWaiting > 0) await alertSundayPending({ projectId: project.id, projectName: project.name, dayKey, lines: sundayWaiting, actorId: user.id, actorName: user.name });
   if (overtimeRows > 0) {
     await notifyOwner(`Overtime from the timekeeper sheet — ${project.name}`, `${user.name} recorded overtime for ${overtimeRows} worker${overtimeRows === 1 ? "" : "s"} on ${dayKey}. Approve the credited hours in the Attendance tab.`);
   }

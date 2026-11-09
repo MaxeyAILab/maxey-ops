@@ -32,6 +32,9 @@ export interface SheetWorker {
     reviewedAt: string | null;
     approvedByName: string | null;
     approvedAt: string | null;
+    /** Sunday lines: waiting for the Owner / approved / not approved; null on other days */
+    weekendStatus: "PENDING" | "APPROVED" | "REJECTED" | null;
+    weekendDecidedByName: string | null;
   } | null;
 }
 
@@ -88,6 +91,9 @@ export function TimekeeperSheet({
   lockedReason,
   canReview = false,
   canApprove = false,
+  isSunday = false,
+  canDecideWeekend = false,
+  overdueNote = null,
 }: {
   projectId: string;
   dayKey: string;
@@ -101,6 +107,12 @@ export function TimekeeperSheet({
   canReview?: boolean;
   /** this person may tick the project engineer's "Approved" box here */
   canApprove?: boolean;
+  /** the day shown is a Sunday: work recorded by anyone but the Owner waits for his approval */
+  isSunday?: boolean;
+  /** the Owner: may approve or reject the Sunday lines that are waiting */
+  canDecideWeekend?: boolean;
+  /** the day has passed without the project engineer approving everything — the warning to show */
+  overdueNote?: string | null;
 }) {
   const router = useRouter();
   const initial = useMemo(() => Object.fromEntries(workers.map((w) => [w.userId, fromSaved(w)])), [workers]);
@@ -120,6 +132,25 @@ export function TimekeeperSheet({
   const nReviewed = recorded.filter((w) => stageOf(w) !== "recorded").length;
   const nApproved = recorded.filter((w) => stageOf(w) === "approved").length;
   const anyUnsaved = dirtyIds.length > 0;
+  const waitingSunday = workers.filter((w) => w.saved?.weekendStatus === "PENDING");
+
+  /** The Owner's decision on Sunday work: one line, or every line waiting. */
+  async function decideWeekend(decision: "approve" | "reject", userId?: string) {
+    if (ticking) return;
+    if (decision === "reject" && !window.confirm("Reject this Sunday work? It will not be paid.")) return;
+    setTicking(true);
+    setTickMsg("");
+    const res = await fetch("/api/timesheet/weekend", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, date: dayKey, decision, ...(userId ? { userIds: [userId] } : {}) }),
+    });
+    const data = (await res.json().catch(() => null)) as { error?: string; skipped?: { name: string; why: string }[] } | null;
+    setTicking(false);
+    if (!data || (!res.ok && !data.skipped)) return setTickMsg(data?.error ?? "Could not save the decision");
+    if (data.skipped && data.skipped.length > 0) setTickMsg(data.skipped.map((s) => `${s.name}: ${s.why}`).join(" · "));
+    router.refresh();
+  }
 
   /** The foreman's / engineer's boxes act at once (not with the timekeeper's Save): one line, or the box in the heading for all of them. */
   async function tickReview(step: "review" | "approve", checked: boolean, userId?: string) {
@@ -232,6 +263,23 @@ export function TimekeeperSheet({
         ))}
       </datalist>
 
+      {overdueNote && <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-900 dark:bg-red-950/30 dark:text-red-200">⚠ {overdueNote} The project engineer, foreman, timekeeper, Owner and office staff are reminded each morning.</p>}
+      {isSunday && (
+        <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+          <b>Sunday.</b> Work recorded here by anyone but the Owner waits for the Owner&apos;s approval and is not paid until he approves it.
+          {canDecideWeekend && waitingSunday.length > 0 && (
+            <span className="ml-2 inline-flex flex-wrap items-center gap-2">
+              <button type="button" disabled={ticking} onClick={() => decideWeekend("approve")} className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+                Approve all {waitingSunday.length}
+              </button>
+              <button type="button" disabled={ticking} onClick={() => decideWeekend("reject")} className="rounded-md border border-red-300 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50">
+                Reject all
+              </button>
+            </span>
+          )}
+        </p>
+      )}
+
       {recorded.length > 0 && (
         <div className="rounded-lg border border-ink-100 p-3">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
@@ -333,6 +381,32 @@ export function TimekeeperSheet({
                     <div className="font-medium text-ink-900">{w.name}</div>
                     <div className="text-xs text-ink-500">{w.position}</div>
                     {w.saved && !dirty && <div className="text-[11px] text-ink-400">saved by {w.saved.enteredByName}</div>}
+                    {w.saved?.weekendStatus === "PENDING" && !dirty && (
+                      <div className="mt-1 text-[11px] font-semibold text-amber-700">
+                        Sunday — waiting for the Owner, not paid yet
+                        {canDecideWeekend && (
+                          <span className="ml-1 inline-flex gap-2">
+                            <button type="button" disabled={ticking} onClick={() => decideWeekend("approve", w.userId)} className="font-semibold text-emerald-700 underline">
+                              Approve
+                            </button>
+                            <button type="button" disabled={ticking} onClick={() => decideWeekend("reject", w.userId)} className="font-semibold text-red-700 underline">
+                              Reject
+                            </button>
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {w.saved?.weekendStatus === "APPROVED" && !dirty && w.saved.weekendDecidedByName && <div className="mt-1 text-[11px] text-emerald-700">Sunday work approved by {w.saved.weekendDecidedByName.split(" ")[0]}</div>}
+                    {w.saved?.weekendStatus === "REJECTED" && !dirty && (
+                      <div className="mt-1 text-[11px] font-semibold text-red-700">
+                        Sunday work not approved — not paid
+                        {canDecideWeekend && (
+                          <button type="button" disabled={ticking} onClick={() => decideWeekend("approve", w.userId)} className="ml-1 font-semibold text-emerald-700 underline">
+                            Approve instead
+                          </button>
+                        )}
+                      </div>
+                    )}
                     {w.saved && w.selfClock && <div className="text-[11px] font-medium text-amber-700">also clocked in on their own ({w.selfClock}) — check</div>}
                   </td>
                   <td className="px-2 py-2 text-center align-top">
@@ -420,7 +494,7 @@ export function TimekeeperSheet({
                       </td>
                     </>
                   )}
-                  <td className="px-2 py-2 text-right align-top tabular-nums">{hours === null ? "—" : hours.toFixed(2)}</td>
+                  <td className="px-2 py-2 text-right align-top tabular-nums">{w.saved?.weekendStatus === "PENDING" && !dirty ? <span className="text-xs text-amber-700">pending</span> : hours === null ? "—" : hours.toFixed(2)}</td>
                   <td className="px-3 py-2 align-top">
                     <div className="flex flex-wrap gap-1.5">
                       <input list="approver-names" aria-label={`${w.name} approved by`} placeholder="Approved by" className={`${cell} w-36`} value={r.approvedBy} disabled={!editable} onChange={(e) => set(w.userId, { approvedBy: e.target.value })} maxLength={120} />

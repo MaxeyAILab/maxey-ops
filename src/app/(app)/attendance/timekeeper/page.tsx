@@ -6,7 +6,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui";
 import { AddSheetWorker, TimekeeperSheet, type SheetWorker } from "@/components/timekeeper-sheet";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
 import { manilaDayKey, manilaTime, manilaWeeklySitePeriod } from "@/lib/time-rules";
-import { canApproveSheet, canEditSheet, canOpenTimesheets, canReviewSheet, lineStage, regularHours, worksSheetFreely } from "@/lib/timesheet";
+import { approvalOverdue, canApproveSheet, canEditSheet, canOpenTimesheets, canReviewSheet, isSundayKey, lineStage, overdueText, regularHours, sheetProgress, worksSheetFreely } from "@/lib/timesheet";
 import { dayClosedByPayroll } from "@/lib/timesheet-db";
 
 export const metadata = { title: "Timekeeper sheet" };
@@ -122,6 +122,8 @@ export default async function TimekeeperPage({ searchParams }: { searchParams: {
             reviewedAt: e.reviewedAt ? e.reviewedAt.toISOString() : null,
             approvedByName: e.engineerApprovedByName,
             approvedAt: e.engineerApprovedAt ? e.engineerApprovedAt.toISOString() : null,
+            weekendStatus: (e.weekendStatus as "PENDING" | "APPROVED" | "REJECTED" | null) ?? null,
+            weekendDecidedByName: e.weekendDecidedByName,
           }
         : null,
     };
@@ -129,6 +131,9 @@ export default async function TimekeeperPage({ searchParams }: { searchParams: {
 
   const allowed = canEditSheet(user, { assignedToProject: !!mine, dayKey, todayKey });
   const reviewCtx = { assignedToProject: !!mine };
+  // a day that has passed without the project engineer approving everything recorded for it
+  const progress = sheetProgress([...dayEntries.values()].map((e) => ({ userId: e.userId, stage: lineStage(e) })));
+  const overdue = approvalOverdue(dayKey, todayKey, progress) ? `This day has passed and it is not fully approved: ${overdueText(progress)}.` : null;
   const closed = await dayClosedByPayroll(prisma, project.id, dayKey);
   const lockedReason = closed ? "Payroll for this project has already been approved for this day, so its sheet is closed." : allowed.ok ? null : allowed.reason;
 
@@ -143,6 +148,8 @@ export default async function TimekeeperPage({ searchParams }: { searchParams: {
     const e = weekEntries.find((x) => x.userId === userId && x.date.toISOString().slice(0, 10) === day);
     if (!e) return null;
     if (e.absent) return { text: "A", ot: 0 };
+    if (e.weekendStatus === "PENDING") return { text: "⏳", ot: 0 }; // Sunday work waiting for the Owner: not paid yet
+    if (e.weekendStatus === "REJECTED") return { text: "✕", ot: 0 };
     const hours = regularHours(day, { amIn: e.amIn, amOut: e.amOut, pmIn: e.pmIn, pmOut: e.pmOut, otHours: e.otHours ? Number(e.otHours) : null, approvedBy: e.approvedBy, remarks: e.remarks, absent: false }, workersOnSheet.find((w) => w.id === userId)?.department ?? "SITE");
     return { text: hours.toFixed(1).replace(/\.0$/, ""), ot: e.otHours ? Number(e.otHours) : 0 };
   };
@@ -197,13 +204,13 @@ export default async function TimekeeperPage({ searchParams }: { searchParams: {
         <CardHeader title={`${project.name} — ${longDay(dayKey)}`} subtitle={`${workersOnSheet.length} worker${workersOnSheet.length === 1 ? "" : "s"} assigned to this project${selfText.size > 0 ? ` · ${selfText.size} clocked in on their own today` : ""}`} />
         <CardBody className="space-y-3">
           {allowed.ok && !lockedReason && <AddSheetWorker projectId={project.id} dayKey={dayKey} todayKey={todayKey} />}
-          <TimekeeperSheet key={`${project.id}|${dayKey}|${workers.length}`} projectId={project.id} dayKey={dayKey} workers={workers} approvers={approvers} canEdit={allowed.ok} lockedReason={lockedReason} canReview={canReviewSheet(user, reviewCtx) && !closed} canApprove={canApproveSheet(user, reviewCtx) && !closed} />
+          <TimekeeperSheet key={`${project.id}|${dayKey}|${workers.length}`} projectId={project.id} dayKey={dayKey} workers={workers} approvers={approvers} canEdit={allowed.ok} lockedReason={lockedReason} canReview={canReviewSheet(user, reviewCtx) && !closed} canApprove={canApproveSheet(user, reviewCtx) && !closed} isSunday={isSundayKey(dayKey)} canDecideWeekend={user.role === "OWNER" && !closed} overdueNote={overdue} />
         </CardBody>
       </Card>
 
       {workersOnSheet.length > 0 && (
         <Card>
-          <CardHeader title="This pay week" subtitle={`${dayLabel(weekDays[0])} – ${dayLabel(weekDays[6])} · paid hours per day (A = absent, +n = overtime recorded, counted once approved)`} />
+          <CardHeader title="This pay week" subtitle={`${dayLabel(weekDays[0])} – ${dayLabel(weekDays[6])} · paid hours per day (A = absent, ⏳ = Sunday work waiting for the Owner, +n = overtime recorded, counted once approved)`} />
           <div className="overflow-x-auto">
             <table className="w-full min-w-[40rem] text-sm">
               <thead className="text-[11px] uppercase tracking-wide text-ink-500">
@@ -221,7 +228,7 @@ export default async function TimekeeperPage({ searchParams }: { searchParams: {
               <tbody className="divide-y divide-ink-100">
                 {workersOnSheet.map((w) => {
                   const cells = weekDays.map((d) => cellOf(w.id, d));
-                  const total = cells.reduce((s, c) => s + (c && c.text !== "A" ? Number(c.text) : 0), 0);
+                  const total = cells.reduce((s, c) => s + (c && Number.isFinite(Number(c.text)) ? Number(c.text) : 0), 0);
                   return (
                     <tr key={w.id}>
                       <td className="px-3 py-1.5 font-medium text-ink-800">{w.name}</td>

@@ -103,3 +103,42 @@ describe("the review chain", () => {
     expect(changesRecord({ ...saved, amIn: "", amOut: "" }, row({ amIn: null, amOut: null }))).toBe(false);
   });
 });
+
+import { approvalOverdue, isSundayKey, overdueText, sundayStatusOnSave } from "./timesheet";
+
+describe("Sunday work waits for the Owner", () => {
+  const SUN = "2026-11-08";
+  const MON = "2026-11-09";
+  it("knows which days are Sundays", () => {
+    expect(isSundayKey(SUN)).toBe(true);
+    expect(isSundayKey(MON)).toBe(false);
+    expect(isSundayKey("2026-11-07")).toBe(false); // Saturday is a normal working day
+  });
+  it("another person's Sunday line is pending; the Owner's own is approved on the spot; other days are untouched", () => {
+    expect(sundayStatusOnSave({ dayKey: SUN, actorIsOwner: false, existing: null, changed: true })).toBe("PENDING");
+    expect(sundayStatusOnSave({ dayKey: SUN, actorIsOwner: true, existing: null, changed: true })).toBe("APPROVED");
+    expect(sundayStatusOnSave({ dayKey: MON, actorIsOwner: false, existing: null, changed: true })).toBeNull();
+  });
+  it("an approved line stays approved until its times change; a rejected one stays rejected until changed", () => {
+    expect(sundayStatusOnSave({ dayKey: SUN, actorIsOwner: false, existing: "APPROVED", changed: false })).toBe("APPROVED");
+    expect(sundayStatusOnSave({ dayKey: SUN, actorIsOwner: false, existing: "APPROVED", changed: true })).toBe("PENDING");
+    expect(sundayStatusOnSave({ dayKey: SUN, actorIsOwner: false, existing: "REJECTED", changed: false })).toBe("REJECTED");
+    expect(sundayStatusOnSave({ dayKey: SUN, actorIsOwner: false, existing: "REJECTED", changed: true })).toBe("PENDING");
+    expect(sundayStatusOnSave({ dayKey: SUN, actorIsOwner: false, existing: "PENDING", changed: false })).toBe("PENDING");
+  });
+});
+
+describe("a day that passed without the engineer's approval", () => {
+  const p = (recorded: number, allApproved: boolean) => ({ recorded, allApproved });
+  it("warns only for a past day with lines recorded and not all approved", () => {
+    expect(approvalOverdue("2026-11-08", "2026-11-09", p(5, false))).toBe(true);
+    expect(approvalOverdue("2026-11-09", "2026-11-09", p(5, false))).toBe(false); // today is still open
+    expect(approvalOverdue("2026-11-08", "2026-11-09", p(5, true))).toBe(false);
+    expect(approvalOverdue("2026-11-08", "2026-11-09", p(0, false))).toBe(false); // nothing recorded: nothing to approve
+  });
+  it("says who is holding it up", () => {
+    expect(overdueText({ recorded: 5, reviewed: 2, approved: 0 })).toMatch(/3 of 5 lines are not checked and reviewed by the foreman.*5 are not approved/);
+    expect(overdueText({ recorded: 5, reviewed: 5, approved: 3 })).toMatch(/foreman has checked and reviewed it, but 2 of 5 lines are still waiting for the project engineer/);
+    expect(overdueText({ recorded: 5, reviewed: 5, approved: 5 })).toBe("");
+  });
+});

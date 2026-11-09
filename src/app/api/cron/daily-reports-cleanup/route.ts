@@ -3,11 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { logProjectActivity } from "@/lib/project-activity";
 import { DAILY_REPORT_LIFETIME_DAYS } from "@/lib/daily-reports";
+import { sendTimesheetReminders } from "@/lib/timesheet-notify";
 
 /**
- * GET /api/cron/daily-reports-cleanup — Vercel Cron hits this once a day
+ * GET /api/cron/daily-reports-cleanup — Vercel Cron hits this once a day at 8:00 AM Manila
  * (see vercel.json) to purge Daily Construction Reports past their 7-day
- * lifetime. No user session exists for a cron invocation, so auth is a
+ * lifetime, and to send the timekeeper-sheet "not approved" reminders. No user session exists for a cron invocation, so auth is a
  * shared secret instead of requireUser() — Vercel sends it automatically as
  * `Authorization: Bearer $CRON_SECRET` once that env var is set on the
  * project. Requests without a matching secret are rejected outright.
@@ -73,5 +74,14 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  return NextResponse.json({ deleted: expired.length });
+  // The same daily run reminds about timekeeper sheets whose day has passed without the project engineer's approval
+  // (a separate cron would be a third one — the free plan allows two).
+  let reminders = { days: 0, alerted: 0 };
+  try {
+    reminders = await sendTimesheetReminders();
+  } catch (err) {
+    console.error("[cron] timesheet reminders failed", err);
+  }
+
+  return NextResponse.json({ deleted: expired.length, timesheetReminders: reminders });
 }

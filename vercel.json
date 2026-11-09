@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": ["hnd1"],
   "crons": [
-    { "path": "/api/cron/daily-reports-cleanup", "schedule": "0 19 * * *" },
+    { "path": "/api/cron/daily-reports-cleanup", "schedule": "0 0 * * *" },
     { "path": "/api/cron/saturday-clockout", "schedule": "0 9 * * 6" }
   ]
 }
