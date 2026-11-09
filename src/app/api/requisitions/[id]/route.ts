@@ -44,6 +44,19 @@ const actionSchema = z.discriminatedUnion("action", [
     action: z.literal("use_supplier"),
     itemId: z.string().min(1),
   }),
+  z.object({
+    // Correct a recorded quote (supplier, price, note) while the requisition is still being costed — Purchasing and the Owner.
+    action: z.literal("edit_quote"),
+    quoteId: z.string().min(1),
+    supplier: z.string().trim().min(1).max(200),
+    unitCost: z.coerce.number().min(0),
+    notes: z.string().max(300).optional().or(z.literal("")),
+  }),
+  z.object({
+    // Owner only: take back an approval because a price or supplier has to change. The requisition returns to review.
+    action: z.literal("cancel_approval"),
+    reason: z.string().trim().min(3).max(300),
+  }),
   z.object({ action: z.literal("approve") }),
   z.object({
     action: z.literal("reject"),
@@ -139,6 +152,35 @@ export const PATCH = handleApi(
       return NextResponse.json(await prisma.requisition.findUnique({ where: { id: requisition.id } }));
     }
 
+    if (body.action === "edit_quote") {
+      const user = await requireUser(["PURCHASING", "OWNER"]);
+      if (!["SUBMITTED", "UNDER_REVIEW"].includes(requisition.status)) {
+        throw new ApiError(400, "Prices can't be changed while the requisition is approved — the Owner cancels the approval first, then the quote can be edited");
+      }
+      const quote = await prisma.itemQuote.findUnique({ where: { id: body.quoteId }, include: { requisitionItem: true } });
+      if (!quote || quote.requisitionItem.requisitionId !== requisition.id) throw new ApiError(400, "Unknown quote for this requisition");
+      const before = { supplier: quote.supplier, unitCost: Number(quote.unitCost), notes: quote.notes };
+      const after = { supplier: body.supplier, unitCost: Math.round(body.unitCost * 100) / 100, notes: body.notes || null };
+      if (before.supplier === after.supplier && before.unitCost === after.unitCost && before.notes === after.notes) return NextResponse.json(requisition);
+      await prisma.$transaction(async (db) => {
+        await db.itemQuote.update({ where: { id: quote.id }, data: after });
+        // the chosen quote is mirrored onto the item, so the item (and everything that reads it) follows the correction
+        if (quote.requisitionItem.selectedQuoteId === quote.id) {
+          await db.requisitionItem.update({ where: { id: quote.requisitionItemId }, data: { estUnitCost: after.unitCost, remarks: after.supplier } });
+        }
+      });
+      const estimatedCost = await refreshRequisitionAfterCosting(requisition.id, requisition.status === "SUBMITTED");
+      await audit({
+        entityType: "Requisition",
+        entityId: requisition.id,
+        actorId: user.id,
+        actorName: user.name,
+        action: "REQUISITION_QUOTE_EDITED",
+        diff: { item: quote.requisitionItem.name, before, after, wasSelected: quote.requisitionItem.selectedQuoteId === quote.id, estimatedCost },
+      });
+      return NextResponse.json(await prisma.requisition.findUnique({ where: { id: requisition.id } }));
+    }
+
     if (body.action === "add_quote" || body.action === "select_quote") {
       const user = await requireUser(["PM", "OWNER", "ACCOUNTING", "PURCHASING"]);
       if (!["SUBMITTED", "UNDER_REVIEW"].includes(requisition.status)) {
@@ -199,6 +241,53 @@ export const PATCH = handleApi(
 
       const updated = await prisma.requisition.findUnique({ where: { id: requisition.id } });
       return NextResponse.json(updated);
+    }
+
+    // cancel an approval — Owner only. Back to review so the prices/supplier can be changed and the Owner can approve again.
+    if (body.action === "cancel_approval") {
+      const user = await requireUser(["OWNER"]);
+      if (!["APPROVED", "PO_ISSUED"].includes(requisition.status)) throw new ApiError(400, "Only an approved requisition can have its approval cancelled");
+      const po = await prisma.purchaseOrder.findUnique({ where: { requisitionId: requisition.id }, include: { deliveries: { select: { id: true } } } });
+      if (po && (po.status !== "OPEN" || po.deliveries.length > 0)) {
+        throw new ApiError(400, `A delivery is already recorded against ${po.poNumber}, so the approval can't be cancelled. Submit a new requisition for what still has to change.`);
+      }
+      if (requisition.items.some((i) => i.issuedMovementId)) {
+        throw new ApiError(400, "Items from this requisition were already issued from the warehouse, so the approval can't be cancelled");
+      }
+      await prisma.$transaction(async (db) => {
+        // a PO that was issued from this approval has nothing delivered yet: it is withdrawn with the approval (a new one is issued after re-approval)
+        if (po) await db.purchaseOrder.delete({ where: { id: po.id } });
+        const done = await db.requisition.updateMany({
+          where: { id: requisition.id, status: { in: ["APPROVED", "PO_ISSUED"] } },
+          data: { status: "UNDER_REVIEW", approvedById: null, approvedAt: null },
+        });
+        if (done.count !== 1) throw new ApiError(409, "This requisition was just changed by someone else — reload the page");
+      });
+      const approver = requisition.approvedById ? await prisma.user.findUnique({ where: { id: requisition.approvedById }, select: { name: true } }) : null;
+      await audit({
+        entityType: "Requisition",
+        entityId: requisition.id,
+        actorId: user.id,
+        actorName: user.name,
+        action: "REQUISITION_APPROVAL_CANCELLED",
+        diff: { reason: body.reason, approvedBefore: approver?.name ?? null, poWithdrawn: po?.poNumber ?? null, estimatedCost: requisition.estimatedCost?.toString() ?? null },
+      });
+      if (po) {
+        await audit({
+          entityType: "PurchaseOrder",
+          entityId: po.id,
+          actorId: user.id,
+          actorName: user.name,
+          action: "PO_WITHDRAWN_WITH_APPROVAL",
+          diff: { poNumber: po.poNumber, supplier: po.supplier, totalCost: po.totalCost.toString(), reason: body.reason, project: projectOrCategoryLabel(requisition) },
+        });
+      }
+      await notify({
+        to: { name: "Purchasing" },
+        subject: "Requisition approval cancelled",
+        message: `${projectOrCategoryLabel(requisition)}: ${user.name} cancelled the approval (${body.reason})${po ? ` and withdrew ${po.poNumber}` : ""}. Prices or supplier are being changed.`,
+      });
+      return NextResponse.json(await prisma.requisition.findUnique({ where: { id: requisition.id } }));
     }
 
     // approve / reject — Owner only (Spec §3)

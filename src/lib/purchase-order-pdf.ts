@@ -50,6 +50,14 @@ function sanitize(text: string): string {
     .replace(/[^\x00-\xff]/g, "?");
 }
 
+/** Shortens text with ".." only when it would not fit in maxW at this size (a supplier name is kept whole when it fits). */
+function fitText(text: string, font: PDFFont, size: number, maxW: number): string {
+  if (font.widthOfTextAtSize(text, size) <= maxW) return text;
+  let t = text;
+  while (t.length > 1 && font.widthOfTextAtSize(`${t}..`, size) > maxW) t = t.slice(0, -1);
+  return `${t.trimEnd()}..`;
+}
+
 function drawCenteredText(
   page: PDFPage,
   text: string,
@@ -131,7 +139,8 @@ export async function buildPurchaseOrderPdf(rawData: PurchaseOrderPdfData): Prom
     page.drawText(data.projectLabel, { x: left + projectLabelW + labelGap, y, size: labelSize, font, color: ink });
     const supplierLabelW = bold.widthOfTextAtSize("SUPPLIER:", labelSize);
     page.drawText("SUPPLIER:", { x: rightColX, y, size: labelSize, font: bold, color: ink });
-    page.drawText(data.supplier, { x: rightColX + supplierLabelW + labelGap, y, size: labelSize, font, color: ink });
+    const supplierX = rightColX + supplierLabelW + labelGap;
+    page.drawText(fitText(data.supplier, font, labelSize, left + contentW - supplierX), { x: supplierX, y, size: labelSize, font, color: ink });
     y -= 11;
 
     const locationLabelW = bold.widthOfTextAtSize("LOCATION:", labelSize);
@@ -143,7 +152,7 @@ export async function buildPurchaseOrderPdf(rawData: PurchaseOrderPdfData): Prom
     y -= 13;
 
     // ---- Table ----
-    const colW = { sn: 22, qty: 40, unit: 42, remarks: 78 };
+    const colW = { sn: 22, qty: 40, unit: 42, remarks: 110 }; // wide enough for a supplier's name
     const descW = contentW - colW.sn - colW.qty - colW.unit - colW.remarks;
     const cols = [
       { label: "S/N", w: colW.sn },
@@ -193,9 +202,9 @@ export async function buildPurchaseOrderPdf(rawData: PurchaseOrderPdfData): Prom
       cx += cols[1].w;
       drawCenteredText(page, item.unit, cx + cols[2].w / 2, ry, 7, font);
       cx += cols[2].w;
-      page.drawText(item.name.slice(0, 60), { x: cx + 3, y: ry, size: 7, font, color: ink });
+      page.drawText(fitText(item.name, font, 7, cols[3].w - 6), { x: cx + 3, y: ry, size: 7, font, color: ink });
       cx += cols[3].w;
-      if (item.remarks) page.drawText(item.remarks.slice(0, 22), { x: cx + 3, y: ry, size: 6.5, font, color: ink });
+      if (item.remarks) page.drawText(fitText(item.remarks, font, 6.5, cols[4].w - 6), { x: cx + 3, y: ry, size: 6.5, font, color: ink });
     });
 
     // ---- Signatures ----

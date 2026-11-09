@@ -6,6 +6,7 @@ import { fmtDate, fmtDateTime, php } from "@/lib/format";
 import { Badge, Card, CardBody, CardHeader } from "@/components/ui";
 import {
   ApproveRejectButtons,
+  CancelApprovalButton,
   CancelPoButton,
   CreatePoForm,
   DeleteRequisitionButton,
@@ -37,7 +38,7 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
       project: { select: { id: true, name: true } },
       submittedBy: { select: { name: true } },
       approvedBy: { select: { name: true } },
-      purchaseOrder: true,
+      purchaseOrder: { include: { _count: { select: { deliveries: true } } } },
     },
   });
   if (!r) notFound();
@@ -66,6 +67,16 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
     ["SUBMITTED", "UNDER_REVIEW"].includes(r.status);
   const canApprove =
     user.role === "OWNER" && ["SUBMITTED", "UNDER_REVIEW"].includes(r.status);
+  // Purchasing and the Owner correct a recorded quote while it is still being costed
+  const canEditQuotes = canCost && ["PURCHASING", "OWNER"].includes(user.role);
+  // The Owner can take back an approval (price or supplier changed) as long as nothing was delivered or issued yet
+  const canCancelApproval =
+    user.role === "OWNER" &&
+    ["APPROVED", "PO_ISSUED"].includes(r.status) &&
+    (!r.purchaseOrder || (r.purchaseOrder.status === "OPEN" && r.purchaseOrder._count.deliveries === 0)) &&
+    !r.items.some((i) => i.issuedMovementId);
+  const approvalLockedByDelivery = user.role === "OWNER" && ["APPROVED", "PO_ISSUED"].includes(r.status) && !canCancelApproval;
+  const defaultSupplier = Array.from(new Set(buyingItems.map((i) => i.remarks?.trim()).filter((s): s is string => !!s))).join(", ");
   const canCreatePo =
     ["PURCHASING", "OWNER"].includes(user.role) && r.status === "APPROVED" && !r.purchaseOrder;
   const canDeleteRequisition =
@@ -120,6 +131,7 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
           editable={canCost}
           canUseStock={!!r.project}
           stock={stock}
+          canEditQuotes={canEditQuotes}
           items={r.items.map((i) => ({
             id: i.id,
             name: i.name,
@@ -180,6 +192,13 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
                     : " The items from the warehouse are reserved and reach the project's materials list only when the driver verifies the delivery and the receiver confirms it; the rest is bought through the purchase order. Both are verified on the Deliveries page.")}
               </p>
             )}
+            {canCancelApproval && (
+              <div>
+                <p className="mb-1.5 text-xs text-ink-500">Prices or supplier changed? Take the approval back, edit the quotes, then approve again.</p>
+                <CancelApprovalButton requisitionId={r.id} poNumber={r.purchaseOrder?.poNumber ?? null} />
+              </div>
+            )}
+            {approvalLockedByDelivery && <p className="text-xs text-ink-500">The approval can&apos;t be cancelled any more: a delivery or warehouse issue is already recorded against it.</p>}
             {canApprove && (
               <div>
                 <p className="mb-2 text-xs text-ink-500">
@@ -219,11 +238,13 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
                 </p>
                 <CreatePoForm
                   requisitionId={r.id}
+                  defaultSupplier={defaultSupplier}
                   initialItems={buyingItems.map((i) => ({
                     name: i.name,
                     qty: Number(i.qty),
                     unit: i.unit,
                     unitCost: i.estUnitCost != null ? Number(i.estUnitCost) : null,
+                    remarks: i.remarks,
                   }))}
                 />
               </div>

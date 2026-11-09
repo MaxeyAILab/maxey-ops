@@ -4,12 +4,15 @@ import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { fmtDate } from "@/lib/format";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
 import { buildPurchaseOrderPdf } from "@/lib/purchase-order-pdf";
+import { poLineRemarks } from "@/lib/po-remarks";
 
 interface PoItemJson {
   name: string;
   qty: number;
   unit: string;
   unitCost: number;
+  remarks?: string | null;
+  fromWarehouse?: boolean;
 }
 
 /**
@@ -26,6 +29,7 @@ export const GET = handleApi(
         createdBy: { select: { name: true } },
         requisition: {
           include: {
+            items: { select: { name: true, remarks: true, warehouseItemId: true } },
             project: { select: { name: true, address: true } },
             approvedBy: { select: { name: true } },
           },
@@ -41,7 +45,7 @@ export const GET = handleApi(
       location: po.requisition.project?.address || label,
       supplier: po.supplier,
       date: fmtDate(po.createdAt),
-      items: items.map((i) => ({ qty: Number(i.qty), unit: i.unit, name: i.name, remarks: null })),
+      items: items.map((i) => ({ qty: Number(i.qty), unit: i.unit, name: i.name, remarks: poLineRemarks(i, po.requisition.items) })),
       preparedBy: po.createdBy.name,
       approvedBy: po.requisition.approvedBy?.name ?? null,
       approvedDate: po.requisition.approvedAt ? fmtDate(po.requisition.approvedAt) : null,

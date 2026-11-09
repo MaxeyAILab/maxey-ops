@@ -125,19 +125,70 @@ function ItemWarehouse({
 
 /** One item's canvassing sheet: every supplier quote recorded so far, an
  * inline form to add another, and a way to pick which one to approve. */
+/** Purchasing / Owner: correct a recorded quote in place (supplier, price, note). */
+function QuoteEditForm({ requisitionId, quote, unit, onDone }: { requisitionId: string; quote: CostableQuote; unit: string; onDone: () => void }) {
+  const router = useRouter();
+  const [supplier, setSupplier] = useState(quote.supplier);
+  const [unitCost, setUnitCost] = useState(String(quote.unitCost));
+  const [notes, setNotes] = useState(quote.notes ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (!supplier.trim()) return setError("Type the supplier");
+    if (unitCost.trim() === "" || !(Number(unitCost) >= 0)) return setError("Type the price per unit");
+    setBusy(true);
+    setError("");
+    const err = await patch(requisitionId, { action: "edit_quote", quoteId: quote.id, supplier: supplier.trim(), unitCost: Number(unitCost), notes });
+    setBusy(false);
+    if (err) return setError(err);
+    onDone();
+    router.refresh();
+  }
+
+  return (
+    <form onSubmit={save} className="mt-1.5 flex w-full flex-wrap items-end gap-2 border-t border-ink-100 pt-2">
+      <div>
+        <Label className="mb-1 text-[11px]">Supplier</Label>
+        <Input className="h-8 w-36 text-xs" value={supplier} onChange={(e) => setSupplier(e.target.value)} required />
+      </div>
+      <div>
+        <Label className="mb-1 text-[11px]">Price per {unit}</Label>
+        <Input type="number" min="0" step="0.01" inputMode="decimal" className="h-8 w-24 text-xs" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} required />
+      </div>
+      <div>
+        <Label className="mb-1 text-[11px]">Notes</Label>
+        <Input className="h-8 w-36 text-xs" value={notes} onChange={(e) => setNotes(e.target.value)} />
+      </div>
+      <Button type="submit" variant="secondary" disabled={busy} className="h-8 px-3 text-xs">
+        {busy ? "Saving…" : "Save changes"}
+      </Button>
+      <button type="button" onClick={onDone} className="h-8 text-xs text-ink-500 hover:underline">
+        Cancel
+      </button>
+      {error && <p className="w-full text-xs text-red-600">{error}</p>}
+    </form>
+  );
+}
+
 function ItemQuotes({
   requisitionId,
   item,
   editable,
+  canEditQuotes = false,
 }: {
   requisitionId: string;
   item: CostableItem;
   editable: boolean;
+  /** Purchasing and the Owner may correct a recorded quote while the requisition is still being costed */
+  canEditQuotes?: boolean;
 }) {
   const router = useRouter();
   const [supplier, setSupplier] = useState("");
   const [unitCost, setUnitCost] = useState("");
   const [notes, setNotes] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -193,20 +244,28 @@ function ItemQuotes({
                   <span className="text-ink-400">by {q.submittedByName}</span>
                   {q.notes && <span className="text-ink-400">— {q.notes}</span>}
                 </div>
-                {editable &&
-                  (selected ? (
-                    <span className="font-medium text-brand-700">✓ Selected</span>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => selectQuote(q.id)}
-                      className="font-medium text-brand-600 hover:underline disabled:opacity-50"
-                    >
-                      Select this
+                <div className="flex items-center gap-3">
+                  {canEditQuotes && editingId !== q.id && (
+                    <button type="button" onClick={() => setEditingId(q.id)} className="font-medium text-ink-600 hover:underline" aria-label={`Edit the ${q.supplier} quote`}>
+                      Edit
                     </button>
-                  ))}
-                {!editable && selected && <span className="font-medium text-brand-700">✓ Selected</span>}
+                  )}
+                  {editable &&
+                    (selected ? (
+                      <span className="font-medium text-brand-700">✓ Selected</span>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => selectQuote(q.id)}
+                        className="font-medium text-brand-600 hover:underline disabled:opacity-50"
+                      >
+                        Select this
+                      </button>
+                    ))}
+                  {!editable && selected && <span className="font-medium text-brand-700">✓ Selected</span>}
+                </div>
+                {canEditQuotes && editingId === q.id && <QuoteEditForm requisitionId={requisitionId} quote={q} unit={item.unit} onDone={() => setEditingId(null)} />}
               </div>
             );
           })}
@@ -283,10 +342,13 @@ export function ItemsCostingTable({
   editable,
   canUseStock = false,
   stock = [],
+  canEditQuotes = false,
 }: {
   requisitionId: string;
   items: CostableItem[];
   editable: boolean;
+  /** Purchasing / Owner may edit a recorded quote */
+  canEditQuotes?: boolean;
   /** the requisition is charged to a project, so its items can be taken from the warehouse */
   canUseStock?: boolean;
   stock?: StockOption[];
@@ -308,7 +370,7 @@ export function ItemsCostingTable({
             </span>
           </div>
           <ItemWarehouse requisitionId={requisitionId} item={it} editable={editable} canUseStock={canUseStock} stock={stock} />
-          {!it.warehouse && <ItemQuotes requisitionId={requisitionId} item={it} editable={editable} />}
+          {!it.warehouse && <ItemQuotes requisitionId={requisitionId} item={it} editable={editable} canEditQuotes={canEditQuotes} />}
         </div>
       ))}
       <div className="flex items-center justify-between p-3 font-semibold">
@@ -379,20 +441,74 @@ export function ApproveRejectButtons({ requisitionId }: { requisitionId: string 
   );
 }
 
+/**
+ * Owner only: take back an approval because a price or the supplier has to change. The requisition goes back to review, where
+ * the quotes can be edited or another supplier selected, and the Owner approves again. A purchase order already issued from the
+ * approval (nothing delivered yet) is withdrawn with it.
+ */
+export function CancelApprovalButton({ requisitionId, poNumber }: { requisitionId: string; poNumber?: string | null }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function confirmCancel() {
+    setBusy(true);
+    setError("");
+    const err = await patch(requisitionId, { action: "cancel_approval", reason: reason.trim() });
+    setBusy(false);
+    if (err) setError(err);
+    else router.refresh();
+  }
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="text-sm font-medium text-red-600 hover:underline">
+        Cancel approval
+      </button>
+    );
+  }
+  return (
+    <div className="space-y-2 rounded-lg border border-red-200 bg-red-50/50 p-3 text-sm">
+      <p className="text-ink-700">
+        The requisition goes back to review so the prices or supplier can be changed, and its cost is no longer committed until you approve it again.
+        {poNumber ? ` ${poNumber} has nothing delivered yet and will be withdrawn with it.` : ""}
+      </p>
+      <Label htmlFor="cancel-approval-reason">Why (for example, supplier changed or new prices)</Label>
+      <Input id="cancel-approval-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} />
+      <div className="flex gap-2">
+        <Button variant="danger" disabled={busy || reason.trim().length < 3} onClick={confirmCancel}>
+          {busy ? "Cancelling…" : "Yes, cancel the approval"}
+        </Button>
+        <Button variant="ghost" onClick={() => setOpen(false)}>
+          Keep it approved
+        </Button>
+      </div>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+    </div>
+  );
+}
+
 interface PoItem {
   name: string;
   qty: number;
   unit: string;
   unitCost: string;
+  /** the supplier of the quote chosen for this item on the requisition — printed in the REMARKS column of the PO form */
+  remarks?: string | null;
 }
 
 /** Purchasing converts an approved requisition into a PO (Spec 6.2). */
 export function CreatePoForm({
   requisitionId,
   initialItems,
+  defaultSupplier = "",
 }: {
   requisitionId: string;
-  initialItems: { name: string; qty: number; unit: string; unitCost?: number | null }[];
+  initialItems: { name: string; qty: number; unit: string; unitCost?: number | null; remarks?: string | null }[];
+  /** the supplier (or suppliers) chosen on the requisition */
+  defaultSupplier?: string;
 }) {
   const router = useRouter();
   const [items, setItems] = useState<PoItem[]>(
@@ -428,7 +544,7 @@ export function CreatePoForm({
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <Label htmlFor="supplier">Supplier *</Label>
-          <Input id="supplier" name="supplier" required />
+          <Input id="supplier" name="supplier" required defaultValue={defaultSupplier} />
         </div>
         <div>
           <Label htmlFor="deliveryDate">Expected delivery</Label>
@@ -440,6 +556,7 @@ export function CreatePoForm({
           <div key={i} className="grid grid-cols-12 items-center gap-2 text-sm">
             <span className="col-span-6 text-ink-700">
               {it.qty} {it.unit} — {it.name}
+              {it.remarks && <span className="block text-xs text-ink-400">from {it.remarks}</span>}
             </span>
             <div className="col-span-4">
               <Input

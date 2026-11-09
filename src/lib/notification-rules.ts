@@ -142,6 +142,8 @@ export const EVENTS: Record<string, EventDef> = {
   REQUISITION_REJECTED: { category: "REQUISITIONS", roles: [], title: "Requisition rejected", explicitTitle: "Your requisition was rejected", body: bodyOf },
   REQUISITION_QUOTE_ADDED: { category: "REQUISITIONS", roles: ["PURCHASING"], title: "A supplier quotation was added to a requisition", body: bodyOf },
   REQUISITION_QUOTE_SELECTED: { category: "REQUISITIONS", roles: ["PURCHASING"], title: "A supplier quotation was selected", body: bodyOf },
+  REQUISITION_QUOTE_EDITED: { category: "REQUISITIONS", roles: ["PURCHASING"], title: "A supplier quotation was changed", body: bodyOf },
+  REQUISITION_APPROVAL_CANCELLED: { category: "REQUISITIONS", roles: ["PURCHASING", "ACCOUNTING"], title: "A requisition's approval was cancelled — prices or supplier are changing", explicitTitle: "The approval of your requisition was cancelled — prices or supplier are changing", body: bodyOf },
   REQUISITION_DELETED: { category: "REQUISITIONS", roles: [], title: "A requisition was deleted", body: bodyOf },
 
   // ----- purchasing & deliveries -----
