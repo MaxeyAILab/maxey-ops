@@ -413,7 +413,7 @@ export async function computeProjectPayroll(
 ): Promise<PayrollEntry[]> {
   const assignments = await prisma.projectAssignment.findMany({
     where: { projectId, active: true },
-    include: { user: { select: { id: true, name: true } } },
+    include: { user: { select: { id: true, name: true, officePayrollFrom: true } } },
     orderBy: { user: { name: "asc" } },
   });
 
@@ -435,9 +435,16 @@ export async function computeProjectPayroll(
   for (const a of assignments) {
     // From the day they joined the project — compared by calendar day, so a 7:30 AM clock-in on the very first day (which is before the
     // start date's midnight-UTC instant) still counts
+    // A person paid through the office payroll (e.g. the project engineer) has no part in the project's weekly payroll from that day on:
+    // their time and any period correction on it go to the office run instead.
+    const officeFrom = a.user.officePayrollFrom ? a.user.officePayrollFrom.toISOString().slice(0, 10) : null;
     const records = attendance.filter(
-      (rec) => rec.userId === a.userId && manilaDayKey(rec.timeIn) >= a.startDate.toISOString().slice(0, 10)
+      (rec) =>
+        rec.userId === a.userId &&
+        manilaDayKey(rec.timeIn) >= a.startDate.toISOString().slice(0, 10) &&
+        !(officeFrom && manilaDayKey(rec.timeIn) >= officeFrom)
     );
+    const officePaidThisPeriod = !!officeFrom && manilaDayKey(periodEnd) >= officeFrom;
     const entry = buildEntry(
       a.user,
       records,
@@ -445,7 +452,7 @@ export async function computeProjectPayroll(
       "SITE",
       approvals,
       overrides,
-      adjustments.get(a.userId) ?? 0
+      officePaidThisPeriod ? 0 : adjustments.get(a.userId) ?? 0
     );
     if (entry) entries.push(entry);
   }
@@ -487,9 +494,12 @@ export async function computePayroll(
   const entries: PayrollEntry[] = [];
   for (const u of users) {
     const hourlyRate = hourlyRateForUser(u, periodStart);
+    // Someone moved to the office payroll from a date (the project engineer…) is paid here only for the days from then on: the days
+    // before were paid, or are still to be paid, by the project's weekly payroll.
+    const officeFrom = u.officePayrollFrom ? u.officePayrollFrom.toISOString().slice(0, 10) : null;
     const entry = buildEntry(
       u,
-      attendance.filter((a) => a.userId === u.id),
+      attendance.filter((a) => a.userId === u.id && (!officeFrom || manilaDayKey(a.timeIn) >= officeFrom)),
       hourlyRate,
       ruleset,
       approvals,

@@ -6,6 +6,7 @@ import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { canApproveSheet, canReviewSheet, lineStage, nextStage } from "@/lib/timesheet";
 import { dayClosedByPayroll } from "@/lib/timesheet-db";
 import { alertReviewFinished } from "@/lib/timesheet-notify";
+import { isOfficePaidOn } from "@/lib/office-payroll";
 
 const schema = z.object({
   projectId: z.string().min(1),
@@ -51,10 +52,20 @@ export const POST = handleApi(async (req: NextRequest) => {
   const names = new Map((await prisma.user.findMany({ where: { id: { in: rows.map((r) => r.userId) } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
   const entries = rows.map((r) => ({ ...r, user: { name: names.get(r.userId) ?? "—" } }));
 
+  // lines of people paid through the office payroll are a group of their own (their own panel on the sheet)
+  const dayAll = await prisma.timesheetEntry.findMany({ where: { projectId: project.id, date }, select: { userId: true, reviewedAt: true } });
+  const flags = new Map((await prisma.user.findMany({ where: { id: { in: dayAll.map((r) => r.userId) } }, select: { id: true, officePayrollFrom: true } })).map((u) => [u.id, isOfficePaidOn(u, body.date)]));
+  const canTickOwn = user.role === "OWNER" || user.role === "PM";
+
   const now = new Date();
   const done: string[] = [];
   const skipped: { userId: string; name: string; why: string }[] = [];
   for (const e of entries) {
+    // nobody checks or approves their own time (the Owner and PM may)
+    if (e.userId === user.id && !canTickOwn) {
+      skipped.push({ userId: e.userId, name: e.user.name, why: "you can't check or approve your own time — the Owner or PM does" });
+      continue;
+    }
     const move = nextStage(body.step, body.checked, lineStage(e));
     if ("error" in move) {
       // when the box for everyone is used, lines already in the wanted state are not worth mentioning
@@ -91,8 +102,11 @@ export const POST = handleApi(async (req: NextRequest) => {
   }
   // the foreman has now checked and reviewed the whole day: the project engineer is told it waits for his approval
   if (body.step === "review" && body.checked && done.length > 0) {
-    const all = await prisma.timesheetEntry.findMany({ where: { projectId: project.id, date }, select: { reviewedAt: true } });
-    if (all.length > 0 && all.every((e) => e.reviewedAt)) {
+    // everyone in the same group (project crew, or the office-paid panel) as the lines just ticked
+    const touched = new Set(entries.filter((e) => done.includes(e.user.name)).map((e) => !!flags.get(e.userId)));
+    const all = await prisma.timesheetEntry.findMany({ where: { projectId: project.id, date }, select: { userId: true, reviewedAt: true } });
+    const group = all.filter((e) => touched.has(!!flags.get(e.userId)));
+    if (group.length > 0 && group.every((e) => e.reviewedAt)) {
       await alertReviewFinished({ projectId: project.id, projectName: project.name, dayKey: body.date, actorId: user.id, actorName: user.name });
     }
   }

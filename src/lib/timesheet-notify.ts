@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { notifyPeople } from "@/lib/notify-people";
 import { approvalOverdue, isForeman, isProjectEngineer, isTimekeeperPosition, lineStage, overdueText, sheetProgress } from "@/lib/timesheet";
 import { manilaDayKey } from "@/lib/time-rules";
+import { isOfficePaidOn } from "@/lib/office-payroll";
 
 /**
  * Phone / inbox alerts of the timekeeper sheet — who is told when:
@@ -104,11 +105,15 @@ export async function sendTimesheetReminders(now: Date = new Date()): Promise<{ 
   since.setUTCDate(since.getUTCDate() - REMINDER_LOOKBACK_DAYS);
   const entries = await prisma.timesheetEntry.findMany({
     where: { date: { gte: since, lt: new Date(`${todayKey}T00:00:00.000Z`) } },
-    select: { projectId: true, date: true, reviewedAt: true, engineerApprovedAt: true },
+    select: { userId: true, projectId: true, date: true, reviewedAt: true, engineerApprovedAt: true },
   });
+  // people paid through the office payroll (the engineer himself…) have their own panel; the engineer's approval does not cover them
+  const officePeople = new Map((await prisma.user.findMany({ where: { officePayrollFrom: { not: null } }, select: { id: true, officePayrollFrom: true } })).map((u) => [u.id, u]));
   const groups = new Map<string, { projectId: string; dayKey: string; lines: { userId: string; stage: ReturnType<typeof lineStage> }[] }>();
   entries.forEach((e, i) => {
     const dayKey = e.date.toISOString().slice(0, 10);
+    const person = officePeople.get(e.userId);
+    if (person && isOfficePaidOn(person, dayKey)) return;
     const key = `${e.projectId}|${dayKey}`;
     const g = groups.get(key) ?? { projectId: e.projectId, dayKey, lines: [] };
     g.lines.push({ userId: String(i), stage: lineStage(e) });

@@ -6,7 +6,9 @@ import { Card, CardBody, CardHeader } from "@/components/ui";
 import { AddSheetWorker, TimekeeperSheet, type SheetWorker } from "@/components/timekeeper-sheet";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
 import { manilaDayKey, manilaTime, manilaWeeklySitePeriod } from "@/lib/time-rules";
-import { approvalOverdue, canApproveSheet, canEditSheet, canOpenTimesheets, canReviewSheet, isSundayKey, lineStage, overdueText, regularHours, sheetProgress, worksSheetFreely } from "@/lib/timesheet";
+import { approvalOverdue, canApproveSheet, canEditSheet, canOpenTimesheets, canReviewSheet, isSundayKey, lineStage, overdueText, regularHours, regularHoursOffice, sheetProgress, worksSheetFreely } from "@/lib/timesheet";
+import { OFFICE_PAID_DEPARTMENTS, isOfficePaidOn, officePayrollFromKey, semiMonthlyRange } from "@/lib/office-payroll";
+import { OfficePayrollControl } from "@/components/office-payroll-control";
 import { dayClosedByPayroll } from "@/lib/timesheet-db";
 
 export const metadata = { title: "Timekeeper sheet" };
@@ -71,14 +73,16 @@ export default async function TimekeeperPage({ searchParams }: { searchParams: {
     prisma.projectAssignment.findMany({
       where: { projectId: project.id, active: true },
       orderBy: { user: { name: "asc" } },
-      select: { user: { select: { id: true, name: true, position: true, role: true, email: true, department: true, active: true } } },
+      select: { user: { select: { id: true, name: true, position: true, role: true, email: true, department: true, active: true, officePayrollFrom: true } } },
     }),
     prisma.timesheetEntry.findMany({ where: { projectId: project.id, date: { gte: new Date(`${addDays(dayKey, -13)}T00:00:00.000Z`), lte: new Date(`${dayKey}T00:00:00.000Z`) } } }),
     prisma.projectAssignment.findFirst({ where: { projectId: project.id, userId: user.id, active: true }, select: { id: true } }),
   ]);
   const people = roster.map((r) => r.user).filter((u) => u.active);
   // everyone assigned to the project is on the sheet; a worker who clocked in on their own that day shows what they clocked instead
-  const workersOnSheet = people;
+  // people paid through the office payroll from a date have a panel of their own and no part in the project's weekly payroll
+  const officePeople = people.filter((u) => isOfficePaidOn(u, dayKey));
+  const workersOnSheet = people.filter((u) => !isOfficePaidOn(u, dayKey));
   const dayStart = manilaTime(dayKey, 0, 0);
   const selfRecords = await prisma.attendance.findMany({
     where: { projectId: project.id, userId: { in: people.map((u) => u.id) }, source: { not: "timekeeper" }, timeIn: { gte: dayStart, lt: new Date(dayStart.getTime() + 86_400_000) } },
@@ -95,7 +99,7 @@ export default async function TimekeeperPage({ searchParams }: { searchParams: {
   const otRequests = pmIds.length ? await prisma.timeAdjustmentRequest.findMany({ where: { attendanceId: { in: pmIds }, type: "OVERTIME" }, select: { attendanceId: true, status: true, approvedHours: true } }) : [];
   const otByAttendance = new Map(otRequests.map((r) => [r.attendanceId, r]));
 
-  const workers: SheetWorker[] = workersOnSheet.map((u) => {
+  const toWorker = (u: (typeof people)[number]): SheetWorker => {
     const e = dayEntries.get(u.id);
     const ot = e?.pmAttendanceId ? otByAttendance.get(e.pmAttendanceId) : undefined;
     return {
@@ -127,12 +131,15 @@ export default async function TimekeeperPage({ searchParams }: { searchParams: {
           }
         : null,
     };
-  });
+  };
+  const workers: SheetWorker[] = workersOnSheet.map(toWorker);
+  const officeWorkers: SheetWorker[] = officePeople.map(toWorker);
 
   const allowed = canEditSheet(user, { assignedToProject: !!mine, dayKey, todayKey });
   const reviewCtx = { assignedToProject: !!mine };
   // a day that has passed without the project engineer approving everything recorded for it
-  const progress = sheetProgress([...dayEntries.values()].map((e) => ({ userId: e.userId, stage: lineStage(e) })));
+  const officeIds = new Set(officePeople.map((u) => u.id));
+  const progress = sheetProgress([...dayEntries.values()].filter((e) => !officeIds.has(e.userId)).map((e) => ({ userId: e.userId, stage: lineStage(e) })));
   const overdue = approvalOverdue(dayKey, todayKey, progress) ? `This day has passed and it is not fully approved: ${overdueText(progress)}.` : null;
   const closed = await dayClosedByPayroll(prisma, project.id, dayKey);
   const lockedReason = closed ? "Payroll for this project has already been approved for this day, so its sheet is closed." : allowed.ok ? null : allowed.reason;
@@ -153,6 +160,29 @@ export default async function TimekeeperPage({ searchParams }: { searchParams: {
     const hours = regularHours(day, { amIn: e.amIn, amOut: e.amOut, pmIn: e.pmIn, pmOut: e.pmOut, otHours: e.otHours ? Number(e.otHours) : null, approvedBy: e.approvedBy, remarks: e.remarks, absent: false }, workersOnSheet.find((w) => w.id === userId)?.department ?? "SITE");
     return { text: hours.toFixed(1).replace(/\.0$/, ""), ot: e.otHours ? Number(e.otHours) : 0 };
   };
+  // the office-paid panel: this semi-monthly period (1st–15th or 16th–end), hours as the office payroll will count them
+  const range = semiMonthlyRange(dayKey);
+  const rangeDays: string[] = [];
+  for (let d = range.start; d <= range.end; d = addDays(d, 1)) rangeDays.push(d);
+  const rangeEntries =
+    officePeople.length > 0
+      ? await prisma.timesheetEntry.findMany({ where: { projectId: project.id, userId: { in: officePeople.map((u) => u.id) }, date: { gte: new Date(`${range.start}T00:00:00.000Z`), lte: new Date(`${range.end}T00:00:00.000Z`) } } })
+      : [];
+  const officeCell = (userId: string, day: string) => {
+    const p = officePeople.find((u) => u.id === userId);
+    if (!p || !isOfficePaidOn(p, day)) return null;
+    const e = rangeEntries.find((x) => x.userId === userId && x.date.toISOString().slice(0, 10) === day);
+    if (!e) return null;
+    if (e.absent) return { text: "A", ot: 0 };
+    if (e.weekendStatus === "PENDING") return { text: "⏳", ot: 0 };
+    if (e.weekendStatus === "REJECTED") return { text: "✕", ot: 0 };
+    const h = regularHoursOffice(day, { amIn: e.amIn, amOut: e.amOut, pmIn: e.pmIn, pmOut: e.pmOut, otHours: e.otHours ? Number(e.otHours) : null, approvedBy: e.approvedBy, remarks: e.remarks, absent: false });
+    return { text: h.toFixed(1).replace(/\.0$/, ""), ot: e.otHours ? Number(e.otHours) : 0 };
+  };
+  // the Owner's switch: who on this project can be paid through the office payroll
+  const officeCandidates = user.role === "OWNER"
+    ? people.filter((u) => u.department && OFFICE_PAID_DEPARTMENTS.includes(u.department)).map((u) => ({ id: u.id, name: u.name, position: u.position ?? "—", from: officePayrollFromKey(u) }))
+    : [];
   const prevDay = addDays(dayKey, -1);
   const nextDay = addDays(dayKey, 1);
   const q = (project_: string, date: string) => `/attendance/timekeeper?project=${project_}&date=${date}`;
@@ -207,6 +237,60 @@ export default async function TimekeeperPage({ searchParams }: { searchParams: {
           <TimekeeperSheet key={`${project.id}|${dayKey}|${workers.length}`} projectId={project.id} dayKey={dayKey} workers={workers} approvers={approvers} canEdit={allowed.ok} lockedReason={lockedReason} canReview={canReviewSheet(user, reviewCtx) && !closed} canApprove={canApproveSheet(user, reviewCtx) && !closed} isSunday={isSundayKey(dayKey)} canDecideWeekend={user.role === "OWNER" && !closed} overdueNote={overdue} />
         </CardBody>
       </Card>
+
+      {officeCandidates.length > 0 && <OfficePayrollControl people={officeCandidates} defaultFrom={semiMonthlyRange(todayKey).start} />}
+
+      {officeWorkers.length > 0 && (
+        <Card>
+          <CardHeader
+            title="Paid through the office payroll"
+            subtitle={`${officeWorkers.map((w) => w.name).join(", ")} — kept apart from this project's weekly payroll; paid on the 1st–15th and 16th–end of the month`}
+          />
+          <CardBody className="space-y-4">
+            <TimekeeperSheet key={`office|${project.id}|${dayKey}|${officeWorkers.length}`} projectId={project.id} dayKey={dayKey} workers={officeWorkers} approvers={approvers} canEdit={allowed.ok} lockedReason={lockedReason} canReview={canReviewSheet(user, reviewCtx) && !closed} canApprove={canApproveSheet(user, reviewCtx) && !closed} isSunday={isSundayKey(dayKey)} canDecideWeekend={user.role === "OWNER" && !closed} overdueNote={null} />
+            <div className="overflow-x-auto">
+              <p className="mb-1 text-xs font-medium text-ink-600">{range.label} — hours the office payroll counts (A = absent, ⏳ = Sunday work waiting for the Owner, +n = overtime recorded)</p>
+              <table className="w-full text-sm" style={{ minWidth: `${12 + rangeDays.length * 2.2}rem` }}>
+                <thead className="text-[11px] uppercase tracking-wide text-ink-500">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Worker</th>
+                    {rangeDays.map((d) => (
+                      <th key={d} className={`px-1 py-2 text-center ${d === dayKey ? "text-brand-700" : ""}`}>
+                        {d.slice(8)}
+                      </th>
+                    ))}
+                    <th className="px-3 py-2 text-right">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-ink-100">
+                  {officeWorkers.map((w) => {
+                    const cells = rangeDays.map((d) => officeCell(w.userId, d));
+                    const total = cells.reduce((s, c) => s + (c && Number.isFinite(Number(c.text)) ? Number(c.text) : 0), 0);
+                    return (
+                      <tr key={w.userId}>
+                        <td className="px-3 py-1.5 font-medium text-ink-800">{w.name}</td>
+                        {cells.map((c, k) => (
+                          <td key={rangeDays[k]} className="px-1 py-1.5 text-center tabular-nums text-ink-700">
+                            {c ? (
+                              <>
+                                {c.text}
+                                {c.ot > 0 && <span className="ml-0.5 text-[10px] text-amber-700">+{c.ot}</span>}
+                              </>
+                            ) : (
+                              <span className="text-ink-300">·</span>
+                            )}
+                          </td>
+                        ))}
+                        <td className="px-3 py-1.5 text-right font-medium tabular-nums text-ink-900">{total.toFixed(1).replace(/\.0$/, "")}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CardBody>
+        </Card>
+      )}
 
       {workersOnSheet.length > 0 && (
         <Card>

@@ -142,3 +142,33 @@ describe("a day that passed without the engineer's approval", () => {
     expect(overdueText({ recorded: 5, reviewed: 5, approved: 5 })).toBe("");
   });
 });
+
+import { isOfficePaidOn, officePayrollFromKey, semiMonthlyRange } from "./office-payroll";
+import { regularHoursOffice } from "./timesheet";
+
+describe("paid through the office payroll", () => {
+  it("is office-paid only from the day set", () => {
+    const p = { officePayrollFrom: new Date("2026-11-01T00:00:00.000Z") };
+    expect(isOfficePaidOn(p, "2026-10-31")).toBe(false);
+    expect(isOfficePaidOn(p, "2026-11-01")).toBe(true);
+    expect(isOfficePaidOn(p, "2026-11-20")).toBe(true);
+    expect(isOfficePaidOn({ officePayrollFrom: null }, "2026-11-20")).toBe(false);
+    expect(isOfficePaidOn({}, "2026-11-20")).toBe(false);
+    expect(officePayrollFromKey(p)).toBe("2026-11-01");
+    expect(officePayrollFromKey({})).toBeNull();
+  });
+  it("knows the 1st–15th and 16th–end periods, including February and 31-day months", () => {
+    expect(semiMonthlyRange("2026-11-11")).toMatchObject({ start: "2026-11-01", end: "2026-11-15" });
+    expect(semiMonthlyRange("2026-11-15").end).toBe("2026-11-15");
+    expect(semiMonthlyRange("2026-11-16")).toMatchObject({ start: "2026-11-16", end: "2026-11-30" });
+    expect(semiMonthlyRange("2026-12-31")).toMatchObject({ start: "2026-12-16", end: "2026-12-31" });
+    expect(semiMonthlyRange("2028-02-20")).toMatchObject({ start: "2028-02-16", end: "2028-02-29" }); // leap year
+    expect(semiMonthlyRange("2027-02-20").end).toBe("2027-02-28");
+  });
+  it("counts a recorded day by the office rules: a standard day is 8, a late arrival loses only the time after 8:00", () => {
+    const base = { amIn: "07:30", amOut: "12:00", pmIn: "13:00", pmOut: "17:00", otHours: null, approvedBy: null, remarks: null, absent: false };
+    expect(regularHoursOffice("2026-11-09", base)).toBe(8);
+    expect(regularHoursOffice("2026-11-09", { ...base, amIn: "08:30" })).toBe(7.5); // office day starts at 8:00, so 8:30 loses half an hour
+    expect(regularHoursOffice("2026-11-09", { ...base, pmIn: null, pmOut: null })).toBe(4);
+  });
+});

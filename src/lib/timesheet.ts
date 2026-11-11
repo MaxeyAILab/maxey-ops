@@ -103,6 +103,18 @@ export function regularHours(dayKey: string, i: SheetInput, _department: string 
   return Math.round(Math.min(8, hours) * 100) / 100;
 }
 
+/**
+ * The hours a recorded day is worth under the OFFICE payroll's own rules (8:00 start, lunch off, no morning/afternoon break), capped at
+ * a normal day — what the office run will count for someone paid through it. Used for the office panel's grid.
+ */
+export function regularHoursOffice(dayKey: string, i: SheetInput): number {
+  const { am, pm } = sheetShifts(dayKey, i);
+  let hours = 0;
+  if (am) hours += computeEffectiveHours(am.in, am.out, "OFFICE", NO_ADJUSTMENTS);
+  if (pm) hours += computeEffectiveHours(pm.in, pm.out, "OFFICE", NO_ADJUSTMENTS);
+  return Math.round(Math.min(8, hours) * 100) / 100;
+}
+
 // ----------------------------------------------------------------------------------------------------------------- who may edit
 
 const TIMEKEEPER = /time[\s-]*keeper/i;

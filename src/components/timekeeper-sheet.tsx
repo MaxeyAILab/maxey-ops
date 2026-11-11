@@ -143,7 +143,7 @@ export function TimekeeperSheet({
     const res = await fetch("/api/timesheet/weekend", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, date: dayKey, decision, ...(userId ? { userIds: [userId] } : {}) }),
+      body: JSON.stringify({ projectId, date: dayKey, decision, userIds: userId ? [userId] : waitingSunday.map((w) => w.userId) }),
     });
     const data = (await res.json().catch(() => null)) as { error?: string; skipped?: { name: string; why: string }[] } | null;
     setTicking(false);
@@ -160,7 +160,8 @@ export function TimekeeperSheet({
     const res = await fetch("/api/timesheet/review", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, date: dayKey, step, checked, ...(userId ? { userIds: [userId] } : {}) }),
+      // the box for everyone acts on this panel's own recorded lines (the office-paid panel is separate from the project crew)
+      body: JSON.stringify({ projectId, date: dayKey, step, checked, userIds: userId ? [userId] : recorded.map((w) => w.userId) }),
     });
     const data = (await res.json().catch(() => null)) as { error?: string; changed?: number; skipped?: { name: string; why: string }[] } | null;
     setTicking(false);
