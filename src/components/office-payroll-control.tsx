@@ -25,7 +25,7 @@ export function OfficePayrollControl({ people, defaultFrom }: { people: Person[]
 
   async function save(p: Person, to: string | null) {
     const ask = to
-      ? `Pay ${p.name} through the office payroll (1st–15th and 16th–end of the month) from ${to}?\n\nTheir time from that day is taken out of this project's weekly payroll — a line in a draft weekly run is removed — and counted in the office run instead.`
+      ? `Pay ${p.name} through the office payroll (1st–15th and 16th–end of the month) from ${to}?\n\nTheir time from that day is taken out of this project's weekly payroll — a line in a draft weekly run is removed — and counted in the office run instead — charged to this project's cost, and never counted twice with their own clock-ins.`
       : `Move ${p.name} back to the project's weekly payroll?\n\nThis is refused if an approved office payroll has already paid those days.`;
     if (!window.confirm(ask)) return;
     setBusy(p.id);

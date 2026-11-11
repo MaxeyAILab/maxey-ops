@@ -46,6 +46,22 @@ export function runGross(entries: unknown): number {
   return (entries as PayrollEntry[]).reduce((s, e) => s + e.gross, 0);
 }
 
+/**
+ * Pay of office-payroll staff who work on a project (the project engineer) — the lines tagged `chargedProject` on office runs — by project.
+ * It is part of that project's labor cost (committed cost) like the crew's payroll. Approved / paid runs by default; pass the open
+ * statuses for the "not committed yet" figure.
+ */
+export async function officePayChargedToProjects(statuses: ("DRAFT" | "REVIEW" | "APPROVED" | "PAID")[] = ["APPROVED", "PAID"]): Promise<Map<string, number>> {
+  const runs = await prisma.payrollRun.findMany({ where: { projectId: null, department: { not: "DRIVER" }, status: { in: statuses } }, select: { entries: true } });
+  const out = new Map<string, number>();
+  for (const run of runs) {
+    for (const e of (Array.isArray(run.entries) ? run.entries : []) as unknown as PayrollEntry[]) {
+      if (e.chargedProject) out.set(e.chargedProject.projectId, (out.get(e.chargedProject.projectId) ?? 0) + e.gross);
+    }
+  }
+  return out;
+}
+
 /** A run's cost to the company's operations: its gross minus any driver hours charged to a non-corporate job. */
 export function corporateRunGross(entries: unknown): number {
   return runGross(entries) - runNonCorporateTotal(entries);
@@ -77,10 +93,11 @@ export async function getProjectFinances(): Promise<ProjectFinance[]> {
   });
 
   const issued = await warehouseIssueCosts(projects.map((p) => p.id));
+  const officeCharged = await officePayChargedToProjects();
   return projects.map((p) => {
     const contractValue = Number(p.contractValue);
     const received = p.payments.reduce((s, x) => s + Number(x.amount), 0);
-    const laborCost = p.payrollRuns.reduce((s, r) => s + runGross(r.entries), 0);
+    const laborCost = p.payrollRuns.reduce((s, r) => s + runGross(r.entries), 0) + (officeCharged.get(p.id) ?? 0);
     const pettyCash = pettyCashCost(p.pettyCash);
     const warehouseMaterialsCost = issued.get(p.id)?.cost ?? 0;
     const committedCost =

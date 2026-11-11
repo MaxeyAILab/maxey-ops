@@ -127,6 +127,7 @@ export function EditablePayrollTable({ runId, initialEntries, otMultiplier, jobs
                 <td className="px-2 py-1.5 font-medium">
                   {e.name}
                   {e.manual && <span className="ml-1.5 rounded-sm bg-ink-200 px-1 py-0.5 text-[10px] font-semibold text-ink-600">added by hand</span>}
+                  {e.chargedProject && <div className="text-[11px] font-normal text-emerald-700">Cost of {e.chargedProject.projectName}</div>}
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums text-ink-500">{e.daysWorked}</td>
                 {(["regularHours", "otHours", "hourlyRate"] as const).map((field) => (

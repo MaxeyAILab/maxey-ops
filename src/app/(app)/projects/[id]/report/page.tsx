@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { fmtDate, fmtDateTime, php } from "@/lib/format";
 import { Badge } from "@/components/ui";
 import { PrintButton } from "@/components/print-button";
-import { runGross } from "@/lib/finance";
+import { officePayChargedToProjects, runGross } from "@/lib/finance";
 import { canAccess } from "@/lib/access";
 import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
 
@@ -56,6 +56,7 @@ export default async function ProjectReportPage({ params }: { params: { id: stri
   const committed =
     warehouseCost +
     p.payrollRuns.reduce((s, r) => s + runGross(r.entries), 0) +
+    ((await officePayChargedToProjects()).get(p.id) ?? 0) +
     p.requisitions.reduce(
       (s, r) => s + (r.purchaseOrder ? Number(r.purchaseOrder.totalCost) : Number(r.estimatedCost ?? 0)),
       0

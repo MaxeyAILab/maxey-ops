@@ -59,6 +59,11 @@ export interface PayrollEntry {
    * a site crew's payroll belongs to the job through its project.
    */
   nonCorporate?: { jobId: string; jobName: string; hours: number };
+  /**
+   * A person paid through the office payroll who works on a project (the project engineer): the whole line is a cost of that project's
+   * committed cost, not of the office. Set when the run is generated, from where their timekeeper-sheet time was recorded.
+   */
+  chargedProject?: { projectId: string; projectName: string };
 }
 
 /** The pay charged to a non-corporate job for a driver's entry: the hours assigned there at their hourly rate. */
@@ -80,6 +85,22 @@ export function normalizeEntries(entries: PayrollEntry[]): PayrollEntry[] {
 }
 
 /**
+ * A person who clocks in on their own phone while the timekeeper also records them on the sheet (the project engineer, who clocks in at
+ * the office and is on the site's timekeeper sheet) has the same hours twice. The sheet is the checked record — the foreman reviews it
+ * and the engineer approves it — so any other clock record of the same person that overlaps a timekeeper record in time is not counted
+ * again. A clock record that does not overlap one (an evening shift, a half day elsewhere) still counts. The records themselves stay
+ * untouched in the log; only the counting skips them. Open shifts are left alone.
+ */
+export function withoutDoubleCounted<T extends Pick<Attendance, "userId" | "timeIn" | "timeOut" | "source">>(records: T[]): T[] {
+  const sheet = records.filter((r) => r.source === "timekeeper" && r.timeOut);
+  if (sheet.length === 0) return records;
+  return records.filter((r) => {
+    if (r.source === "timekeeper" || !r.timeOut) return true;
+    return !sheet.some((s) => s.userId === r.userId && s.timeIn < r.timeOut! && r.timeIn < s.timeOut!);
+  });
+}
+
+/**
  * One user's hours, bucketed by Manila calendar day — the single shared
  * "what counts as a day's hours" computation behind the attendance summary,
  * the yearly log, and payroll's regular/OT split. An Owner override wins
@@ -90,11 +111,12 @@ export function normalizeEntries(entries: PayrollEntry[]): PayrollEntry[] {
  */
 export function computeDailyHoursByDay(
   userId: string,
-  records: Attendance[],
+  allRecords: Attendance[],
   ruleset: TimeRuleset,
   approvals: Map<string, AdjustmentFlags>,
   overrides: Map<string, number>
 ): Map<string, number> {
+  const records = withoutDoubleCounted(allRecords);
   const byDay = new Map<string, number>();
   const approvedDays = new Set<string>();
   for (const r of records) {
@@ -133,9 +155,9 @@ export function splitRegularAndOvertime(hours: number, credited: number): { regu
 }
 
 /** The overtime hours the Owner credited with a number, per Manila day, for the shifts of one person. */
-export function creditedOvertimeByDay(records: Attendance[], ruleset: TimeRuleset, approvals: Map<string, AdjustmentFlags>): Map<string, number> {
+export function creditedOvertimeByDay(allRecords: Attendance[], ruleset: TimeRuleset, approvals: Map<string, AdjustmentFlags>): Map<string, number> {
   const out = new Map<string, number>();
-  for (const r of records) {
+  for (const r of withoutDoubleCounted(allRecords)) {
     const flags = approvals.get(r.id);
     if (!r.timeOut || !flags) continue;
     const c = creditedOvertimeHours(r.timeIn, r.timeOut, ruleset, flags);
@@ -460,6 +482,23 @@ export async function computeProjectPayroll(
 }
 
 /**
+ * The project an office-paid person's pay is charged to: the project whose timekeeper sheet recorded most of their time in the period,
+ * otherwise the one project they are assigned to. Several assignments and no sheet time → none (the pay stays an office cost).
+ */
+export function chargedProjectFor(
+  records: Pick<Attendance, "projectId" | "source">[],
+  assignments: { projectId: string; project: { name: string } }[]
+): { projectId: string; projectName: string } | null {
+  const names = new Map(assignments.map((a) => [a.projectId, a.project.name]));
+  const counts = new Map<string, number>();
+  for (const r of records) {
+    if (r.source === "timekeeper" && r.projectId && names.has(r.projectId)) counts.set(r.projectId, (counts.get(r.projectId) ?? 0) + 1);
+  }
+  const best = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? (assignments.length === 1 ? assignments[0].projectId : null);
+  return best ? { projectId: best, projectName: names.get(best) ?? "project" } : null;
+}
+
+/**
  * Department payroll (Office/Architect/Engineer, paid semi-monthly; Drivers,
  * paid weekly — no project). Drivers follow the SITE schedule and their
  * profile hourlyRate/dailyRate. Office/Architect/Engineer follow the OFFICE
@@ -491,22 +530,24 @@ export async function computePayroll(
     fetchPeriodAdjustments(users.map((u) => u.id), periodStart),
   ]);
 
+  // Staff paid here who work on a project (the project engineer): their whole pay is a cost of that project, so each is tagged with it
+  const officePaid = users.filter((u) => u.officePayrollFrom);
+  const assignments = officePaid.length
+    ? await prisma.projectAssignment.findMany({ where: { userId: { in: officePaid.map((u) => u.id) }, active: true }, select: { userId: true, projectId: true, project: { select: { name: true } } } })
+    : [];
+
   const entries: PayrollEntry[] = [];
   for (const u of users) {
     const hourlyRate = hourlyRateForUser(u, periodStart);
     // Someone moved to the office payroll from a date (the project engineer…) is paid here only for the days from then on: the days
     // before were paid, or are still to be paid, by the project's weekly payroll.
     const officeFrom = u.officePayrollFrom ? u.officePayrollFrom.toISOString().slice(0, 10) : null;
-    const entry = buildEntry(
-      u,
-      attendance.filter((a) => a.userId === u.id && (!officeFrom || manilaDayKey(a.timeIn) >= officeFrom)),
-      hourlyRate,
-      ruleset,
-      approvals,
-      overrides,
-      adjustments.get(u.id) ?? 0,
-      otMultiplierFor(department)
-    );
+    const mine = attendance.filter((a) => a.userId === u.id && (!officeFrom || manilaDayKey(a.timeIn) >= officeFrom));
+    const entry = buildEntry(u, mine, hourlyRate, ruleset, approvals, overrides, adjustments.get(u.id) ?? 0, otMultiplierFor(department));
+    if (entry && officeFrom) {
+      const charged = chargedProjectFor(mine, assignments.filter((a) => a.userId === u.id));
+      if (charged) entry.chargedProject = charged;
+    }
     if (entry) entries.push(entry);
   }
   return entries;

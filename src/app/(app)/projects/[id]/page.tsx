@@ -18,7 +18,7 @@ import { AccomplishmentRadial, WorkItemWeightBars } from "@/components/charts";
 import { DailyReportCard, DailyReportForm, type DailyReportDisplay } from "@/components/daily-report-actions";
 import { DAILY_REPORT_LIFETIME_DAYS } from "@/lib/daily-reports";
 import { PhotoThumbnails } from "@/components/photo-viewer";
-import { LIQUIDATED_PETTY_CASH, pettyCashCost, runGross } from "@/lib/finance";
+import { LIQUIDATED_PETTY_CASH, officePayChargedToProjects, pettyCashCost, runGross } from "@/lib/finance";
 import { warehouseIssueCosts } from "@/lib/warehouse-issue-cost";
 import { canAccess } from "@/lib/access";
 import { canAddDocument, canInputProgress, canLogPotentialChange } from "@/lib/project-input";
@@ -195,7 +195,8 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
 
   const contractValue = Number(p.contractValue);
   const received = p.payments.reduce((s, x) => s + Number(x.amount), 0);
-  const laborCost = p.payrollRuns.reduce((s, r) => s + runGross(r.entries), 0);
+  // + the pay of office-payroll staff working on this project (the project engineer), charged to it when their office run was generated
+  const laborCost = p.payrollRuns.reduce((s, r) => s + runGross(r.entries), 0) + ((await officePayChargedToProjects()).get(p.id) ?? 0);
   // Same rule as finance and the dashboard (requisitionAmount): a cancelled PO commits nothing.
   const pettyCash = pettyCashCost(p.pettyCash);
   // what this job took out of the warehouse stock (net of returns), at the price logged — a cost of the job like any purchase
@@ -210,7 +211,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
         prisma.pettyCashRequest.findMany({ where: { projectId: p.id, status: { in: ["RELEASED", "FOR_LIQUIDATION"] } }, select: { amount: true } }),
       ])
     : [[], []];
-  const draftPayroll = draftPayrollRuns.reduce((s, r) => s + runGross(r.entries), 0);
+  const draftPayroll = draftPayrollRuns.reduce((s, r) => s + runGross(r.entries), 0) + (showMargin ? ((await officePayChargedToProjects(["DRAFT", "REVIEW"])).get(p.id) ?? 0) : 0);
   const openPettyCashTotal = openPettyCash.reduce((s, r) => s + Number(r.amount), 0);
   const committed =
     laborCost +

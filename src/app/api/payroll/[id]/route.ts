@@ -73,7 +73,12 @@ export const PATCH = handleApi(
         : await computePayroll(run.department!, run.periodStart, run.periodEnd);
       const freshBy = new Map(fresh.map((e) => [e.userId, e]));
       const multiplier = otMultiplierFor(run.department);
-      const next = existing.map((e) => refreshEntryHours(e, freshBy.get(e.userId), multiplier));
+      const next = existing.map((e) => {
+        const refreshed = refreshEntryHours(e, freshBy.get(e.userId), multiplier);
+        // the project an office-paid person's pay is charged to follows where their sheet time now sits, until the run is approved
+        const charged = freshBy.get(e.userId)?.chargedProject;
+        return charged && !e.manual ? { ...refreshed, chargedProject: charged } : refreshed;
+      });
       const changes = existing.flatMap((before, i) => {
         const after = next[i];
         if (before.regularHours === after.regularHours && before.otHours === after.otHours && before.daysWorked === after.daysWorked && before.gross === after.gross) return [];
@@ -154,6 +159,7 @@ export const PATCH = handleApi(
           ...(prior.slipRef ? { slipRef: prior.slipRef } : {}),
           ...(prior.manual ? { manual: true } : {}),
           ...(nonCorporate ? { nonCorporate } : {}),
+          ...(prior.chargedProject ? { chargedProject: prior.chargedProject } : {}),
         };
       });
       // Keep any existing entry not present in the submitted edit list —
@@ -210,6 +216,11 @@ export const PATCH = handleApi(
         // Priced on the rate as the register shows it (to the centavo), so saving the register later can't move the gross.
         const shownRate = Math.round(rate * 100) / 100;
         const entry: PayrollEntry = { ...pricedEntry({ id: person.id, name: person.name }, 0, body.regularHours, body.otHours, shownRate, otMultiplierFor(run.department)), manual: true };
+        // someone paid through the office payroll who works on a project: the line is that project's cost
+        if (!run.projectId && person.officePayrollFrom) {
+          const mine = await db.projectAssignment.findMany({ where: { userId: person.id, active: true }, select: { userId: true, projectId: true, project: { select: { name: true } } } });
+          if (mine.length === 1) entry.chargedProject = { projectId: mine[0].projectId, projectName: mine[0].project.name };
+        }
         const entries = [...existing, entry].sort((a, b) => a.name.localeCompare(b.name));
         await db.payrollRun.update({ where: { id: run.id }, data: { entries: entries as never } });
         return { run, entry, workers: entries.length };

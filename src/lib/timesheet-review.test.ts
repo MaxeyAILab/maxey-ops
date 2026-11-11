@@ -172,3 +172,52 @@ describe("paid through the office payroll", () => {
     expect(regularHoursOffice("2026-11-09", { ...base, pmIn: null, pmOut: null })).toBe(4);
   });
 });
+
+import { chargedProjectFor, computeDailyHoursByDay, withoutDoubleCounted } from "./payroll";
+import type { Attendance } from "@prisma/client";
+
+describe("the same hours are never counted twice (own clock-in + timekeeper sheet)", () => {
+  const D = "2026-11-10";
+  const t = (hm: string) => { const [h, m] = hm.split(":").map(Number); return manilaTime(D, h, m); };
+  const rec = (id: string, source: string, inn: string, out: string, projectId = "rdf"): Attendance =>
+    ({ id, userId: "jonnel", timeIn: t(inn), timeOut: t(out), source, projectId } as unknown as Attendance);
+  // Jonnel on Nov 10: his own office clock 7:35–5:08 and the timekeeper's two halves
+  const own = rec("own", "online", "07:35", "17:08", "office");
+  const am = rec("am", "timekeeper", "07:30", "12:00");
+  const pm = rec("pm", "timekeeper", "13:00", "17:00");
+
+  it("drops his own clock record when the sheet already covers the same time", () => {
+    expect(withoutDoubleCounted([own, am, pm]).map((r) => r.id)).toEqual(["am", "pm"]);
+  });
+  it("a day is 8 hours, not 16 — in the office run and the project run alike", () => {
+    expect(computeDailyHoursByDay("jonnel", [own, am, pm], "OFFICE", new Map(), new Map()).get(D)).toBe(8);
+    expect(computeDailyHoursByDay("jonnel", [own, am, pm], "SITE", new Map(), new Map()).get(D)).toBe(8);
+  });
+  it("nothing is dropped when the sheet has no record, or the clock record does not overlap it", () => {
+    expect(withoutDoubleCounted([own])).toEqual([own]);
+    const evening = rec("eve", "online", "18:00", "20:00", "office");
+    expect(withoutDoubleCounted([am, pm, evening]).map((r) => r.id)).toEqual(["am", "pm", "eve"]);
+  });
+  it("another person's sheet record never hides this person's clock-in", () => {
+    const other = { ...am, id: "x", userId: "someone" } as Attendance;
+    expect(withoutDoubleCounted([own, other]).map((r) => r.id)).toEqual(["own", "x"]);
+  });
+  it("an open shift is left alone", () => {
+    const open = { ...own, id: "open", timeOut: null } as Attendance;
+    expect(withoutDoubleCounted([open, am]).map((r) => r.id)).toEqual(["open", "am"]);
+  });
+});
+
+describe("the project an office-paid person's pay is charged to", () => {
+  const rdf = { projectId: "rdf", project: { name: "RDF Florida Farm" } };
+  const other = { projectId: "o", project: { name: "Other" } };
+  it("follows where the sheet time was recorded", () => {
+    const recs = [{ projectId: "rdf", source: "timekeeper" }, { projectId: "rdf", source: "timekeeper" }, { projectId: "o", source: "timekeeper" }];
+    expect(chargedProjectFor(recs, [rdf, other])).toEqual({ projectId: "rdf", projectName: "RDF Florida Farm" });
+  });
+  it("falls back to the one project they are assigned to, never guesses between several", () => {
+    expect(chargedProjectFor([], [rdf])).toEqual({ projectId: "rdf", projectName: "RDF Florida Farm" });
+    expect(chargedProjectFor([], [rdf, other])).toBeNull();
+    expect(chargedProjectFor([{ projectId: "office", source: "online" }], [rdf, other])).toBeNull();
+  });
+});

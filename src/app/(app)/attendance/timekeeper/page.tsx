@@ -244,7 +244,7 @@ export default async function TimekeeperPage({ searchParams }: { searchParams: {
         <Card>
           <CardHeader
             title="Paid through the office payroll"
-            subtitle={`${officeWorkers.map((w) => w.name).join(", ")} — kept apart from this project's weekly payroll; paid on the 1st–15th and 16th–end of the month`}
+            subtitle={`${officeWorkers.map((w) => w.name).join(", ")} — kept apart from this project's weekly payroll; paid on the 1st–15th and 16th–end of the month, and the pay is charged to ${project.name}'s cost. Their own clock-ins that overlap this sheet are not counted twice`}
           />
           <CardBody className="space-y-4">
             <TimekeeperSheet key={`office|${project.id}|${dayKey}|${officeWorkers.length}`} projectId={project.id} dayKey={dayKey} workers={officeWorkers} approvers={approvers} canEdit={allowed.ok} lockedReason={lockedReason} canReview={canReviewSheet(user, reviewCtx) && !closed} canApprove={canApproveSheet(user, reviewCtx) && !closed} isSunday={isSundayKey(dayKey)} canDecideWeekend={user.role === "OWNER" && !closed} overdueNote={null} />

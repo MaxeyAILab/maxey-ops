@@ -174,6 +174,7 @@ export default async function PayrollRunPage({ params }: { params: { id: string 
                           Non-corporate: {e.nonCorporate.jobName} · {e.nonCorporate.hours} hrs ({php(nonCorporateCharge(e))})
                         </div>
                       )}
+                      {e.chargedProject && <div className="text-[11px] font-normal text-emerald-700">Cost of {e.chargedProject.projectName}</div>}
                     </Td>
                     <Td className="text-right tabular-nums">{e.daysWorked}</Td>
                     <Td className="text-right tabular-nums">{e.regularHours}</Td>
