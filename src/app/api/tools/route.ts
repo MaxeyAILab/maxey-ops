@@ -11,7 +11,7 @@ import { wholeQty } from "@/lib/tool-lots";
 
 const createSchema = z.object({
   name: z.string().min(1).max(200),
-  assetTag: z.string().max(50).optional().or(z.literal("")),
+  assetTag: z.string().max(50).nullish().or(z.literal("")),
   category: z.string().max(100).optional().or(z.literal("")),
   /** how it is doing when it is added: working, for repair, not working, for disposal */
   workingStatus: z.enum(TOOL_CONDITIONS).default("WORKING"),

@@ -32,7 +32,8 @@ export function AddToolForm({ warehouse = "MAIN" }: { warehouse?: WarehouseValue
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: fd.get("name"),
-        assetTag: fd.get("assetTag"),
+        // a counted tool (Scaffolding & Shoring) has no asset tag field at all — send nothing rather than null
+        assetTag: counted ? "" : (fd.get("assetTag") ?? ""),
         category: fd.get("category"),
         workingStatus: counted ? "WORKING" : fd.get("workingStatus"),
         warehouse: fd.get("warehouse"),
