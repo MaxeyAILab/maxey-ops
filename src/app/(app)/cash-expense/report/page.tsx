@@ -19,7 +19,7 @@ import {
   missingReceipt,
 } from "@/lib/cash-expense";
 import { CashExpenseHeader, CashIcons, CashStat, CashStatus, Panel } from "@/components/cash-expense-header";
-import { AddReceipts, EditReportButton, LiquidationForm, NoReceiptFlag, RequestActions, VerifyActions, type EditableReport } from "@/components/cash-expense-actions";
+import { AddReceipts, ChangeProjectButton, EditReportButton, LiquidationForm, NoReceiptFlag, RequestActions, VerifyActions, type EditableReport } from "@/components/cash-expense-actions";
 import { PrintButton } from "@/components/print-button";
 
 export const metadata = { title: "Petty Cash Report" };
@@ -194,6 +194,11 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
                   <div className="text-right">
                     <div className="text-lg font-bold tabular-nums text-ink-900">{php(r.amount)}</div>
                     <CashStatus status={r.status} label="Released" />
+                    {canDelete && (
+                      <div className="mt-1.5">
+                        <ChangeProjectButton id={r.id} no={formatPettyCashNo(r.number)} projectId={r.projectId} projectGroups={projectGroups} />
+                      </div>
+                    )}
                   </div>
                 </div>
                 {r.receivedAt ? (
@@ -226,6 +231,7 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="font-semibold tabular-nums text-ink-900">{php(r.amount)}</span>
+                  {canDelete && <ChangeProjectButton id={r.id} no={formatPettyCashNo(r.number)} projectId={r.projectId} projectGroups={projectGroups} />}
                   <RequestActions id={r.id} status={r.status} canApprove={false} canRelease={false} canDelete={canDelete} custodian={custodian} own={false} isRequester={false} received={!!r.receivedAt} />
                 </div>
               </div>

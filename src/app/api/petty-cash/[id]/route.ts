@@ -38,6 +38,12 @@ const patchSchema = z.discriminatedUnion("action", [
     removeReceipts: z.array(z.string()).max(12).optional(),
     reason: z.string().trim().min(3).max(300),
   }),
+  // The Owner moves a request to another project (or General & Administrative) at any stage — e.g. cash already released for a delivery that was cancelled.
+  z.object({
+    action: z.literal("change_project"),
+    projectId: z.string().min(1).nullable(), // null = General & Administrative (no project)
+    reason: z.string().trim().min(3).max(300),
+  }),
   z.object({ action: z.literal("verify") }),
   z.object({ action: z.literal("send_back"), reason: z.string().trim().min(3).max(300) }),
 ]);
@@ -191,6 +197,18 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
         note: { from: r.liquidationNote, to: body.note || null },
         receiptsRemoved: Array.from(drop),
       };
+      break;
+    }
+    case "change_project": {
+      // Only the Owner: it moves the expense (once posted) between projects' committed costs.
+      if (!canApproveCash(user)) throw new ApiError(403, "Only the Owner changes the project of a petty cash request");
+      expect("PENDING", "APPROVED", "RELEASED", "FOR_LIQUIDATION", "LIQUIDATED");
+      if ((body.projectId ?? null) === r.projectId) throw new ApiError(400, `${no} is already charged to ${r.project?.name ?? "General & Administrative"}`);
+      const project = body.projectId ? await prisma.project.findUnique({ where: { id: body.projectId }, select: { name: true } }) : null;
+      if (body.projectId && !project) throw new ApiError(400, "Unknown project");
+      data = { projectId: body.projectId };
+      action = "PETTY_CASH_PROJECT_CHANGED";
+      diff = { ...diff, status: r.status, amount: Number(r.amount), reason: body.reason, project: { from: r.project?.name ?? null, to: project?.name ?? null } };
       break;
     }
     case "verify":

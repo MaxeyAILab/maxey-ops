@@ -863,6 +863,81 @@ export function AdvanceActions({ id, status, canApprove, repaid, deleteInfo }: {
   );
 }
 
+/**
+ * Owner only: change which project a petty cash request is charged to (or General & Administrative), at any stage — also while the
+ * cash is released and the expenses are not reported yet. A reason is required and the change is recorded with what it was before.
+ * Once the report is verified, the posted expense moves between the projects' committed costs.
+ */
+export function ChangeProjectButton({ id, no, projectId, projectGroups }: { id: string; no: string; projectId: string | null; projectGroups: { group: string; options: { value: string; label: string }[] }[] }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [to, setTo] = useState(projectId ?? NO_PROJECT);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    const err = await send(`/api/petty-cash/${id}`, "PATCH", { action: "change_project", projectId: to === NO_PROJECT ? null : to, reason: reason.trim() });
+    setBusy(false);
+    if (err) return setError(err);
+    setOpen(false);
+    setReason("");
+    toast("Project changed");
+    router.refresh();
+  }
+
+  return (
+    <>
+      <button type="button" className={smallBtn} onClick={() => setOpen(true)} aria-label={`Change the project of ${no}`}>
+        ⇄ Change project
+      </button>
+      {open && (
+        <Modal title={`${no} — change the project`} onClose={() => setOpen(false)}>
+          <form onSubmit={save} className="space-y-4">
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
+              Choose where this expense is charged. The change is recorded with what it was before; once the report is verified, the expense moves from one project&apos;s committed cost to the other.
+            </p>
+            <div>
+              <label htmlFor={`cp-${id}`} className={labelCls}>
+                Charged to
+              </label>
+              <select id={`cp-${id}`} value={to} onChange={(e) => setTo(e.target.value)} className={fieldCls}>
+                {projectGroups.map((g) => (
+                  <optgroup key={g.group} label={g.group}>
+                    {g.options.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor={`cr-${id}`} className={labelCls}>
+                Reason
+              </label>
+              <input id={`cr-${id}`} value={reason} onChange={(e) => setReason(e.target.value)} required minLength={3} placeholder="e.g., delivery was cancelled" className={fieldCls} />
+            </div>
+            {error && <p className="text-sm text-red-700 dark:text-red-300">{error}</p>}
+            <div className="flex justify-end gap-2">
+              <button type="button" className={smallBtn} onClick={() => setOpen(false)}>
+                Cancel
+              </button>
+              <button type="submit" disabled={busy || reason.trim().length < 3} className={primaryBtn}>
+                {busy ? "Saving…" : "Change project"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </>
+  );
+}
+
 export interface EditableReport {
   id: string;
   no: string;
