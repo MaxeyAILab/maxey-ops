@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { fmtDate, fmtDateTime, php } from "@/lib/format";
 import { Badge } from "@/components/ui";
 import { PrintButton } from "@/components/print-button";
+import { CompanyLetterhead } from "@/components/company-letterhead";
 import { officePayChargedToProjects, runGross } from "@/lib/finance";
 import { canAccess } from "@/lib/access";
 import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
@@ -74,21 +75,9 @@ export default async function ProjectReportPage({ params }: { params: { id: stri
 
       <div className="mx-auto max-w-3xl rounded-xl border border-ink-200 bg-ink-50 p-8 shadow-sm print:border-0 print:shadow-none">
         {/* Letterhead */}
-        <div className="flex items-start justify-between border-b-4 border-brand-500 pb-5">
-          <div className="flex items-center gap-3">
-            <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-500 text-xl font-black text-white">
-              M
-            </span>
-            <div>
-              <div className="text-xl font-black tracking-tight text-ink-900">
-                MAXEY CONSTRUCTION
-              </div>
-              <div className="text-xs text-ink-500">
-                374 Malapit, San Isidro, Nueva Ecija · PCAB Registered
-              </div>
-            </div>
-          </div>
-          <div className="text-right">
+        <div className="flex items-start justify-between gap-4 border-b-4 border-brand-500 pb-5">
+          <CompanyLetterhead />
+          <div className="shrink-0 text-right">
             <div className="text-lg font-bold text-brand-600">PROGRESS REPORT</div>
             <div className="text-xs text-ink-400">Generated {fmtDate(new Date())}</div>
           </div>

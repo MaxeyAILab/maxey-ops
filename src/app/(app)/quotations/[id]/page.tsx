@@ -6,6 +6,7 @@ import { fmtDate, php } from "@/lib/format";
 import { Badge } from "@/components/ui";
 import { QuotationStatusButton } from "@/components/lead-actions";
 import { PrintButton } from "@/components/print-button";
+import { CompanyLetterhead } from "@/components/company-letterhead";
 
 export const dynamic = "force-dynamic";
 
@@ -47,21 +48,9 @@ export default async function QuotationPage({ params }: { params: { id: string }
 
       {/* Letterhead document */}
       <div className="mx-auto max-w-3xl rounded-xl border border-ink-200 bg-ink-50 p-8 shadow-sm print:border-0 print:shadow-none">
-        <div className="flex items-start justify-between border-b-4 border-brand-500 pb-5">
-          <div className="flex items-center gap-3">
-            <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-500 text-xl font-black text-white">
-              M
-            </span>
-            <div>
-              <div className="text-xl font-black tracking-tight text-ink-900">
-                MAXEY CONSTRUCTION
-              </div>
-              <div className="text-xs text-ink-500">
-                374 Malapit, San Isidro, Nueva Ecija · PCAB Registered
-              </div>
-            </div>
-          </div>
-          <div className="text-right">
+        <div className="flex items-start justify-between gap-4 border-b-4 border-brand-500 pb-5">
+          <CompanyLetterhead />
+          <div className="shrink-0 text-right">
             <div className="text-lg font-bold text-brand-600">QUOTATION</div>
             <div className="text-sm font-medium text-ink-700">{q.number}</div>
             <div className="text-xs text-ink-400">{fmtDate(q.createdAt)}</div>
