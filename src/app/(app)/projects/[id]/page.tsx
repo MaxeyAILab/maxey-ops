@@ -690,7 +690,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
               href={`/projects/${p.id}/report`}
               className="inline-flex min-h-[36px] items-center rounded-lg border border-ink-200 px-3 py-1.5 text-sm font-medium text-ink-700 hover:bg-ink-50"
             >
-              📄 Progress report
+              📄 Progress reports
             </Link>
             <Badge value={p.status} />
           </div>

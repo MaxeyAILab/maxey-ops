@@ -501,6 +501,7 @@ model Project {
   findings          Finding[]
   closeoutItems     CloseoutItem[]
   documents         ProjectDocument[]
+  progressReportFiles ProgressReportFile[]
   materialStocks    ProjectMaterialStock[]
   toolAssets        ToolAsset[]               @relation("ToolCurrentProject")
   materialMovesFrom InventoryMovement[]       @relation("MaterialMoveFrom")
@@ -1251,6 +1252,25 @@ model ProjectDocument {
   rfis      Rfi[]
 
   @@index([projectId])
+}
+
+/// A progress report PDF uploaded by the Project Engineer, PM or Owner for a reporting period (owner's request 2026-11-13:
+/// replaces the auto-compiled report behind the project's "Progress reports" button for now).
+model ProgressReportFile {
+  id             String   @id @default(cuid())
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  periodFrom     DateTime @db.Date
+  periodTo       DateTime @db.Date
+  title          String
+  url            String // /api/files/... (or /uploads/... on a local copy)
+  fileName       String?
+  notes          String?
+  uploadedById   String
+  uploadedByName String
+  createdAt      DateTime @default(now())
+
+  @@index([projectId, periodTo])
 }
 
 model DocumentRevision {

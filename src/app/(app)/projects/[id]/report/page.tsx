@@ -1,212 +1,111 @@
 import Link from "next/link";
-import { warehouseIssueCosts } from "@/lib/warehouse-issue-cost";
 import { notFound, redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { fmtDate, fmtDateTime, php } from "@/lib/format";
-import { Badge } from "@/components/ui";
-import { PrintButton } from "@/components/print-button";
-import { CompanyLetterhead } from "@/components/company-letterhead";
-import { officePayChargedToProjects, runGross } from "@/lib/finance";
+import { fmtDate, fmtDateTime } from "@/lib/format";
 import { canAccess } from "@/lib/access";
-import { computeWorkItemStatuses, weightedAccomplishment } from "@/lib/progress";
+import { canAddDocument, isProjectManagerRole } from "@/lib/project-input";
+import { Card, CardBody, CardHeader } from "@/components/ui";
+import { RemoveProgressReportButton, UploadProgressReportForm } from "@/components/progress-report-files";
 
 export const dynamic = "force-dynamic";
 
+const ymd = (d: Date) => d.toISOString().slice(0, 10);
+/** A @db.Date shown as the calendar day it was saved as (stored at UTC midnight). */
+const day = (d: Date) => fmtDate(new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+
 /**
- * Auto-compiled Project Progress Report (Spec 6.7): photo timeline,
- * instruction log, and cost-to-date — a defensible, attributed record of what
- * was reported, when, and by whom. Print-ready with company letterhead.
+ * Project progress reports — PDFs uploaded by the Project Engineer, PM or Owner, one per reporting period
+ * (owner's request 2026-11-13: these replace the auto-compiled report for now; that one is kept at ./compiled).
  */
-export default async function ProjectReportPage({ params }: { params: { id: string } }) {
+export default async function ProjectProgressReportsPage({ params }: { params: { id: string } }) {
   const user = await getSessionUser();
   if (!user) redirect("/login");
-  if (!canAccess(user.role, user.department, "/projects", user.customMenus, user.useCustomMenus)) {
-    redirect("/attendance");
-  }
+  if (!canAccess(user.role, user.department, "/projects", user.customMenus, user.useCustomMenus)) redirect("/attendance");
 
   const p = await prisma.project.findUnique({
     where: { id: params.id },
-    include: {
-      client: true,
-      payments: true,
-      paymentTerms: true,
-      requisitions: {
-        where: { status: { in: ["APPROVED", "PO_ISSUED", "DELIVERED"] } },
-        include: { purchaseOrder: true },
-      },
-      payrollRuns: { where: { status: { in: ["APPROVED", "PAID"] } } },
-      progressEntries: {
-        orderBy: { createdAt: "desc" },
-        include: { submittedBy: { select: { name: true } } },
-      },
-      instructions: {
-        orderBy: { createdAt: "desc" },
-        include: { postedBy: { select: { name: true } } },
-      },
-      deliveries: { orderBy: { createdAt: "desc" }, include: { po: { select: { poNumber: true } } } },
+    select: {
+      id: true,
+      name: true,
+      startDate: true,
+      client: { select: { name: true } },
+      progressReportFiles: { orderBy: [{ periodTo: "desc" }, { createdAt: "desc" }] },
     },
   });
   if (!p) notFound();
 
-  const showMoney = ["OWNER", "PM", "ACCOUNTING"].includes(user.role);
-  // Same rule as the project detail page: committed cost stays Owner-only.
-  const showCommitted = user.role === "OWNER";
-  const received = p.payments.reduce((s, x) => s + Number(x.amount), 0);
-  const warehouseCost = (await warehouseIssueCosts([p.id])).get(p.id)?.cost ?? 0; // what the job took out of the warehouse stock
-  const committed =
-    warehouseCost +
-    p.payrollRuns.reduce((s, r) => s + runGross(r.entries), 0) +
-    ((await officePayChargedToProjects()).get(p.id) ?? 0) +
-    p.requisitions.reduce(
-      (s, r) => s + (r.purchaseOrder ? Number(r.purchaseOrder.totalCost) : Number(r.estimatedCost ?? 0)),
-      0
-    );
-  const accomplishmentPct = weightedAccomplishment(computeWorkItemStatuses(p.progressEntries));
+  const canUpload = canAddDocument(user);
+  const reports = p.progressReportFiles;
+  const latest = reports[0];
+  const nextFrom = latest
+    ? ymd(new Date(latest.periodTo.getTime() + 86_400_000))
+    : p.startDate
+      ? p.startDate.toLocaleDateString("en-CA", { timeZone: "Asia/Manila" }) // YYYY-MM-DD, the day it is in the Philippines
+      : undefined;
 
   return (
-    <div className="space-y-4">
-      <div className="no-print flex items-center justify-between gap-3">
+    <div className="mx-auto max-w-3xl space-y-4">
+      <div>
         <Link href={`/projects/${p.id}`} className="text-xs text-ink-400 hover:text-ink-600">
           ← Back to project
         </Link>
-        <PrintButton label="Print / PDF" />
+        <h1 className="text-xl font-bold text-ink-900">Progress reports</h1>
+        <p className="text-xs text-ink-500">
+          {p.name} · {p.client.name}
+        </p>
       </div>
 
-      <div className="mx-auto max-w-3xl rounded-xl border border-ink-200 bg-ink-50 p-8 shadow-sm print:border-0 print:shadow-none">
-        {/* Letterhead */}
-        <div className="flex items-start justify-between gap-4 border-b-4 border-brand-500 pb-5">
-          <CompanyLetterhead />
-          <div className="shrink-0 text-right">
-            <div className="text-lg font-bold text-brand-600">PROGRESS REPORT</div>
-            <div className="text-xs text-ink-400">Generated {fmtDate(new Date())}</div>
-          </div>
-        </div>
-
-        {/* Summary */}
-        <div className="mt-5 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
-          <div>
-            <div className="text-xs font-semibold uppercase text-ink-400">Project</div>
-            <div className="font-medium text-ink-900">{p.name}</div>
-            <div className="text-xs text-ink-500">{p.address}</div>
-          </div>
-          <div>
-            <div className="text-xs font-semibold uppercase text-ink-400">Client</div>
-            <div className="font-medium text-ink-900">{p.client.name}</div>
-          </div>
-          <div>
-            <div className="text-xs font-semibold uppercase text-ink-400">Schedule</div>
-            <div className="text-ink-700">
-              {fmtDate(p.startDate)} → {fmtDate(p.targetEndDate)}
-            </div>
-          </div>
-          <div>
-            <div className="text-xs font-semibold uppercase text-ink-400">Overall progress</div>
-            <div className="text-lg font-bold text-brand-600">{accomplishmentPct.toFixed(0)}%</div>
-          </div>
-        </div>
-
-        {showMoney && (
-          <div
-            className={`mt-4 grid gap-4 rounded-lg bg-ink-100 p-4 text-sm print:bg-transparent print:p-0 ${showCommitted ? "grid-cols-3" : "grid-cols-2"}`}
-          >
-            <div>
-              <div className="text-xs uppercase text-ink-400">Contract value</div>
-              <div className="font-semibold tabular-nums">{php(p.contractValue.toString())}</div>
-            </div>
-            <div>
-              <div className="text-xs uppercase text-ink-400">Payments received</div>
-              <div className="font-semibold tabular-nums text-emerald-700">{php(received)}</div>
-            </div>
-            {showCommitted && (
-              <div>
-                <div className="text-xs uppercase text-ink-400">Cost committed to date</div>
-                <div className="font-semibold tabular-nums">{php(committed)}</div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Progress timeline */}
-        <h2 className="mt-8 border-b border-ink-200 pb-1 text-sm font-bold uppercase tracking-wide text-ink-700">
-          Progress timeline ({p.progressEntries.filter((e) => e.reviewStatus === "APPROVED").length} approved entries)
-        </h2>
-        <ol className="mt-3 space-y-3">
-          {p.progressEntries.filter((e) => e.reviewStatus === "APPROVED").map((e) => (
-            <li key={e.id} className="flex gap-3 text-sm">
-              <div className="w-14 shrink-0 text-right font-bold tabular-nums text-brand-600">
-                {Number(e.pctComplete).toFixed(0)}%
-              </div>
-              <div className="min-w-0 border-l-2 border-ink-100 pl-3">
-                <div className="text-xs text-ink-400">
-                  {fmtDateTime(e.createdAt)} · reported by {e.submittedBy.name}
-                </div>
-                {e.workItem && <div className="font-medium text-ink-800">{e.workItem}</div>}
-                {e.notes && <p className="text-xs text-ink-600">{e.notes}</p>}
-                {Array.isArray(e.photos) && (e.photos as string[]).length > 0 && (
-                  <div className="mt-1.5 flex flex-wrap gap-2">
-                    {(e.photos as string[]).map((src) => (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img key={src} src={src} alt="" className="h-24 w-24 rounded object-cover" />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </li>
-          ))}
-        </ol>
-
-        {/* Instructions log */}
-        <h2 className="mt-8 border-b border-ink-200 pb-1 text-sm font-bold uppercase tracking-wide text-ink-700">
-          Site instructions ({p.instructions.length})
-        </h2>
-        <ul className="mt-3 space-y-2">
-          {p.instructions.map((i) => (
-            <li key={i.id} className="flex items-start justify-between gap-3 text-sm">
-              <div>
-                <span className="text-xs text-ink-400">
-                  {fmtDateTime(i.createdAt)} · {i.postedBy.name}:
-                </span>{" "}
-                <span className="text-ink-800">{i.text}</span>
-              </div>
-              <Badge value={i.status} />
-            </li>
-          ))}
-          {p.instructions.length === 0 && (
-            <li className="text-sm text-ink-400">No instructions recorded.</li>
+      <Card>
+        <CardHeader title={`Uploaded reports (${reports.length})`} />
+        <CardBody>
+          {reports.length === 0 ? (
+            <p className="text-sm text-ink-500">
+              No progress report uploaded yet.{canUpload ? " Upload the first one below." : " The Project Engineer, PM or Owner uploads them here."}
+            </p>
+          ) : (
+            <ul className="divide-y divide-ink-100">
+              {reports.map((r) => {
+                const period = `${day(r.periodFrom)} – ${day(r.periodTo)}`;
+                const canRemove = canUpload && (isProjectManagerRole(user) || r.uploadedById === user.id);
+                return (
+                  <li key={r.id} className="flex flex-wrap items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-semibold text-ink-900">{period}</div>
+                      <div className="text-sm text-ink-700">{r.title}</div>
+                      <div className="text-xs text-ink-500">
+                        Uploaded by {r.uploadedByName} · {fmtDateTime(r.createdAt)}
+                        {r.fileName && <> · {r.fileName}</>}
+                      </div>
+                      {r.notes && <div className="mt-0.5 text-xs text-ink-600">{r.notes}</div>}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3">
+                      <a
+                        href={r.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex min-h-[36px] items-center rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700"
+                      >
+                        📄 Open PDF
+                      </a>
+                      {canRemove && <RemoveProgressReportButton id={r.id} label={period} />}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           )}
-        </ul>
+        </CardBody>
+      </Card>
 
-        {/* Deliveries */}
-        <h2 className="mt-8 border-b border-ink-200 pb-1 text-sm font-bold uppercase tracking-wide text-ink-700">
-          Material deliveries ({p.deliveries.length})
-        </h2>
-        <ul className="mt-3 space-y-2">
-          {p.deliveries.map((d) => (
-            <li key={d.id} className="text-sm">
-              <span className="text-xs text-ink-400">{fmtDateTime(d.verifiedAt ?? d.createdAt)}</span>{" "}
-              <span className="font-medium text-ink-800">{d.po.poNumber}</span>
-              {d.needsConfirmation && !d.confirmedAt ? (
-                <span className="text-amber-700"> — ⏳ waiting for the receiver to confirm</span>
-              ) : d.acceptedAt ? (
-                <span className="text-emerald-700"> — accepted as complete by the Owner ({d.acceptedNote})</span>
-              ) : d.discrepancies ? (
-                <span className="text-amber-700"> — ⚠ {d.discrepancies}</span>
-              ) : (
-                <span className="text-emerald-600"> — complete</span>
-              )}
-            </li>
-          ))}
-          {p.deliveries.length === 0 && (
-            <li className="text-sm text-ink-400">No deliveries verified yet.</li>
-          )}
-        </ul>
-
-        <div className="mt-10 text-xs text-ink-400">
-          All entries are timestamped and attributed to named users in the Maxey Construction
-          operations system (append-only audit log).
-        </div>
-      </div>
+      {canUpload && (
+        <Card>
+          <CardHeader title="Upload a progress report" />
+          <CardBody>
+            <UploadProgressReportForm projectId={p.id} defaultFrom={nextFrom} />
+          </CardBody>
+        </Card>
+      )}
     </div>
   );
 }
