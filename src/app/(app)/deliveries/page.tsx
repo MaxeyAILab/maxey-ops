@@ -66,7 +66,59 @@ function ownerData(d: { id: string; driverName: string | null; recipientName: st
   };
 }
 
-export default async function DeliveriesPage() {
+interface ProjectTab {
+  key: string;
+  label: string;
+  count: number;
+}
+
+/** Project tabs for one list: "All" first, then each project A–Z, then non-project groups (G&A, warehouse supply…). */
+function projectTabs<T>(rows: T[], keyOf: (r: T) => { key: string; label: string; isProject: boolean }): ProjectTab[] {
+  const map = new Map<string, ProjectTab & { isProject: boolean }>();
+  for (const r of rows) {
+    const k = keyOf(r);
+    const t = map.get(k.key) ?? { ...k, count: 0 };
+    t.count += 1;
+    map.set(k.key, t);
+  }
+  const groups = Array.from(map.values()).sort((a, b) => Number(b.isProject) - Number(a.isProject) || a.label.localeCompare(b.label));
+  return [{ key: "all", label: "All", count: rows.length }, ...groups.map(({ key, label, count }) => ({ key, label, count }))];
+}
+
+/** A horizontal, scrollable tab bar; each tab keeps the other list's choice in the link. */
+function ProjectTabBar({ tabs, active, param, otherParam, otherValue, anchor }: { tabs: ProjectTab[]; active: string; param: string; otherParam: string; otherValue: string; anchor: string }) {
+  if (tabs.length <= 1) return null; // empty list: nothing to filter
+  const href = (key: string) => {
+    const q = new URLSearchParams();
+    if (key !== "all") q.set(param, key);
+    if (otherValue !== "all") q.set(otherParam, otherValue);
+    const s = q.toString();
+    return `/deliveries${s ? `?${s}` : ""}#${anchor}`;
+  };
+  return (
+    <nav aria-label="Filter by project" className="overflow-x-auto border-b border-ink-100 px-3 py-2 sm:px-4">
+      <div className="flex w-max gap-1 rounded-lg bg-ink-200/60 p-1">
+        {tabs.map((t) => {
+          const on = t.key === active;
+          return (
+            <Link
+              key={t.key}
+              href={href(t.key)}
+              scroll={false}
+              aria-current={on ? "page" : undefined}
+              className={`flex items-center gap-2 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium ${on ? "bg-[#8a1a28] text-white shadow-sm" : "text-ink-600 hover:bg-ink-50 hover:text-ink-900"}`}
+            >
+              {t.label}
+              <span className={`rounded-full px-1.5 text-xs tabular-nums ${on ? "bg-white/20 text-white" : "bg-ink-100 text-ink-600"}`}>{t.count}</span>
+            </Link>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
+export default async function DeliveriesPage({ searchParams }: { searchParams: { awaiting?: string; done?: string } }) {
   const user = await getSessionUser();
   if (!user) redirect("/attendance");
   const hasTab = canAccess(user.role, user.department, "/deliveries", user.customMenus, user.useCustomMenus);
@@ -112,7 +164,24 @@ export default async function DeliveriesPage() {
     ).map((u) => [u.id, u.name])
   );
 
-  const pendingTotal = pendingPos.reduce((s, po) => s + Number(po.totalCost), 0);
+  // Project tabs (owner's request 2026-11-17): one bar on "Awaiting delivery", one on "Completed deliveries"
+  const poGroup = (po: (typeof pendingPos)[number]) =>
+    po.requisition.projectId
+      ? { key: po.requisition.projectId, label: po.requisition.project?.name ?? "Project", isProject: true }
+      : { key: `cat-${po.requisition.category ?? "none"}`, label: projectOrCategoryLabel(po.requisition), isProject: false };
+  const deliveryGroup = (d: (typeof deliveries)[number]) =>
+    d.projectId
+      ? { key: d.projectId, label: d.project?.name ?? "Project", isProject: true }
+      : { key: `cat-${d.po.requisition?.category ?? "none"}`, label: projectOrCategoryLabel({ project: null, category: d.po.requisition?.category }), isProject: false };
+  const awaitingTabs = projectTabs(pendingPos, poGroup);
+  const awaitingTab = awaitingTabs.some((t) => t.key === searchParams.awaiting) ? searchParams.awaiting! : "all";
+  const shownPos = awaitingTab === "all" ? pendingPos : pendingPos.filter((po) => poGroup(po).key === awaitingTab);
+  const completedAll = deliveries.filter((x) => !isAwaitingConfirmation(x));
+  const doneTabs = projectTabs(completedAll, deliveryGroup);
+  const doneTab = doneTabs.some((t) => t.key === searchParams.done) ? searchParams.done! : "all";
+  const completedShown = doneTab === "all" ? completedAll : completedAll.filter((d) => deliveryGroup(d).key === doneTab);
+
+  const pendingTotal = shownPos.reduce((s, po) => s + Number(po.totalCost), 0);
   const recentDeliveries = deliveries.slice(0, 20);
   const shownAwaiting = limited ? forMe : awaiting;
   const checklistOf = (d: { checklist: unknown }) => ((d.checklist as ChecklistRow[]) ?? []).map((c) => ({ ...c, receivedQty: Number(c.receivedQty), orderedQty: Number(c.orderedQty) }));
@@ -130,7 +199,7 @@ export default async function DeliveriesPage() {
   }
   const folderMap = new Map<string, Folder>();
   let deliveredTotal = 0;
-  for (const d of deliveries.filter((x) => !isAwaitingConfirmation(x))) {
+  for (const d of completedShown) {
     const cost = deliveredCost(d.po.items, d.checklist);
     deliveredTotal += cost;
     const at = d.verifiedAt ?? d.createdAt;
@@ -224,22 +293,23 @@ export default async function DeliveriesPage() {
 
       {confirmationCard}
 
-      <Card>
+      <Card id="awaiting" className="scroll-mt-16">
         <CardHeader
-          title={`Awaiting delivery (${pendingPos.length})`}
+          title={`Awaiting delivery (${shownPos.length})`}
           subtitle={
             canVerify
               ? "When materials arrive, open the PO and check items off against the truck"
               : "POs not yet fully delivered"
           }
           action={
-            pendingPos.length > 0 ? (
+            shownPos.length > 0 ? (
               <span className="text-sm font-semibold text-amber-700">
                 {php(pendingTotal)} committed
               </span>
             ) : undefined
           }
         />
+        <ProjectTabBar tabs={awaitingTabs} active={awaitingTab} param="awaiting" otherParam="done" otherValue={doneTab} anchor="awaiting" />
         <Table>
           <thead>
             <tr>
@@ -252,7 +322,7 @@ export default async function DeliveriesPage() {
             </tr>
           </thead>
           <tbody>
-            {pendingPos.map((po) => (
+            {shownPos.map((po) => (
               <tr key={po.id} className="hover:bg-ink-50">
                 <Td className="font-medium">{po.poNumber}</Td>
                 <Td>
@@ -281,7 +351,7 @@ export default async function DeliveriesPage() {
                 )}
               </tr>
             ))}
-            {pendingPos.length === 0 && (
+            {shownPos.length === 0 && (
               <tr>
                 <Td colSpan={canVerify ? 6 : 5} className="py-8 text-center text-ink-400">
                   Nothing awaiting delivery.
@@ -381,17 +451,18 @@ export default async function DeliveriesPage() {
         </CardBody>
       </Card>
 
-      {folders.length > 0 && (
-        <Card>
+      {completedAll.length > 0 && (
+        <Card id="completed" className="scroll-mt-16">
           <CardHeader
             title="Completed deliveries — by month"
-            subtitle="Every verified delivery archived by month, with material value received"
+            subtitle={`Every verified delivery archived by month, with material value received${doneTab === "all" ? "" : ` · ${doneTabs.find((t) => t.key === doneTab)?.label}`}`}
             action={
               <span className="text-sm font-semibold text-emerald-700">
                 {php(deliveredTotal)} delivered to date
               </span>
             }
           />
+          <ProjectTabBar tabs={doneTabs} active={doneTab} param="done" otherParam="awaiting" otherValue={awaitingTab} anchor="completed" />
           <div className="divide-y divide-ink-100">
             {folders.map((f) => (
               <details key={f.key} className="group">
