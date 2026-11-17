@@ -5,6 +5,7 @@ import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
 import { nextPoNumber } from "@/lib/po-number";
+import { purchaseEstimate } from "@/lib/requisition-warehouse";
 
 const poItemSchema = z.object({
   name: z.string().min(1),
@@ -13,6 +14,8 @@ const poItemSchema = z.object({
   unitCost: z.coerce.number().min(0),
   /** supplier of the quote chosen for this item on the requisition — printed in the REMARKS column of the PO form */
   remarks: z.string().trim().max(200).nullish(),
+  /** the requisition line this PO line buys — used to check (and, for the Owner, carry over) a changed quantity */
+  requisitionItemId: z.string().nullish(),
 });
 
 const createSchema = z.object({
@@ -44,7 +47,17 @@ export const POST = handleApi(async (req: NextRequest) => {
   }
 
   // Lines taken from the warehouse are issued from stock when the delivery is confirmed — buying them as well would charge twice.
-  const reqItems = await prisma.requisitionItem.findMany({ where: { requisitionId: requisition.id }, select: { id: true, name: true, qty: true, unit: true, warehouseItemId: true, remarks: true } });
+  const reqItems = await prisma.requisitionItem.findMany({ where: { requisitionId: requisition.id }, select: { id: true, name: true, qty: true, unit: true, warehouseItemId: true, remarks: true, estUnitCost: true } });
+
+  // Quantities: only the Owner may issue the PO for a different quantity than was approved (owner's request 2026-11-17); the
+  // requisition line is changed to match, so the requisition, its estimate and the PO never disagree.
+  const qtyChanges: { id: string; name: string; unit: string; from: number; to: number }[] = [];
+  for (const line of body.items) {
+    const ri = line.requisitionItemId ? reqItems.find((r) => r.id === line.requisitionItemId && !r.warehouseItemId) : null;
+    if (line.requisitionItemId && !ri) throw new ApiError(400, `${line.name} is not a line to buy on this requisition`);
+    if (ri && Math.abs(Number(ri.qty) - line.qty) > 0.0005) qtyChanges.push({ id: ri.id, name: ri.name, unit: ri.unit, from: Number(ri.qty), to: line.qty });
+  }
+  if (qtyChanges.length && user.role !== "OWNER") throw new ApiError(403, "Only the Owner can change the quantity — issue the PO for the approved quantities");
   const bought = new Set(reqItems.filter((i) => !i.warehouseItemId).map((i) => i.name.trim().toLowerCase()));
   const fromStock = reqItems.filter((i) => i.warehouseItemId && !bought.has(i.name.trim().toLowerCase())).map((i) => i.name.trim().toLowerCase());
   const doubled = body.items.find((i) => fromStock.includes(i.name.trim().toLowerCase()));
@@ -71,12 +84,26 @@ export const POST = handleApi(async (req: NextRequest) => {
         createdById: user.id,
       },
     });
+    for (const c of qtyChanges) await db.requisitionItem.update({ where: { id: c.id }, data: { qty: c.to } });
+    const estimatedCost = qtyChanges.length
+      ? purchaseEstimate(reqItems.map((r) => ({ ...r, qty: qtyChanges.find((c) => c.id === r.id)?.to ?? Number(r.qty) })))
+      : undefined;
     await db.requisition.update({
       where: { id: body.requisitionId },
-      data: { status: "PO_ISSUED" },
+      data: { status: "PO_ISSUED", ...(estimatedCost !== undefined ? { estimatedCost } : {}) },
     });
     return po;
   });
+  if (qtyChanges.length) {
+    await audit({
+      entityType: "Requisition",
+      entityId: requisition.id,
+      actorId: user.id,
+      actorName: user.name,
+      action: "REQUISITION_QTY_EDITED",
+      diff: { onPo: po.poNumber, changes: qtyChanges.map((c) => ({ item: c.name, unit: c.unit, qty: { from: c.from, to: c.to } })) },
+    });
+  }
 
   await audit({
     entityType: "PurchaseOrder",

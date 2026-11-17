@@ -53,6 +53,13 @@ const actionSchema = z.discriminatedUnion("action", [
     notes: z.string().max(300).optional().or(z.literal("")),
   }),
   z.object({
+    // Owner only (owner's request 2026-11-17): change how many of an item are bought — while it is being priced, or once approved
+    // until the PO is issued. The estimate (the committed cost before a PO exists) follows.
+    action: z.literal("edit_qty"),
+    itemId: z.string().min(1),
+    qty: z.coerce.number().positive().max(10_000_000),
+  }),
+  z.object({
     // Owner only: take back an approval because a price or supplier has to change. The requisition returns to review.
     action: z.literal("cancel_approval"),
     reason: z.string().trim().min(3).max(300),
@@ -148,6 +155,31 @@ export const PATCH = handleApi(
         actorName: user.name,
         action: "REQUISITION_ITEM_FROM_WAREHOUSE",
         diff: { item: w.name, qty: fromWarehouse, unit: w.unit, warehouse: warehouseLabel(w.warehouse), leftToBuy: toBuy, estimatedCost },
+      });
+      return NextResponse.json(await prisma.requisition.findUnique({ where: { id: requisition.id } }));
+    }
+
+    if (body.action === "edit_qty") {
+      const user = await requireUser(["OWNER"]);
+      const approvedNoPo = requisition.status === "APPROVED" && !(await prisma.purchaseOrder.findUnique({ where: { requisitionId: requisition.id }, select: { id: true } }));
+      if (!["SUBMITTED", "UNDER_REVIEW"].includes(requisition.status) && !approvedNoPo) {
+        throw new ApiError(400, "The quantity can be changed while the requisition is being priced, or after approval until the PO is issued");
+      }
+      const item = requisition.items.find((i) => i.id === body.itemId);
+      if (!item) throw new ApiError(400, "Unknown item on this requisition");
+      // stock taken from the warehouse is reserved when approved — change its quantity before approving (or cancel the approval first)
+      if (item.warehouseItemId && approvedNoPo) throw new ApiError(400, "This item is reserved from the warehouse — cancel the approval first to change how many are taken");
+      const qty = Math.round(body.qty * 1000) / 1000;
+      if (qty === Number(item.qty)) return NextResponse.json(requisition);
+      await prisma.requisitionItem.update({ where: { id: item.id }, data: { qty } });
+      const estimatedCost = await refreshRequisitionAfterCosting(requisition.id, requisition.status === "SUBMITTED");
+      await audit({
+        entityType: "Requisition",
+        entityId: requisition.id,
+        actorId: user.id,
+        actorName: user.name,
+        action: "REQUISITION_QTY_EDITED",
+        diff: { item: item.name, unit: item.unit, qty: { from: Number(item.qty), to: qty }, estimatedCost: { from: requisition.estimatedCost === null ? null : Number(requisition.estimatedCost), to: estimatedCost }, status: requisition.status },
       });
       return NextResponse.json(await prisma.requisition.findUnique({ where: { id: requisition.id } }));
     }

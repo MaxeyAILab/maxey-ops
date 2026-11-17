@@ -327,6 +327,56 @@ function ItemQuotes({
   );
 }
 
+/** The item's quantity, with an Owner-only "Edit qty" to change how many are bought (the estimate follows). */
+function ItemQty({ requisitionId, item, canEdit }: { requisitionId: string; item: CostableItem; canEdit: boolean }) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [qty, setQty] = useState(String(item.qty));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (!(Number(qty) > 0)) return setError("Type a quantity above 0");
+    setBusy(true);
+    setError("");
+    const err = await patch(requisitionId, { action: "edit_qty", itemId: item.id, qty: Number(qty) });
+    setBusy(false);
+    if (err) return setError(err);
+    setEditing(false);
+    router.refresh();
+  }
+
+  if (!editing) {
+    return (
+      <span className="flex items-center gap-2 text-xs text-ink-500">
+        <span className="tabular-nums">
+          {item.qty} {item.unit}
+        </span>
+        {canEdit && (
+          <button type="button" onClick={() => { setQty(String(item.qty)); setEditing(true); }} className="font-medium text-brand-600 hover:underline" aria-label={`Edit the quantity of ${item.name}`}>
+            Edit qty
+          </button>
+        )}
+      </span>
+    );
+  }
+  return (
+    <form onSubmit={save} className="flex flex-wrap items-center gap-2 text-xs">
+      <Input type="number" min="0" step="any" inputMode="decimal" className="h-8 w-24 text-xs" value={qty} onChange={(e) => setQty(e.target.value)} autoFocus aria-label={`New quantity of ${item.name}`} />
+      <span className="text-ink-500">{item.unit}</span>
+      {item.estUnitCost != null && Number(qty) > 0 && <span className="tabular-nums text-ink-500">= {php(Number(qty) * item.estUnitCost)}</span>}
+      <Button type="submit" variant="secondary" disabled={busy} className="h-8 px-3 text-xs">
+        {busy ? "Saving…" : "Save"}
+      </Button>
+      <button type="button" onClick={() => setEditing(false)} className="text-ink-500 hover:underline">
+        Cancel
+      </button>
+      {error && <span className="w-full text-red-600">{error}</span>}
+    </form>
+  );
+}
+
 /**
  * Requested items, doubling as the canvassing sheet (Spec 6.2): whoever is
  * pricing the order (Purchasing, PM, Accounting, Owner) can record a quote
@@ -343,12 +393,18 @@ export function ItemsCostingTable({
   canUseStock = false,
   stock = [],
   canEditQuotes = false,
+  canEditQty = false,
+  approved = false,
 }: {
   requisitionId: string;
   items: CostableItem[];
   editable: boolean;
   /** Purchasing / Owner may edit a recorded quote */
   canEditQuotes?: boolean;
+  /** the Owner may change how many of an item are bought (while priced, or approved until the PO is issued) */
+  canEditQty?: boolean;
+  /** already approved: lines reserved from the warehouse keep their quantity (cancel the approval to change it) */
+  approved?: boolean;
   /** the requisition is charged to a project, so its items can be taken from the warehouse */
   canUseStock?: boolean;
   stock?: StockOption[];
@@ -365,9 +421,7 @@ export function ItemsCostingTable({
               <span className="font-medium text-ink-900">{it.name}</span>
               {it.spec && <span className="ml-2 text-xs text-ink-500">{it.spec}</span>}
             </div>
-            <span className="text-xs text-ink-500">
-              {it.qty} {it.unit}
-            </span>
+            <ItemQty requisitionId={requisitionId} item={it} canEdit={canEditQty && !(approved && it.warehouse)} />
           </div>
           <ItemWarehouse requisitionId={requisitionId} item={it} editable={editable} canUseStock={canUseStock} stock={stock} />
           {!it.warehouse && <ItemQuotes requisitionId={requisitionId} item={it} editable={editable} canEditQuotes={canEditQuotes} />}
@@ -493,8 +547,10 @@ export function CancelApprovalButton({ requisitionId, poNumber }: { requisitionI
 interface PoItem {
   name: string;
   qty: number;
+  qtyText: string;
   unit: string;
   unitCost: string;
+  requisitionItemId?: string;
   /** the supplier of the quote chosen for this item on the requisition — printed in the REMARKS column of the PO form */
   remarks?: string | null;
 }
@@ -504,23 +560,29 @@ export function CreatePoForm({
   requisitionId,
   initialItems,
   defaultSupplier = "",
+  canEditQty = false,
 }: {
   requisitionId: string;
-  initialItems: { name: string; qty: number; unit: string; unitCost?: number | null; remarks?: string | null }[];
+  initialItems: { name: string; qty: number; unit: string; unitCost?: number | null; remarks?: string | null; requisitionItemId?: string }[];
   /** the supplier (or suppliers) chosen on the requisition */
   defaultSupplier?: string;
+  /** the Owner may issue the PO for a different quantity (the requisition follows) */
+  canEditQty?: boolean;
 }) {
   const router = useRouter();
   const [items, setItems] = useState<PoItem[]>(
-    initialItems.map((i) => ({ ...i, unitCost: i.unitCost != null ? String(i.unitCost) : "0" }))
+    initialItems.map((i) => ({ ...i, qtyText: String(i.qty), unitCost: i.unitCost != null ? String(i.unitCost) : "0" }))
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const total = items.reduce((s, i) => s + i.qty * (Number(i.unitCost) || 0), 0);
+  const qtyOf = (i: PoItem) => (canEditQty ? Number(i.qtyText) || 0 : i.qty);
+  const total = items.reduce((s, i) => s + qtyOf(i) * (Number(i.unitCost) || 0), 0);
+  const changedQty = items.filter((i) => canEditQty && Math.abs(qtyOf(i) - i.qty) > 0.0005);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (items.some((i) => !(qtyOf(i) > 0))) return setError("Every line needs a quantity above 0");
     setBusy(true);
     setError("");
     const fd = new FormData(e.currentTarget);
@@ -531,7 +593,7 @@ export function CreatePoForm({
         requisitionId,
         supplier: fd.get("supplier"),
         deliveryDate: fd.get("deliveryDate") || undefined,
-        items: items.map((i) => ({ ...i, unitCost: Number(i.unitCost) || 0 })),
+        items: items.map((i) => ({ name: i.name, qty: qtyOf(i), unit: i.unit, unitCost: Number(i.unitCost) || 0, remarks: i.remarks ?? null, requisitionItemId: i.requisitionItemId ?? null })),
       }),
     });
     setBusy(false);
@@ -552,13 +614,43 @@ export function CreatePoForm({
         </div>
       </div>
       <div className="space-y-2">
+        {canEditQty && (
+          <div className="grid grid-cols-12 gap-2 text-[11px] font-medium uppercase tracking-wide text-ink-400">
+            <span className="col-span-4">Item</span>
+            <span className="col-span-3">Quantity</span>
+            <span className="col-span-3">Unit cost</span>
+            <span className="col-span-2 text-right">Amount</span>
+          </div>
+        )}
         {items.map((it, i) => (
           <div key={i} className="grid grid-cols-12 items-center gap-2 text-sm">
-            <span className="col-span-6 text-ink-700">
-              {it.qty} {it.unit} — {it.name}
-              {it.remarks && <span className="block text-xs text-ink-400">from {it.remarks}</span>}
-            </span>
-            <div className="col-span-4">
+            {canEditQty ? (
+              <>
+                <span className="col-span-4 text-ink-700">
+                  {it.name}
+                  {it.remarks && <span className="block text-xs text-ink-400">from {it.remarks}</span>}
+                  {Math.abs(qtyOf(it) - it.qty) > 0.0005 && <span className="block text-xs text-amber-700">approved: {it.qty} {it.unit}</span>}
+                </span>
+                <div className="col-span-3 flex items-center gap-1">
+                  <Input
+                    type="number"
+                    min="0"
+                    step="any"
+                    inputMode="decimal"
+                    aria-label={`Quantity of ${it.name}`}
+                    value={it.qtyText}
+                    onChange={(e) => setItems((prev) => prev.map((x, idx) => (idx === i ? { ...x, qtyText: e.target.value } : x)))}
+                  />
+                  <span className="shrink-0 text-xs text-ink-500">{it.unit}</span>
+                </div>
+              </>
+            ) : (
+              <span className="col-span-6 text-ink-700">
+                {it.qty} {it.unit} — {it.name}
+                {it.remarks && <span className="block text-xs text-ink-400">from {it.remarks}</span>}
+              </span>
+            )}
+            <div className={canEditQty ? "col-span-3" : "col-span-4"}>
               <Input
                 type="number"
                 min="0"
@@ -573,11 +665,16 @@ export function CreatePoForm({
               />
             </div>
             <span className="col-span-2 text-right tabular-nums text-ink-500">
-              ₱{(it.qty * (Number(it.unitCost) || 0)).toLocaleString("en-PH")}
+              ₱{(qtyOf(it) * (Number(it.unitCost) || 0)).toLocaleString("en-PH")}
             </span>
           </div>
         ))}
       </div>
+      {changedQty.length > 0 && (
+        <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+          You changed the quantity of {changedQty.map((i) => i.name).join(", ")}. The requisition is changed to match when the PO is issued (recorded in the audit trail).
+        </p>
+      )}
       <div className="text-right text-sm font-bold text-ink-900">
         PO Total: ₱{total.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
       </div>

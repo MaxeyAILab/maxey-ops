@@ -79,6 +79,8 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
   const defaultSupplier = Array.from(new Set(buyingItems.map((i) => i.remarks?.trim()).filter((s): s is string => !!s))).join(", ");
   const canCreatePo =
     ["PURCHASING", "OWNER"].includes(user.role) && r.status === "APPROVED" && !r.purchaseOrder;
+  // The Owner changes how many of an item are bought: while it is priced, or once approved until the PO is issued
+  const canEditQty = user.role === "OWNER" && (["SUBMITTED", "UNDER_REVIEW"].includes(r.status) || (r.status === "APPROVED" && !r.purchaseOrder));
   const canDeleteRequisition =
     user.role === "OWNER" && (!r.purchaseOrder || r.purchaseOrder.status === "CANCELLED");
   const canCancelPo =
@@ -132,6 +134,8 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
           canUseStock={!!r.project}
           stock={stock}
           canEditQuotes={canEditQuotes}
+          canEditQty={canEditQty}
+          approved={r.status === "APPROVED"}
           items={r.items.map((i) => ({
             id: i.id,
             name: i.name,
@@ -239,7 +243,9 @@ export default async function RequisitionDetailPage({ params }: { params: { id: 
                 <CreatePoForm
                   requisitionId={r.id}
                   defaultSupplier={defaultSupplier}
+                  canEditQty={user.role === "OWNER"}
                   initialItems={buyingItems.map((i) => ({
+                    requisitionItemId: i.id,
                     name: i.name,
                     qty: Number(i.qty),
                     unit: i.unit,
