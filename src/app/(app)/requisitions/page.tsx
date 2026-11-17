@@ -5,7 +5,16 @@ import { prisma } from "@/lib/prisma";
 import { fmtDateTime, php } from "@/lib/format";
 import { Badge, Button, Card, CardHeader, Table, Td, Th } from "@/components/ui";
 import { DeleteRequisitionButton } from "@/components/requisition-actions";
-import { canRaiseRequisition, projectOrCategoryLabel, requisitionAmount, seesOnlyOwnRequisitions } from "@/lib/requisitions";
+import {
+  REQUISITION_TABS,
+  byUrgencyThenNewest,
+  canRaiseRequisition,
+  projectOrCategoryLabel,
+  requisitionAmount,
+  requisitionTabOf,
+  seesOnlyOwnRequisitions,
+  type RequisitionTabKey,
+} from "@/lib/requisitions";
 import { canAccess } from "@/lib/access";
 
 export const metadata = { title: "Requisitions" };
@@ -17,7 +26,15 @@ const MONTH_FMT = new Intl.DateTimeFormat("en-PH", {
   timeZone: "Asia/Manila",
 });
 
-export default async function RequisitionsPage() {
+const TAB_HINT: Record<RequisitionTabKey, string> = {
+  submitted: "Waiting for costing and the Owner's approval",
+  approved: "Approved — purchase order not issued yet",
+  po: "Purchase order issued — waiting for delivery",
+  delivered: "Delivered to site or warehouse",
+  rejected: "Not approved",
+};
+
+export default async function RequisitionsPage({ searchParams }: { searchParams: { tab?: string } }) {
   const user = await getSessionUser();
   if (!user || !canAccess(user.role, user.department, "/requisitions", user.customMenus, user.useCustomMenus)) {
     redirect("/attendance");
@@ -39,6 +56,13 @@ export default async function RequisitionsPage() {
   const actionable = requisitions.filter((r) =>
     ["SUBMITTED", "UNDER_REVIEW"].includes(r.status)
   );
+
+  // Header tabs by stage; inside each, Critical first, then High, Normal, Low (newest first within the same urgency).
+  const tab: RequisitionTabKey = REQUISITION_TABS.some((t) => t.key === searchParams.tab) ? (searchParams.tab as RequisitionTabKey) : "submitted";
+  const tabCounts = new Map<RequisitionTabKey, number>();
+  for (const r of requisitions) tabCounts.set(requisitionTabOf(r.status), (tabCounts.get(requisitionTabOf(r.status)) ?? 0) + 1);
+  const activeTab = REQUISITION_TABS.find((t) => t.key === tab)!;
+  const shown = byUrgencyThenNewest(requisitions.filter((r) => requisitionTabOf(r.status) === tab));
 
   // Rejections have no dedicated actor/timestamp columns on Requisition — the
   // append-only audit log already recorded who rejected it and when.
@@ -118,10 +142,36 @@ export default async function RequisitionsPage() {
         )}
       </div>
 
+      <nav aria-label="Requisition stages" className="flex flex-wrap gap-1 rounded-lg bg-ink-200/60 p-1 sm:inline-flex">
+        {REQUISITION_TABS.map((t) => {
+          const active = t.key === tab;
+          const count = tabCounts.get(t.key) ?? 0;
+          return (
+            <Link
+              key={t.key}
+              href={`/requisitions?tab=${t.key}`}
+              aria-current={active ? "page" : undefined}
+              className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium sm:px-5 ${
+                active ? "bg-[#8a1a28] text-white shadow-sm" : "text-ink-600 hover:bg-ink-50 hover:text-ink-900"
+              }`}
+            >
+              {t.label}
+              <span
+                className={`rounded-full px-1.5 text-xs tabular-nums ${
+                  active ? "bg-white/20 text-white" : t.key === "submitted" && count > 0 ? "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200" : "bg-ink-100 text-ink-600"
+                }`}
+              >
+                {count}
+              </span>
+            </Link>
+          );
+        })}
+      </nav>
+
       <Card>
         <CardHeader
-          title="All requisitions"
-          subtitle="Submitted → costed → Owner approval → PO — full audit trail on each"
+          title={`${activeTab.label} (${shown.length})`}
+          subtitle={`${TAB_HINT[tab]} · Critical first, then High, then Normal`}
         />
         <Table>
           <thead>
@@ -137,7 +187,7 @@ export default async function RequisitionsPage() {
             </tr>
           </thead>
           <tbody>
-            {requisitions.map((r) => (
+            {shown.map((r) => (
               <tr key={r.id} className="hover:bg-ink-50">
                 <Td>
                   <Link
@@ -184,10 +234,10 @@ export default async function RequisitionsPage() {
                 )}
               </tr>
             ))}
-            {requisitions.length === 0 && (
+            {shown.length === 0 && (
               <tr>
                 <Td colSpan={user.role === "OWNER" ? 8 : 7} className="py-8 text-center text-ink-400">
-                  No requisitions yet.
+                  {requisitions.length === 0 ? "No requisitions yet." : `Nothing under ${activeTab.label}.`}
                 </Td>
               </tr>
             )}

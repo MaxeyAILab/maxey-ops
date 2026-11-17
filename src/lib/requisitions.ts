@@ -61,3 +61,28 @@ export function requisitionAmount(r: {
   }
   return Number(r.estimatedCost ?? 0);
 }
+
+/** Tabs on the Requisitions page (owner's request 2026-11-17). "Submitted" also holds ones already being costed (UNDER_REVIEW). */
+export const REQUISITION_TABS = [
+  { key: "submitted", label: "Submitted", statuses: ["SUBMITTED", "UNDER_REVIEW"] },
+  { key: "approved", label: "Approved", statuses: ["APPROVED"] },
+  { key: "po", label: "PO issued", statuses: ["PO_ISSUED"] },
+  { key: "delivered", label: "Delivered", statuses: ["DELIVERED"] },
+  { key: "rejected", label: "Rejected", statuses: ["REJECTED"] },
+] as const;
+export type RequisitionTabKey = (typeof REQUISITION_TABS)[number]["key"];
+
+export function requisitionTabOf(status: string): RequisitionTabKey {
+  return REQUISITION_TABS.find((t) => (t.statuses as readonly string[]).includes(status))?.key ?? "submitted";
+}
+
+const URGENCY_RANK: Record<string, number> = { CRITICAL: 0, HIGH: 1, NORMAL: 2, LOW: 3 };
+
+/** Critical first, then High, Normal, Low; the newest first within the same urgency. */
+export function byUrgencyThenNewest<T extends { urgency: string; submittedAt: Date | string }>(rows: T[]): T[] {
+  return [...rows].sort(
+    (a, b) =>
+      (URGENCY_RANK[a.urgency] ?? 9) - (URGENCY_RANK[b.urgency] ?? 9) ||
+      new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
+  );
+}
