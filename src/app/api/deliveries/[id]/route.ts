@@ -4,8 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
-import { adjustRequisitionItems, discrepancyLines, planAdjustment, type ChecklistRow, type PoLine } from "@/lib/delivery-adjust";
-import { revertAcceptance, syncPoStatus, type StoredAdjustment } from "@/lib/delivery-db";
+import { adjustRequisitionItems, combinedChecklist, discrepancyLines, planAdjustment, poFullyReceived, remainingOnPo, type ChecklistRow, type PoLine } from "@/lib/delivery-adjust";
+import { revertAcceptance, syncPoStatus, verifiedChecklists, type StoredAdjustment } from "@/lib/delivery-db";
 import { removeDeliveryStock, syncDeliveryStock } from "@/lib/delivery-stock";
 
 const editRow = z.object({
@@ -48,9 +48,10 @@ const loadDelivery = (id: string) =>
  *  - edit: change the quantity received / in-order tick / remarks (and the driver and receiver). The delivery is re-checked
  *    against the PO — it becomes "complete" only if everything now tallies — and the PO and requisition status follow. Editing an
  *    accepted delivery takes its acceptance back first (and undoes the PO / requisition change), so nothing is left half-way.
- *  - accept: the Owner accepts the delivery as final although it does not tally, with a reason. The PO items are set to the
- *    quantities delivered, the PO total (which is the project's committed cost) and the requisition follow, and the PO and
- *    requisition become Delivered. What was changed is kept on the delivery.
+ *  - accept: the Owner accepts the latest delivery as final although not everything came, with a reason. The PO items are set to
+ *    the quantities delivered by ALL the PO's deliveries together (items that never came go to 0), the PO total (which is the
+ *    project's committed cost) and the requisition follow, and the PO and requisition become Delivered. What was changed is kept
+ *    on the delivery.
  *  - undo_accept: reverses an acceptance.
  * Everything is recorded in the audit log with who, what it was before, and the reason.
  */
@@ -68,9 +69,13 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
   if (body.action === "edit") {
     const byName = new Map(stored.map((c) => [c.item, c]));
     for (const r of body.checklist) if (!byName.has(r.item)) throw new ApiError(400, `“${r.item}” is not on this delivery`);
+    // what earlier verified deliveries of this PO had brought, so a later truck is only short of what was still to come
+    const earlier = remainingOnPo((po.items as unknown as PoLine[]) ?? [], await verifiedChecklists(prisma, po.id, { before: d.createdAt, excludeId: d.id }));
+    const earlierBy = new Map(earlier.map((l) => [l.name.trim().toLowerCase(), l.alreadyReceived]));
     const next: ChecklistRow[] = stored.map((c) => {
       const r = body.checklist.find((x) => x.item === c.item);
-      return r ? { item: c.item, orderedQty: c.orderedQty, receivedQty: r.receivedQty, ok: r.ok, remarks: r.remarks || "" } : c;
+      const alreadyReceived = earlierBy.get(c.item.trim().toLowerCase()) ?? 0;
+      return r ? { item: c.item, orderedQty: c.orderedQty, receivedQty: r.receivedQty, ok: r.ok, remarks: r.remarks || "", alreadyReceived } : { ...c, alreadyReceived };
     });
     const lines = discrepancyLines(next);
     const changes = next.flatMap((c, i) => {
@@ -120,12 +125,14 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
   if (body.action === "accept") {
     if (d.needsConfirmation && !d.confirmedAt) throw new ApiError(400, "This delivery is still waiting for the receiver's confirmation — it can be accepted once that is done");
     if (d.acceptedAt) throw new ApiError(409, "This delivery was already accepted");
-    // accepting sets the PO to what THIS delivery received — wrong when a later delivery has made up the shortage
+    // accepting sets the PO to what all its deliveries brought together — only the latest delivery can be accepted
     const later = await prisma.delivery.findFirst({ where: { poId: po.id, createdAt: { gt: d.createdAt }, OR: [{ needsConfirmation: false }, { confirmedAt: { not: null } }] }, select: { id: true } });
     if (later) throw new ApiError(400, "A later delivery was recorded for this PO after this one, so this one is history. Accepting it would cut the PO back to what it received — accept (or correct) the latest delivery instead");
-    if (!d.discrepancies) throw new ApiError(400, "This delivery already tallies with the PO — there is nothing to accept");
     const poItems = (po.items as unknown as PoLine[]).map((i) => ({ name: i.name, qty: Number(i.qty), unit: i.unit, unitCost: Number(i.unitCost), fromWarehouse: !!i.fromWarehouse }));
-    const plan = planAdjustment(poItems, stored);
+    const all = await verifiedChecklists(prisma, po.id);
+    if (poFullyReceived(poItems, all)) throw new ApiError(400, "Everything on this PO has arrived — there is nothing to accept");
+    // the PO is set to what every delivery of it brought together: items from earlier trucks stay, items that never came go to 0
+    const plan = planAdjustment(poItems, combinedChecklist(all));
     if (body.expectedTotalAfter !== undefined && Math.abs(body.expectedTotalAfter - plan.totalAfter) > 0.005) {
       throw new ApiError(409, "The PO changed since you opened this — close the window and look again");
     }
@@ -157,7 +164,8 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
         po: po.poNumber,
         project: label,
         reason: body.reason,
-        notTallied: d.discrepancies.split("\n"),
+        notTallied: d.discrepancies ? d.discrepancies.split("\n") : [],
+        deliveriesCounted: all.length,
         poLines: plan.lines,
         committedCost: { from: plan.totalBefore, to: plan.totalAfter },
         requisitionItemsChanged: reqPlan.items.length,

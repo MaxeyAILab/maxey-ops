@@ -16,6 +16,7 @@ interface ChecklistItemJson {
   receivedQty: number;
   ok: boolean;
   remarks?: string | null;
+  alreadyReceived?: number;
 }
 
 /**
@@ -58,7 +59,8 @@ export const GET = handleApi(
       projectLabel: label,
       location: delivery.project?.address || label,
       date: fmtDate(delivery.verifiedAt ?? delivery.createdAt),
-      items: checklist.map((c) => ({
+      // a later truck of the same PO: lines an earlier truck already brought in full (0 now) are left off this slip
+      items: checklist.filter((c) => !(Number(c.receivedQty) === 0 && Number(c.alreadyReceived ?? 0) >= Number(c.orderedQty) && Number(c.orderedQty) > 0)).map((c) => ({
         qty: Number(c.receivedQty),
         unit: unitByName.get(c.item) ?? "",
         name: c.item,

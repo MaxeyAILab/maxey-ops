@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui";
 import { DeliveryChecklistForm } from "@/components/delivery-form";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
 import { canVerifyDelivery } from "@/lib/access";
+import { remainingOnPo } from "@/lib/delivery-adjust";
+import { verifiedChecklists } from "@/lib/delivery-db";
 
 export const dynamic = "force-dynamic";
 
@@ -26,11 +28,16 @@ export default async function VerifyDeliveryPage({ params }: { params: { poId: s
     prisma.delivery.findFirst({ where: { poId: po.id, needsConfirmation: true, confirmedAt: null }, select: { recipientName: true } }),
   ]);
 
-  // PO items are stored as JSON; foremen see qty/spec but not unit costs
-  const items = (po.items as { name: string; qty: number; unit: string }[]).map((i) => ({
+  // PO items are stored as JSON; foremen see qty/spec but not unit costs. A PO can come on several trucks, so each line also
+  // shows what earlier verified deliveries brought and is filled in with only what is still to come.
+  const poItems = po.items as { name: string; qty: number; unit: string }[];
+  const left = remainingOnPo(poItems, await verifiedChecklists(prisma, po.id));
+  const items = poItems.map((i, idx) => ({
     name: i.name,
     qty: i.qty,
     unit: i.unit,
+    alreadyReceived: left[idx]?.alreadyReceived ?? 0,
+    due: left[idx]?.due ?? Number(i.qty),
   }));
 
   return (

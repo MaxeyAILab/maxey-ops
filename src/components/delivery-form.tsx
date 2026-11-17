@@ -12,11 +12,17 @@ interface PoItem {
   name: string;
   qty: number;
   unit: string;
+  /** brought by earlier verified deliveries of this PO */
+  alreadyReceived?: number;
+  /** still to come — what this truck should bring */
+  due?: number;
 }
 
 interface CheckRow {
   item: string;
   orderedQty: number;
+  alreadyReceived: number;
+  due: number;
   unit: string;
   receivedQty: string;
   ok: boolean;
@@ -53,8 +59,11 @@ export function DeliveryChecklistForm({ poId, items, receivers, meId }: { poId: 
     items.map((i) => ({
       item: i.name,
       orderedQty: i.qty,
+      alreadyReceived: i.alreadyReceived ?? 0,
+      due: i.due ?? i.qty,
       unit: i.unit,
-      receivedQty: String(i.qty),
+      // filled in with what is still to come — 0 for what an earlier truck already brought, so nothing is counted twice
+      receivedQty: String(i.due ?? i.qty),
       ok: true,
       remarks: "",
     }))
@@ -74,7 +83,9 @@ export function DeliveryChecklistForm({ poId, items, receivers, meId }: { poId: 
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   }
 
-  const hasDiscrepancy = rows.some((r) => !r.ok || Number(r.receivedQty) < r.orderedQty);
+  const isShort = (r: CheckRow) => Number(r.receivedQty) < r.due || (!r.ok && (r.due > 0 || Number(r.receivedQty) > 0));
+  const hasDiscrepancy = rows.some(isShort);
+  const splitPo = rows.some((r) => r.alreadyReceived > 0);
 
   async function submit() {
     if (missing) return setError(missing);
@@ -163,17 +174,28 @@ export function DeliveryChecklistForm({ poId, items, receivers, meId }: { poId: 
         </p>
       </div>
 
+      {splitPo && (
+        <p className="rounded-lg bg-sky-50 p-3 text-sm text-sky-900 dark:bg-sky-900/30 dark:text-sky-100">
+          Part of this PO was already delivered. Each item shows what came before and is filled in with only what is <b>still to come</b>. Enter what is on this truck only — put 0 for anything that did not come now — so nothing is counted twice in the project&apos;s materials.
+        </p>
+      )}
+
       <div className="space-y-3">
         {rows.map((r, i) => (
           <div
             key={i}
-            className={`rounded-lg border p-3 ${r.ok && Number(r.receivedQty) >= r.orderedQty ? "border-ink-100" : "border-amber-300 bg-amber-50"}`}
+            className={`rounded-lg border p-3 ${!isShort(r) ? (r.due === 0 && Number(r.receivedQty) === 0 ? "border-ink-100 opacity-70" : "border-ink-100") : "border-amber-300 bg-amber-50"}`}
           >
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="font-medium text-ink-900">{r.item}</div>
                 <div className="text-xs text-ink-500">
                   {t("del.ordered")}: {r.orderedQty} {r.unit}
+                  {splitPo && (
+                    <>
+                      {" "}· received before: {r.alreadyReceived} · <b className={r.due > 0 ? "text-ink-800" : "text-emerald-700"}>{r.due > 0 ? `still to come: ${r.due}` : "all received ✓"}</b>
+                    </>
+                  )}
                 </div>
               </div>
               <label className="flex min-h-[44px] items-center gap-2 text-sm">
@@ -188,7 +210,7 @@ export function DeliveryChecklistForm({ poId, items, receivers, meId }: { poId: 
             </div>
             <div className="mt-2 grid grid-cols-2 gap-2">
               <div>
-                <span className="mb-1 block text-xs text-ink-500">{t("del.receivedQty")}</span>
+                <span className="mb-1 block text-xs text-ink-500">{splitPo ? "Received on this truck" : t("del.receivedQty")}</span>
                 <Input
                   type="number"
                   min="0"

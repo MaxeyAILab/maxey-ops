@@ -1,7 +1,20 @@
 import { Prisma } from "@prisma/client";
-import { isDeliveryComplete, type AdjustLine, type PoLine } from "@/lib/delivery-adjust";
+import { poFullyReceived, type AdjustLine, type ChecklistRow, type PoLine } from "@/lib/delivery-adjust";
 
 type Db = Prisma.TransactionClient;
+
+/** A delivery counts once it is fully verified: confirmed by the receiver (or recorded before confirmation existed). */
+const verifiedOf = (poId: string) => ({ poId, OR: [{ needsConfirmation: false }, { confirmedAt: { not: null } }] });
+
+/** The checklists of a PO's fully verified deliveries, oldest first — optionally only those recorded before a moment, or without one delivery. */
+export async function verifiedChecklists(db: Db, poId: string, opts: { before?: Date; excludeId?: string } = {}): Promise<ChecklistRow[][]> {
+  const rows = await db.delivery.findMany({
+    where: { ...verifiedOf(poId), ...(opts.before ? { createdAt: { lt: opts.before } } : {}), ...(opts.excludeId ? { id: { not: opts.excludeId } } : {}) },
+    orderBy: { createdAt: "asc" },
+    select: { checklist: true },
+  });
+  return rows.map((r) => (Array.isArray(r.checklist) ? (r.checklist as unknown as ChecklistRow[]) : []));
+}
 
 /** What an accepted delivery changed — kept on the delivery so the change can be shown and, if needed, undone. */
 export interface StoredAdjustment {
@@ -13,20 +26,19 @@ export interface StoredAdjustment {
 }
 
 /**
- * Brings the PO's (and its requisition's) status in line with the fully verified deliveries: the latest one decides — complete
- * (tallied, or accepted by the Owner) means Delivered, otherwise Partially delivered, and no delivery means Open again. A
- * cancelled PO is left as it is.
+ * Brings the PO's (and its requisition's) status in line with its fully verified deliveries: Delivered once everything on the PO
+ * has arrived across all of them (or the Owner accepted the latest one as complete), otherwise Partially delivered, and no
+ * delivery means Open again. A cancelled PO is left as it is.
  */
 export async function syncPoStatus(db: Db, poId: string): Promise<void> {
-  const po = await db.purchaseOrder.findUnique({ where: { id: poId }, select: { status: true, requisitionId: true } });
+  const po = await db.purchaseOrder.findUnique({ where: { id: poId }, select: { status: true, requisitionId: true, items: true } });
   if (!po || po.status === "CANCELLED") return;
-  // only fully verified deliveries count — one still waiting for the receiver's confirmation changes nothing yet
-  const latest = await db.delivery.findFirst({
-    where: { poId, OR: [{ needsConfirmation: false }, { confirmedAt: { not: null } }] },
-    orderBy: { createdAt: "desc" },
-    select: { discrepancies: true, acceptedAt: true },
-  });
-  const status = !latest ? "OPEN" : isDeliveryComplete(latest) ? "DELIVERED" : "PARTIALLY_DELIVERED";
+  // only fully verified deliveries count — one still waiting for the receiver's confirmation changes nothing yet. A PO can come on
+  // several trucks: it is Delivered once everything on it has arrived counting all of them together, or when the Owner accepted
+  // the latest delivery as complete.
+  const latest = await db.delivery.findFirst({ where: verifiedOf(poId), orderBy: { createdAt: "desc" }, select: { acceptedAt: true } });
+  const poItems = (Array.isArray(po.items) ? po.items : []) as unknown as PoLine[];
+  const status = !latest ? "OPEN" : latest.acceptedAt || poFullyReceived(poItems, await verifiedChecklists(db, poId)) ? "DELIVERED" : "PARTIALLY_DELIVERED";
   await db.purchaseOrder.update({ where: { id: poId }, data: { status } });
   if (status === "DELIVERED") await db.requisition.updateMany({ where: { id: po.requisitionId, status: "PO_ISSUED" }, data: { status: "DELIVERED" } });
   else await db.requisition.updateMany({ where: { id: po.requisitionId, status: "DELIVERED" }, data: { status: "PO_ISSUED" } });

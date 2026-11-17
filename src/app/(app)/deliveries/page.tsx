@@ -6,7 +6,7 @@ import { fmtDate, fmtDateTime, php } from "@/lib/format";
 import { Badge, Card, CardBody, CardHeader, Table, Td, Th } from "@/components/ui";
 import { DeleteDeliveryButton } from "@/components/delivery-actions";
 import { OwnerDeliveryActions, type OwnerDelivery } from "@/components/delivery-owner-actions";
-import { type AdjustLine, type ChecklistRow, type PoLine } from "@/lib/delivery-adjust";
+import { combinedChecklist, dueQty, poFullyReceived, type AdjustLine, type ChecklistRow, type PoLine } from "@/lib/delivery-adjust";
 import { ShareButton } from "@/components/share-button";
 import { PhotoThumbnails } from "@/components/photo-viewer";
 import { ConfirmDeliveryButtons } from "@/components/delivery-confirm-actions";
@@ -50,19 +50,22 @@ function adjustmentText(adj: unknown): string | null {
 }
 
 /** What the Owner's buttons on a delivery need: its checklist, whether it tallies, whether it was accepted, and the PO's lines. */
-function ownerData(d: { id: string; driverName: string | null; recipientName: string | null; checklist: unknown; discrepancies: string | null; acceptedAt: Date | null; needsConfirmation: boolean; confirmedAt: Date | null; photos: unknown; po: { poNumber: string; items: unknown } }, superseded = false): OwnerDelivery {
+function ownerData(d: { id: string; driverName: string | null; recipientName: string | null; checklist: unknown; discrepancies: string | null; acceptedAt: Date | null; needsConfirmation: boolean; confirmedAt: Date | null; photos: unknown; po: { poNumber: string; items: unknown } }, superseded: boolean, verifiedOfPo: ChecklistRow[][]): OwnerDelivery {
+  const poLines = ((d.po.items as PoLine[]) ?? []).map((i) => ({ name: i.name, qty: Number(i.qty), unit: i.unit, unitCost: Number(i.unitCost), fromWarehouse: !!i.fromWarehouse }));
   return {
     id: d.id,
     poNumber: d.po.poNumber,
     driverName: d.driverName,
     recipientName: d.recipientName,
-    checklist: ((d.checklist as ChecklistRow[]) ?? []).map((c) => ({ item: c.item, orderedQty: Number(c.orderedQty), receivedQty: Number(c.receivedQty), ok: !!c.ok, remarks: c.remarks ?? "" })),
+    checklist: ((d.checklist as ChecklistRow[]) ?? []).map((c) => ({ item: c.item, orderedQty: Number(c.orderedQty), receivedQty: Number(c.receivedQty), ok: !!c.ok, remarks: c.remarks ?? "", alreadyReceived: Number(c.alreadyReceived ?? 0) })),
     hasDiscrepancy: !!d.discrepancies,
     superseded,
     accepted: !!d.acceptedAt,
     awaiting: d.needsConfirmation && !d.confirmedAt,
     photos: Array.isArray(d.photos) ? (d.photos as string[]) : [],
-    poItems: ((d.po.items as PoLine[]) ?? []).map((i) => ({ name: i.name, qty: Number(i.qty), unit: i.unit, unitCost: Number(i.unitCost), fromWarehouse: !!i.fromWarehouse })),
+    poItems: poLines,
+    combined: combinedChecklist(verifiedOfPo),
+    poOpen: !poFullyReceived(poLines, verifiedOfPo),
   };
 }
 
@@ -155,6 +158,10 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: {
   const awaitingByPo = new Map(awaiting.map((d) => [d.poId, d]));
   // an earlier short delivery is made up by a later delivery of the same PO that was recorded and confirmed
   const madeUpLater = (d: (typeof deliveries)[number]) => deliveries.find((x) => x.poId === d.poId && x.createdAt > d.createdAt && !isAwaitingConfirmation(x));
+  // every fully verified delivery of each PO (oldest first) — a PO can come on several trucks, and an acceptance counts them all
+  const verifiedByPo = new Map<string, ChecklistRow[][]>();
+  for (const x of [...deliveries].reverse()) if (!isAwaitingConfirmation(x)) verifiedByPo.set(x.poId, [...(verifiedByPo.get(x.poId) ?? []), (x.checklist as unknown as ChecklistRow[]) ?? []]);
+  const owner = (d: (typeof deliveries)[number]) => ownerData(d, !!madeUpLater(d), verifiedByPo.get(d.poId) ?? []);
   const verifierNames = new Map(
     (
       await prisma.user.findMany({
@@ -247,17 +254,19 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: {
                       <tr>
                         <th className="px-2 py-1.5">Item</th>
                         <th className="px-2 py-1.5 text-right text-[10px]">Ordered</th>
+                        {rows.some((r) => Number(r.alreadyReceived ?? 0) > 0) && <th className="px-2 py-1.5 text-right text-[10px]">Came before</th>}
                         <th className="px-2 py-1.5 text-right text-[10px]">Received</th>
                       </tr>
                     </thead>
                     <tbody>
                       {rows.map((r) => (
-                        <tr key={r.item} className={`border-t border-ink-100 ${r.receivedQty < r.orderedQty || !r.ok ? "bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200" : ""}`}>
+                        <tr key={r.item} className={`border-t border-ink-100 ${r.receivedQty < dueQty(r) || (!r.ok && (dueQty(r) > 0 || r.receivedQty > 0)) ? "bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200" : ""}`}>
                           <td className="px-2 py-1.5 font-medium">
                             {r.item}
                             {(!r.ok || r.remarks) && <div className="font-normal opacity-80">{!r.ok ? "Not in good order. " : ""}{r.remarks}</div>}
                           </td>
                           <td className="px-2 py-1.5 text-right tabular-nums">{r.orderedQty}</td>
+                          {rows.some((x) => Number(x.alreadyReceived ?? 0) > 0) && <td className="px-2 py-1.5 text-right tabular-nums text-ink-500">{Number(r.alreadyReceived ?? 0)}</td>}
                           <td className="px-2 py-1.5 text-right font-semibold tabular-nums">{r.receivedQty}</td>
                         </tr>
                       ))}
@@ -390,7 +399,7 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: {
                     ⬇ Download
                   </a>
                   <ShareButton src={`/api/deliveries/${d.id}/pdf`} filename={`Delivery-${d.po.poNumber}.pdf`} title={`Delivery ${d.po.poNumber}`} />
-                  {isOwner && <OwnerDeliveryActions d={ownerData(d, !!madeUpLater(d))} />}
+                  {isOwner && <OwnerDeliveryActions d={owner(d)} />}
                   {isOwner && <DeleteDeliveryButton deliveryId={d.id} poNumber={d.po.poNumber} />}
                 </div>
               </div>
@@ -522,7 +531,7 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: {
                             </span>
                             {isOwner && (
                               <span className="ml-2 inline-flex flex-wrap items-center gap-x-3">
-                                <OwnerDeliveryActions d={ownerData(d, !!madeUpLater(d))} />
+                                <OwnerDeliveryActions d={owner(d)} />
                                 <DeleteDeliveryButton deliveryId={d.id} poNumber={d.po.poNumber} />
                               </span>
                             )}

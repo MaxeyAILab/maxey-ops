@@ -7,9 +7,9 @@ import { savePhotos } from "@/lib/storage";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 import { projectOrCategoryLabel } from "@/lib/requisitions";
 import { canVerifyDelivery } from "@/lib/access";
-import { discrepancyLines as listDiscrepancies } from "@/lib/delivery-adjust";
+import { discrepancyLines as listDiscrepancies, remainingOnPo, type ChecklistRow } from "@/lib/delivery-adjust";
 import { missingNames } from "@/lib/delivery-confirm";
-import { syncPoStatus } from "@/lib/delivery-db";
+import { syncPoStatus, verifiedChecklists } from "@/lib/delivery-db";
 import { syncDeliveryStock } from "@/lib/delivery-stock";
 
 const checkItemSchema = z.object({
@@ -72,7 +72,12 @@ export const POST = handleApi(async (req: NextRequest) => {
   const waiting = await prisma.delivery.findFirst({ where: { poId: po.id, needsConfirmation: true, confirmedAt: null }, select: { recipientName: true } });
   if (waiting) throw new ApiError(400, `A delivery for ${po.poNumber} is already waiting for ${waiting.recipientName ?? "the receiver"} to confirm it`);
 
-  const discrepancyLines = listDiscrepancies(body.checklist);
+  // A PO can come on several trucks: each line records what earlier verified deliveries already brought, so this one is only
+  // short of what was still to come (worked out here, not trusted from the phone, which may have queued the form offline).
+  const before = remainingOnPo((po.items as unknown as { name: string; qty: number }[]) ?? [], await verifiedChecklists(prisma, po.id));
+  const beforeByName = new Map(before.map((l) => [l.name.trim().toLowerCase(), l.alreadyReceived]));
+  const checklist: ChecklistRow[] = body.checklist.map((c) => ({ ...c, alreadyReceived: beforeByName.get(c.item.trim().toLowerCase()) ?? 0 }));
+  const discrepancyLines = listDiscrepancies(checklist);
   const complete = discrepancyLines.length === 0;
   const photoUrls = await savePhotos(body.photos);
   const receivedByVerifier = !!receiverId && receiverId === user.id; // verifying and receiving it yourself: nothing more to confirm
@@ -84,7 +89,7 @@ export const POST = handleApi(async (req: NextRequest) => {
         clientUuid: body.clientUuid,
         poId: po.id,
         projectId: po.requisition.projectId,
-        checklist: body.checklist as never,
+        checklist: checklist as never,
         driverName,
         recipientName,
         verifiedById: user.id,

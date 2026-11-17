@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/modal";
 import { PhotoThumbnails } from "@/components/photo-viewer";
-import { discrepancyLines, planAdjustment, type ChecklistRow, type PoLine } from "@/lib/delivery-adjust";
+import { discrepancyLines, dueQty, planAdjustment, type ChecklistRow, type PoLine } from "@/lib/delivery-adjust";
 
 const peso = (n: number) => `₱${n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const smallBtn = "text-xs font-medium hover:underline disabled:opacity-50";
@@ -32,6 +32,10 @@ export interface OwnerDelivery {
   awaiting: boolean;
   photos: string[];
   poItems: PoLine[];
+  /** every fully verified delivery of this PO added up per item — what an acceptance sets the PO to */
+  combined: ChecklistRow[];
+  /** something on the PO has not arrived yet (counting all its deliveries) — only then is there anything to accept */
+  poOpen: boolean;
 }
 
 /**
@@ -42,7 +46,7 @@ export function OwnerDeliveryActions({ d }: { d: OwnerDelivery }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
       <EditDelivery d={d} />
-      {d.hasDiscrepancy && !d.accepted && !d.awaiting && !d.superseded && <AcceptDelivery d={d} />}
+      {d.poOpen && !d.accepted && !d.awaiting && !d.superseded && <AcceptDelivery d={d} />}
       {d.accepted && <UndoAccept d={d} />}
     </span>
   );
@@ -58,7 +62,7 @@ function EditDelivery({ d }: { d: OwnerDelivery }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const asChecklist: ChecklistRow[] = rows.map((r) => ({ item: r.item, orderedQty: r.orderedQty, receivedQty: Number(r.receivedQty) || 0, ok: r.ok, remarks: r.remarks }));
+  const asChecklist: ChecklistRow[] = rows.map((r) => ({ item: r.item, orderedQty: r.orderedQty, receivedQty: Number(r.receivedQty) || 0, ok: r.ok, remarks: r.remarks, alreadyReceived: r.alreadyReceived }));
   const nowShort = discrepancyLines(asChecklist);
   const update = (i: number, p: Partial<(typeof rows)[number]>) => setRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...p } : r)));
 
@@ -108,13 +112,18 @@ function EditDelivery({ d }: { d: OwnerDelivery }) {
 
             <div className="space-y-2">
               {rows.map((r, i) => {
-                const short = !r.ok || (Number(r.receivedQty) || 0) < r.orderedQty;
+                const due = dueQty(r);
+                const got = Number(r.receivedQty) || 0;
+                const short = got < due || (!r.ok && (due > 0 || got > 0));
                 return (
                   <div key={r.item} className={`rounded-lg border p-3 ${short ? "border-amber-300 bg-amber-50 dark:bg-amber-900/20" : "border-ink-100"}`}>
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <div className="font-medium text-ink-900">{r.item}</div>
-                        <div className="text-xs text-ink-500">Ordered: {r.orderedQty}</div>
+                        <div className="text-xs text-ink-500">
+                          Ordered: {r.orderedQty}
+                          {(r.alreadyReceived ?? 0) > 0 && ` · received before this delivery: ${r.alreadyReceived} · still to come then: ${due}`}
+                        </div>
                       </div>
                       <label className="flex items-center gap-2 text-sm">
                         <input type="checkbox" checked={r.ok} onChange={(e) => update(i, { ok: e.target.checked })} className="h-5 w-5 accent-emerald-600" />
@@ -137,7 +146,7 @@ function EditDelivery({ d }: { d: OwnerDelivery }) {
             </div>
 
             <p className={`rounded-md px-3 py-2 text-sm ${nowShort.length ? "bg-amber-50 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200" : "bg-emerald-50 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200"}`}>
-              {nowShort.length ? `With these numbers the delivery does not tally with the PO (${nowShort.length} item${nowShort.length === 1 ? "" : "s"}). It will show as partially delivered until you accept it or the rest arrives.` : "With these numbers everything tallies with the PO — the delivery will show as complete."}
+              {nowShort.length ? `With these numbers this delivery is short of what was still to come (${nowShort.length} item${nowShort.length === 1 ? "" : "s"}). The PO shows as partially delivered until the rest arrives or you accept it.` : "With these numbers this delivery brought everything that was still to come."}
             </p>
 
             <label className="block text-xs font-medium text-ink-600">
@@ -166,8 +175,9 @@ function AcceptDelivery({ d }: { d: OwnerDelivery }) {
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const plan = planAdjustment(d.poItems, d.checklist);
-  const short = discrepancyLines(d.checklist);
+  // the PO is set to what all its deliveries brought together — items from earlier trucks stay, items that never came go to 0
+  const plan = planAdjustment(d.poItems, d.combined);
+  const short = plan.lines.filter((l) => l.to < l.from).map((l) => `${l.item.trim()}: ordered ${l.from} ${l.unit}, delivered ${l.to} in total`);
 
   async function accept() {
     setBusy(true);
@@ -188,7 +198,7 @@ function AcceptDelivery({ d }: { d: OwnerDelivery }) {
         <Modal title={`Accept ${d.poNumber} as complete`} onClose={() => setOpen(false)} wide>
           <div className="space-y-4">
             <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
-              <div className="font-semibold">What did not tally</div>
+              <div className="font-semibold">Not delivered in full (all deliveries of this PO counted)</div>
               <ul className="mt-1 list-disc pl-5 text-xs">
                 {short.map((s) => (
                   <li key={s}>{s}</li>
@@ -202,14 +212,14 @@ function AcceptDelivery({ d }: { d: OwnerDelivery }) {
               <p className="text-sm text-ink-700">The PO quantities already match what was delivered, so nothing on the PO or requisition changes — this only marks the delivery as complete.</p>
             ) : (
               <div>
-                <div className="mb-1 text-sm font-semibold text-ink-900">The PO and requisition will be changed to what was delivered</div>
+                <div className="mb-1 text-sm font-semibold text-ink-900">The PO and requisition will be changed to what was delivered in total — what earlier trucks brought stays, what never came is taken off</div>
                 <div className="overflow-x-auto rounded-lg border border-ink-200">
                   <table className="w-full min-w-[420px] text-left text-sm">
                     <thead className="bg-ink-100 text-xs uppercase tracking-wide text-ink-600">
                       <tr>
                         <th className="px-3 py-2">Item</th>
                         <th className="px-3 py-2 text-right">PO qty</th>
-                        <th className="px-3 py-2 text-right">Delivered</th>
+                        <th className="px-3 py-2 text-right">Delivered in total</th>
                         <th className="px-3 py-2 text-right">Cost change</th>
                       </tr>
                     </thead>
