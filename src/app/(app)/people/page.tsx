@@ -78,14 +78,14 @@ export default async function PeoplePage() {
           <TallyOutApprovalToggle userId={u.id} name={u.name} allowed={u.canApproveTallyOut} />
         )}
       </Td>
-      {(["approve", "release", "manage"] as const).map((kind) => (
+      {(["approve", "release", "change", "manage"] as const).map((kind) => (
         <Td key={kind}>
           {u.role === "CLIENT" || u.role === "OWNER" ? (
             <span className="text-xs text-ink-300">{u.role === "OWNER" ? "Yes — owner" : "—"}</span>
           ) : kind === "manage" && u.role === "ACCOUNTING" ? (
             <span className="text-xs text-ink-400">Yes — by role</span>
           ) : (
-            <PettyCashAccessToggle userId={u.id} name={u.name} kind={kind} allowed={kind === "approve" ? u.canApprovePettyCash : kind === "release" ? u.canReleasePettyCash : u.canManageCash} />
+            <PettyCashAccessToggle userId={u.id} name={u.name} kind={kind} allowed={kind === "approve" ? u.canApprovePettyCash : kind === "release" ? u.canReleasePettyCash : kind === "change" ? u.receivesChange : u.canManageCash} />
           )}
         </Td>
       ))}
@@ -126,6 +126,7 @@ export default async function PeoplePage() {
       <Th>Approves tally-outs</Th>
       <Th>Approves petty cash</Th>
       <Th>Releases petty cash</Th>
+      <Th>Receives returned change</Th>
       <Th>Full cash expense access</Th>
       <Th>Owner powers: Inventory</Th>
       <Th>Owner powers: Cash Expense</Th>
@@ -165,7 +166,7 @@ export default async function PeoplePage() {
             {clients.map(renderRow)}
             {clients.length === 0 && (
               <tr>
-                <Td colSpan={16} className="py-6 text-center text-ink-400">
+                <Td colSpan={17} className="py-6 text-center text-ink-400">
                   No client accounts yet — create one from a project&apos;s Portal Access panel.
                 </Td>
               </tr>

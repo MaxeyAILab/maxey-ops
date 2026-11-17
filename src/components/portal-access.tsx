@@ -204,7 +204,7 @@ export function RequisitionAccessToggle({ userId, name, byRole, allowed, ownOnly
 }
 
 /** Owner's switch on the People page: this person may approve, or may release, petty cash. */
-export function PettyCashAccessToggle({ userId, name, kind, allowed }: { userId: string; name: string; kind: "approve" | "release" | "manage"; allowed: boolean }) {
+export function PettyCashAccessToggle({ userId, name, kind, allowed }: { userId: string; name: string; kind: "approve" | "release" | "manage" | "change"; allowed: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -225,7 +225,7 @@ export function PettyCashAccessToggle({ userId, name, kind, allowed }: { userId:
 
   return (
     <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-ink-700">
-      <input type="checkbox" checked={allowed} disabled={busy} onChange={(e) => change(e.target.checked)} aria-label={kind === "manage" ? `${name} has full Cash Expense access` : `${name} can ${kind} petty cash`} />
+      <input type="checkbox" checked={allowed} disabled={busy} onChange={(e) => change(e.target.checked)} aria-label={kind === "manage" ? `${name} has full Cash Expense access` : kind === "change" ? `${name} confirms returned petty cash change` : `${name} can ${kind} petty cash`} />
       {allowed ? "Yes" : "No"}
       {error && <span className="text-red-600">{error}</span>}
     </label>

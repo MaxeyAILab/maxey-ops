@@ -17,9 +17,12 @@ import {
   seesAllPettyCash,
   canAttachReceipts,
   missingReceipt,
+  canConfirmChange,
+  changeDue,
+  CHANGE_TRACKING_FROM,
 } from "@/lib/cash-expense";
 import { CashExpenseHeader, CashIcons, CashStat, CashStatus, Panel } from "@/components/cash-expense-header";
-import { AddReceipts, ChangeProjectButton, EditReportButton, LiquidationForm, NoReceiptFlag, RequestActions, VerifyActions, type EditableReport } from "@/components/cash-expense-actions";
+import { AddReceipts, ChangeProjectButton, ChangeReturn, EditReportButton, LiquidationForm, NoReceiptFlag, RequestActions, VerifyActions, type EditableReport } from "@/components/cash-expense-actions";
 import { PrintButton } from "@/components/print-button";
 
 export const metadata = { title: "Petty Cash Report" };
@@ -110,6 +113,23 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
     items: ((r.liquidationItems as { description: string; amount: number }[] | null) ?? []).map((i) => ({ description: i.description, amount: Number(i.amount) })),
     receipts: Array.isArray(r.liquidationReceipts) ? (r.liquidationReceipts as string[]) : [],
   });
+
+  // Change handed back (owner's request 2026-11-17): who released the cash — or someone switched on, or the Owner — confirms it.
+  const me = await prisma.user.findUnique({ where: { id: user.id }, select: { receivesChange: true } });
+  const changeProps = (r: (typeof turnedIn)[number]) => ({
+    id: r.id,
+    no: formatPettyCashNo(r.number),
+    change: changeDue(r),
+    from: r.requestedBy.name,
+    releasedBy: r.releasedByName,
+    confirmedBy: r.changeReceivedByName,
+    confirmedAt: r.changeReceivedAt ? r.changeReceivedAt.toISOString() : null,
+    confirmedAmount: r.changeReceivedAmount === null ? null : Number(r.changeReceivedAmount),
+    canConfirm: canConfirmChange({ ...user, receivesChange: me?.receivesChange }, r),
+    canUndo: canDelete,
+    tracked: !!r.liquidationSubmittedAt && r.liquidationSubmittedAt >= CHANGE_TRACKING_FROM,
+  });
+  const changeOwed = turnedIn.filter((r) => changeDue(r) > 0 && !r.changeReceivedAt && !!r.liquidationSubmittedAt && r.liquidationSubmittedAt >= CHANGE_TRACKING_FROM);
 
   const toLiquidate = open.filter((r) => r.status === "RELEASED");
   // Only the person the cash went to reports what it was spent on; everyone else just sees who still owes a report.
@@ -280,6 +300,9 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
                     <Receipts urls={r.liquidationReceipts} />
                   </div>
                   {r.liquidationNote && <p className="mt-1 text-xs text-ink-500">Note: {r.liquidationNote}</p>}
+                  <div className="mt-2">
+                    <ChangeReturn {...changeProps(r)} />
+                  </div>
                   {canAttachReceipts(user, r) && (
                     <div className="mt-2">
                       <AddReceipts id={r.id} hasNone={missingReceipt(r)} />
@@ -297,6 +320,28 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
                 </div>
               );
             })}
+          </div>
+        </Panel>
+      )}
+
+      {changeOwed.length > 0 && (
+        <Panel title={`Change to be handed back (${changeOwed.length}) · ${php(changeOwed.reduce((s, r) => s + changeDue(r), 0))}`} className="no-print">
+          <p className="mb-3 text-xs text-ink-500">
+            Expenses were reported and money is left over. Once the change is handed back, the person who released the cash — or anyone switched on for &quot;Receives returned change&quot; on the People page, or the Owner — presses <b>Change received</b>.
+          </p>
+          <div className="divide-y divide-ink-100 rounded-lg border border-ink-200">
+            {changeOwed.map((r) => (
+              <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 text-sm">
+                <div>
+                  <span className="font-semibold text-ink-900">{formatPettyCashNo(r.number)}</span>
+                  <span className="text-ink-600"> · {r.requestedBy.name} · {r.project?.name ?? NO_PROJECT_LABEL}</span>
+                  <div className="text-xs text-ink-500">
+                    Released {php(r.amount)}{r.releasedByName ? ` by ${r.releasedByName}` : ""} · spent {php(r.spentAmount)} · {r.status === "LIQUIDATED" ? "report verified" : "report waiting for verification"}
+                  </div>
+                </div>
+                <ChangeReturn {...changeProps(r)} compact />
+              </div>
+            ))}
           </div>
         </Panel>
       )}
@@ -385,7 +430,12 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
                       <td className="px-3 py-2 text-ink-700">{r.requestedBy.name}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{php(r.amount)}</td>
                       <td className="px-3 py-2 text-right font-medium tabular-nums">{php(r.spentAmount)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{php(liquidationReturn(r))}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {php(liquidationReturn(r))}
+                        <div className="mt-1">
+                          <ChangeReturn {...changeProps(r)} compact />
+                        </div>
+                      </td>
                     </tr>
                   ))}
                   <tr className="border-t border-ink-200">

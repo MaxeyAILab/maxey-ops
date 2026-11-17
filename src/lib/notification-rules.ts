@@ -190,6 +190,8 @@ export const EVENTS: Record<string, EventDef> = {
   PETTY_CASH_REPORT_EDITED: { category: "CASH", tokens: ADMIN_CASH, title: "Expense report corrected by the Owner", explicitTitle: "Your expense report was corrected by the Owner", body: bodyOf },
   PETTY_CASH_PROJECT_CHANGED: { category: "CASH", tokens: ADMIN_CASH, title: "Petty cash moved to another project", explicitTitle: "The project of your petty cash request was changed by the Owner", body: bodyOf },
   PETTY_CASH_LIQUIDATED: { category: "CASH", title: "Petty cash expense report verified", explicitTitle: "Your petty cash expense report was verified", body: bodyOf },
+  PETTY_CASH_CHANGE_RECEIVED: { category: "CASH", tokens: ADMIN_CASH, title: "Petty cash change handed back", explicitTitle: "The change you handed back was confirmed received", body: bodyOf },
+  PETTY_CASH_CHANGE_RECEIPT_UNDONE: { category: "CASH", tokens: ADMIN_CASH, title: "Petty cash change confirmation taken back", body: bodyOf },
   PETTY_CASH_LIQUIDATION_SENT_BACK: { category: "CASH", title: "Expense report sent back", explicitTitle: "Your expense report was sent back — please fix it", body: bodyOf },
   PETTY_CASH_APPROVAL_CANCELLED: { category: "CASH", title: "Petty cash approval cancelled", explicitTitle: "The approval of your petty cash request was cancelled", body: bodyOf },
   PETTY_CASH_CANCELLED: { category: "CASH", title: "Petty cash request cancelled", explicitTitle: "Your petty cash request was cancelled", body: bodyOf },

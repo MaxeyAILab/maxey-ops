@@ -80,6 +80,28 @@ export function canApprovePettyCash(u: CashPerson): boolean {
   return u.role === "OWNER" || !!u.canApprovePettyCash || !!u.ownerCash;
 }
 
+/** Change returns are tracked for expense reports turned in from this moment; older reports simply weren't tracked. */
+export const CHANGE_TRACKING_FROM = new Date("2026-11-17T00:00:00+08:00");
+
+/** Unspent cash the requester has to hand back once they report their expenses (0 when they spent it all or more). */
+export function changeDue(r: { status: string; amount: Money; spentAmount?: Money }): number {
+  if (r.status !== "FOR_LIQUIDATION" && r.status !== "LIQUIDATED") return 0;
+  return Math.max(0, Math.round((num(r.amount) - num(r.spentAmount)) * 100) / 100);
+}
+
+/**
+ * Confirms that the change was handed back: the Owner, anyone the Owner switched on ("Receives change" on People), or the person
+ * who released that cash — never the person returning it.
+ */
+export function canConfirmChange(
+  u: { id: string; name: string; role: string; receivesChange?: boolean | null },
+  r: { requestedById: string; releasedByName: string | null }
+): boolean {
+  if (u.role === "OWNER") return true;
+  if (u.id === r.requestedById) return false;
+  return !!u.receivesChange || (!!r.releasedByName && r.releasedByName === u.name);
+}
+
 /** Confirms handing out approved petty cash: whoever the Owner switched on (the Owner always can). */
 export function canReleasePettyCash(u: CashPerson): boolean {
   return u.role === "OWNER" || !!u.canReleasePettyCash || !!u.ownerCash;

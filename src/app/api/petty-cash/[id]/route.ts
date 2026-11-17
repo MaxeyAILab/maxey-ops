@@ -6,7 +6,7 @@ import { audit } from "@/lib/audit";
 import { savePhotos } from "@/lib/storage";
 import { php } from "@/lib/format";
 import { ApiError, handleApi } from "@/lib/rbac";
-import { MAX_LIQUIDATION_RECEIPTS, PETTY_CASH_CATEGORIES, PETTY_CASH_CATEGORY_LABEL, canApproveCash, canApprovePettyCash, canAttachReceipts, canReleasePettyCash, formatPettyCashNo, fundBalance, isCashCustodian, itemsTotal, receiptCount, seesAllPettyCash } from "@/lib/cash-expense";
+import { MAX_LIQUIDATION_RECEIPTS, PETTY_CASH_CATEGORIES, PETTY_CASH_CATEGORY_LABEL, canApproveCash, canApprovePettyCash, canAttachReceipts, canConfirmChange, canReleasePettyCash, changeDue, formatPettyCashNo, fundBalance, isCashCustodian, itemsTotal, receiptCount, seesAllPettyCash } from "@/lib/cash-expense";
 import { requireCashExpenseUser } from "@/lib/cash-expense-db";
 
 const itemSchema = z.object({ description: z.string().trim().min(1).max(200), amount: z.coerce.number().min(0).max(1_000_000) });
@@ -46,6 +46,10 @@ const patchSchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("verify") }),
   z.object({ action: z.literal("send_back"), reason: z.string().trim().min(3).max(300) }),
+  // The person who released the cash (or one the Owner switched on, or the Owner) declares the unspent change was handed back.
+  z.object({ action: z.literal("change_received") }),
+  // The Owner takes back a change confirmation made by mistake.
+  z.object({ action: z.literal("undo_change_received"), reason: z.string().trim().min(3).max(300) }),
 ]);
 
 /**
@@ -197,6 +201,28 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
         note: { from: r.liquidationNote, to: body.note || null },
         receiptsRemoved: Array.from(drop),
       };
+      break;
+    }
+    case "change_received": {
+      expect("FOR_LIQUIDATION", "LIQUIDATED");
+      const due = changeDue(r);
+      if (due <= 0) throw new ApiError(400, `${no} has no change to hand back`);
+      if (r.changeReceivedAt) throw new ApiError(400, `${no}: ${r.changeReceivedByName ?? "someone"} already confirmed receiving the change`);
+      const me = await prisma.user.findUnique({ where: { id: user.id }, select: { receivesChange: true } });
+      if (!canConfirmChange({ ...user, receivesChange: me?.receivesChange }, r)) {
+        throw new ApiError(403, r.requestedById === user.id ? "The person who received the change confirms it — not the one handing it back" : `Only ${r.releasedByName ?? "the person who released the cash"}, the Owner or someone set up to receive change can confirm this`);
+      }
+      data = { changeReceivedAt: new Date(), changeReceivedByName: user.name, changeReceivedAmount: due };
+      action = "PETTY_CASH_CHANGE_RECEIVED";
+      diff = { ...diff, change: due, from: r.requestedBy.name, releasedBy: r.releasedByName, status: r.status };
+      break;
+    }
+    case "undo_change_received": {
+      if (!canApproveCash(user)) throw new ApiError(403, "Only the Owner takes back a change confirmation");
+      if (!r.changeReceivedAt) throw new ApiError(400, `${no}: no change confirmation to take back`);
+      data = { changeReceivedAt: null, changeReceivedByName: null, changeReceivedAmount: null };
+      action = "PETTY_CASH_CHANGE_RECEIPT_UNDONE";
+      diff = { ...diff, reason: body.reason, wasConfirmedBy: r.changeReceivedByName, change: r.changeReceivedAmount === null ? null : Number(r.changeReceivedAmount) };
       break;
     }
     case "change_project": {

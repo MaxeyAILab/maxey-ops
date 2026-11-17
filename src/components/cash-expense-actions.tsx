@@ -661,6 +661,109 @@ export function VerifyActions({ id, noReceipt = false }: { id: string; noReceipt
   );
 }
 
+/**
+ * The unspent change of a reported petty cash request: who still has to hand it back, and — for whoever released the cash, a
+ * person set up to receive change, or the Owner — a "Change received" button to declare it was handed back. Once confirmed it
+ * shows who received it and when (the Owner can take a mistaken confirmation back).
+ */
+export function ChangeReturn({
+  id,
+  no,
+  change,
+  from,
+  releasedBy,
+  confirmedBy,
+  confirmedAt,
+  confirmedAmount,
+  canConfirm,
+  canUndo,
+  tracked,
+  compact = false,
+}: {
+  id: string;
+  no: string;
+  change: number;
+  /** the requester, who hands the change back */
+  from: string;
+  releasedBy: string | null;
+  confirmedBy: string | null;
+  confirmedAt: string | null;
+  confirmedAmount: number | null;
+  canConfirm: boolean;
+  canUndo: boolean;
+  /** reported after change returns started being tracked — older reports aren't flagged as missing */
+  tracked: boolean;
+  compact?: boolean;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  if (change <= 0 && !confirmedBy) return null;
+
+  async function act(body: Record<string, unknown>, done: string) {
+    setBusy(true);
+    setError("");
+    const err = await send(`/api/petty-cash/${id}`, "PATCH", body);
+    setBusy(false);
+    if (err) return setError(err);
+    toast(done);
+    router.refresh();
+  }
+
+  if (confirmedBy) {
+    const when = confirmedAt ? new Date(confirmedAt).toLocaleDateString("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric", year: "numeric" }) : "";
+    const differs = confirmedAmount != null && Math.abs(confirmedAmount - change) > 0.005;
+    return (
+      <div className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs ${compact ? "justify-end" : ""}`}>
+        <span className="font-medium text-emerald-700 dark:text-emerald-300">
+          ✓ Change {peso(confirmedAmount ?? change)} received by {confirmedBy}
+          {when && ` · ${when}`}
+        </span>
+        {differs && <span className="text-amber-700 dark:text-amber-300">(report now says {peso(change)})</span>}
+        {canUndo && (
+          <button
+            type="button"
+            disabled={busy}
+            className="no-print text-ink-500 hover:underline"
+            onClick={() => {
+              const reason = window.prompt(`Take back the confirmation that ${confirmedBy} received the change for ${no}?\n\nWhy?`);
+              if (reason && reason.trim().length >= 3) act({ action: "undo_change_received", reason: reason.trim() }, "Change confirmation taken back");
+            }}
+          >
+            undo
+          </button>
+        )}
+        {error && <span className="w-full text-red-700 dark:text-red-300">{error}</span>}
+      </div>
+    );
+  }
+
+  return (
+    <div className={`flex flex-wrap items-center gap-2 text-xs ${compact ? "justify-end" : ""}`}>
+      {tracked ? (
+        <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+          ⏳ {peso(change)} change not yet returned{releasedBy ? ` to ${releasedBy}` : ""}
+        </span>
+      ) : (
+        <span className="no-print text-ink-400">change return not recorded</span>
+      )}
+      {canConfirm && (
+        <button
+          type="button"
+          disabled={busy}
+          className="no-print min-h-[30px] rounded-md bg-emerald-700 px-2.5 font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+          onClick={() => {
+            if (window.confirm(`Confirm that you received the change of ${peso(change)} from ${from} for ${no}?`)) act({ action: "change_received" }, `Change of ${peso(change)} confirmed received`);
+          }}
+        >
+          {busy ? "Saving…" : "✓ Change received"}
+        </button>
+      )}
+      {error && <span className="w-full text-red-700 dark:text-red-300">{error}</span>}
+    </div>
+  );
+}
+
 /** Record a worker's cash advance and the amount to deduct every payroll cut-off. */
 export function CashAdvanceForm({ people, canApprove }: { people: Option[]; canApprove: boolean }) {
   const router = useRouter();
