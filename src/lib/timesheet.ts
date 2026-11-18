@@ -224,6 +224,13 @@ export const canReviewSheet = (u: SheetUser, ctx: { assignedToProject: boolean }
 /** Whether this person may tick the project engineer's "Approved" box on this project: the Owner/PM, or the project engineer assigned to it. */
 export const canApproveSheet = (u: SheetUser, ctx: { assignedToProject: boolean }): boolean => u.role === "OWNER" || u.role === "PM" || (isProjectEngineer(u) && ctx.assignedToProject);
 
+/**
+ * Whether this person may tick a box on their OWN line. The foreman checks and reviews his own line together with his crew (owner's
+ * request 2026-11-18 — the general foreman was being left out of "everyone"); the project engineer's approval is still the second
+ * check. Nobody approves their own time, except the Owner and PM.
+ */
+export const canTickOwnLine = (step: "review" | "approve", role: string): boolean => role === "OWNER" || role === "PM" || step === "review";
+
 export interface ReviewLine {
   userId: string;
   stage: SheetStage;

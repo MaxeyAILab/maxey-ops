@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
-import { canApproveSheet, canReviewSheet, lineStage, nextStage } from "@/lib/timesheet";
+import { canApproveSheet, canReviewSheet, canTickOwnLine, lineStage, nextStage } from "@/lib/timesheet";
 import { dayClosedByPayroll } from "@/lib/timesheet-db";
 import { alertReviewFinished } from "@/lib/timesheet-notify";
 import { isOfficePaidOn } from "@/lib/office-payroll";
@@ -55,15 +55,15 @@ export const POST = handleApi(async (req: NextRequest) => {
   // lines of people paid through the office payroll are a group of their own (their own panel on the sheet)
   const dayAll = await prisma.timesheetEntry.findMany({ where: { projectId: project.id, date }, select: { userId: true, reviewedAt: true } });
   const flags = new Map((await prisma.user.findMany({ where: { id: { in: dayAll.map((r) => r.userId) } }, select: { id: true, officePayrollFrom: true } })).map((u) => [u.id, isOfficePaidOn(u, body.date)]));
-  const canTickOwn = user.role === "OWNER" || user.role === "PM";
+  const canTickOwn = canTickOwnLine(body.step, user.role);
 
   const now = new Date();
   const done: string[] = [];
   const skipped: { userId: string; name: string; why: string }[] = [];
   for (const e of entries) {
-    // nobody checks or approves their own time (the Owner and PM may)
+    // the foreman checks his own line with the crew; nobody approves their own time (the Owner and PM may)
     if (e.userId === user.id && !canTickOwn) {
-      skipped.push({ userId: e.userId, name: e.user.name, why: "you can't check or approve your own time — the Owner or PM does" });
+      skipped.push({ userId: e.userId, name: e.user.name, why: "you can't approve your own time — the Owner or PM does" });
       continue;
     }
     const move = nextStage(body.step, body.checked, lineStage(e));

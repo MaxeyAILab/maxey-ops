@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { computeEffectiveHours, manilaTime } from "./time-rules";
-import { canApproveSheet, canEditSheet, canReviewSheet, changesRecord, isForeman, isProjectEngineer, lineStage, nextStage, regularHours, sheetProgress, worksSheetFreely, type SheetInput } from "./timesheet";
+import { canApproveSheet, canEditSheet, canReviewSheet, canTickOwnLine, changesRecord, isForeman, isProjectEngineer, lineStage, nextStage, regularHours, sheetProgress, worksSheetFreely, type SheetInput } from "./timesheet";
 
 const DAY = "2026-11-09";
 const at = (hm: string) => { const [h, m] = hm.split(":").map(Number); return manilaTime(DAY, h, m); };
@@ -219,5 +219,14 @@ describe("the project an office-paid person's pay is charged to", () => {
     expect(chargedProjectFor([], [rdf])).toEqual({ projectId: "rdf", projectName: "RDF Florida Farm" });
     expect(chargedProjectFor([], [rdf, other])).toBeNull();
     expect(chargedProjectFor([{ projectId: "office", source: "online" }], [rdf, other])).toBeNull();
+  });
+});
+
+describe("ticking your own line", () => {
+  it("the foreman checks and reviews his own line with the crew; nobody approves their own time but the Owner and PM", () => {
+    expect(canTickOwnLine("review", "FOREMAN")).toBe(true);
+    expect(canTickOwnLine("approve", "ENGINEER")).toBe(false);
+    expect(canTickOwnLine("approve", "OWNER")).toBe(true);
+    expect(canTickOwnLine("approve", "PM")).toBe(true);
   });
 });
