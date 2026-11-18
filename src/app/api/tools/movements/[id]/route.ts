@@ -10,6 +10,7 @@ import { savePhotos } from "@/lib/storage";
 import { MAX_NEW_REQUEST_PHOTOS, photoRoom, withPhotos } from "@/lib/request-photos";
 import { isCountedCategory } from "@/lib/tool-category";
 import { moveLotPieces } from "@/lib/tool-lots";
+import { canRequestReturn, statusAfterReturn } from "@/lib/tool-return";
 
 const patchSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("approve") }),
@@ -66,17 +67,19 @@ export const PATCH = handleApi(async (req: NextRequest, { params }: { params: { 
   }
 
   // approve: the tool must still be where it was when the request was made
-  if (m.tool.status !== "ON_SITE" || m.tool.currentProjectId !== m.fromProjectId) {
+  // (a return may also be for a tool under repair at that project — it comes back still under repair)
+  const toWarehouse = m.type === "RETURN_TO_WAREHOUSE";
+  const stillThere = toWarehouse ? canRequestReturn(m.tool.status, m.tool.currentProjectId) : m.tool.status === "ON_SITE";
+  if (!stillThere || m.tool.currentProjectId !== m.fromProjectId) {
     throw new ApiError(409, `${m.tool.name} is no longer where it was when this was requested — reject this request and ask for a new one`);
   }
   if (m.type === "TRANSFER_SITE_TO_SITE" && (!m.toProjectId || m.toProjectId === m.tool.currentProjectId)) throw new ApiError(400, "This transfer has no valid destination");
-  const toWarehouse = m.type === "RETURN_TO_WAREHOUSE";
   const counted = isCountedCategory(m.tool.category);
   if (counted && m.tool.quantity < m.qty) throw new ApiError(409, `Only ${m.tool.quantity} ${m.tool.name} ${m.tool.quantity === 1 ? "is" : "are"} there now, ${m.qty} were asked for — reject this request and ask for a new one`);
   await prisma.$transaction(async (db) => {
     const done = await db.toolMovement.updateMany({ where: { id: m.id, status: "PENDING" }, data: { status: "APPLIED", decidedById: user.id, decidedByName: user.name, decidedAt: now } });
     if (done.count === 0) throw new ApiError(409, "This request was just decided by someone else");
-    const dest = toWarehouse ? { status: "IN_WAREHOUSE" as const, currentProjectId: null } : { status: "ON_SITE" as const, currentProjectId: m.toProjectId };
+    const dest = toWarehouse ? { status: statusAfterReturn(m.tool.status), currentProjectId: null } : { status: "ON_SITE" as const, currentProjectId: m.toProjectId };
     if (counted) await moveLotPieces(db, m.tool, m.qty, dest);
     else await db.toolAsset.update({ where: { id: m.toolId }, data: dest });
   });

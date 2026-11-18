@@ -8,6 +8,7 @@ import { PhotoInput } from "@/components/photo-input";
 import { TOOL_CONDITIONS, TOOL_CONDITION_LABEL, type ToolConditionValue } from "@/lib/tool-condition";
 import { WAREHOUSES, type WarehouseValue } from "@/lib/warehouses";
 import { TOOL_CATEGORIES, isCountedCategory } from "@/lib/tool-category";
+import { canRequestReturn } from "@/lib/tool-return";
 
 interface ProjectOption {
   id: string;
@@ -329,6 +330,11 @@ export function ToolActions({
             {counted ? "Mark pieces lost" : "Mark lost"}
           </button>
         </>
+      )}
+      {status === "UNDER_REPAIR" && canRequestReturn(status, currentProjectId) && (
+        <button onClick={() => setMode("return")} title="Office staff approve it before the tool is back in the warehouse — it stays under repair there" className="text-xs font-medium text-emerald-600 hover:underline">
+          {counted ? "Return pieces to warehouse (request)" : "Return to warehouse (request)"}
+        </button>
       )}
       {(status === "UNDER_REPAIR" || status === "LOST") && !counted && (
         <button onClick={() => act("MARK_AVAILABLE")} disabled={busy} className="text-xs font-medium text-emerald-600 hover:underline">

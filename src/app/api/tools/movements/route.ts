@@ -11,6 +11,7 @@ import { MAX_NEW_REQUEST_PHOTOS } from "@/lib/request-photos";
 import { TOOL_CONDITION_LABEL, blocksCheckout, conditionAfterMovement } from "@/lib/tool-condition";
 import { isCountedCategory } from "@/lib/tool-category";
 import { moveLotPieces, shortagePhrase, wholeQty } from "@/lib/tool-lots";
+import { canRequestReturn, statusAfterReturn } from "@/lib/tool-return";
 import type { ToolStatus } from "@prisma/client";
 
 const TOOL_MOVEMENT_TYPES = [
@@ -91,10 +92,10 @@ export const POST = handleApi(async (req: NextRequest) => {
       nextProjectId = toProjectId;
       break;
     case "RETURN_TO_WAREHOUSE":
-      if (tool.status !== "ON_SITE") {
+      if (!canRequestReturn(tool.status, tool.currentProjectId)) {
         throw new ApiError(400, `${tool.name} is not currently on a site`);
       }
-      nextStatus = "IN_WAREHOUSE";
+      nextStatus = statusAfterReturn(tool.status); // under repair at a site → back in the warehouse, still under repair
       nextProjectId = null;
       break;
     case "TRANSFER_SITE_TO_SITE":
