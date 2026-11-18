@@ -9,7 +9,7 @@ import { WarehouseTabs } from "@/components/warehouse-tabs";
 import { canAccess, canAddInventoryCatalog, canDeleteTool, canLogInventoryMovement } from "@/lib/access";
 import { CHARGEABLE_STATUSES } from "@/lib/project-status";
 import { TOOL_CONDITION_LABEL } from "@/lib/tool-condition";
-import { TOOL_FILTERS, filterTools, isToolFilter, toolFilterCounts } from "@/lib/tool-filter";
+import { CONDITION_FILTERS, TOOL_FILTERS, conditionCounts, filterTools, isConditionFilter, isToolFilter, toolFilterCounts, toolMatchesCondition, type ConditionFilterKey } from "@/lib/tool-filter";
 import { NO_TOOL_CATEGORY, TOOL_CATEGORIES, TOOL_CATEGORY_LABEL, isCountedCategory, summarizeToolCategories, toolCategoryFromSlug, toolCategoryKey, toolCategorySlug } from "@/lib/tool-category";
 import { DEFAULT_WAREHOUSE, countByWarehouse, warehouseFromSlug, warehouseLabel, warehouseSlug } from "@/lib/warehouses";
 import { REQUEST_LABEL } from "@/lib/inventory-labels";
@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
  * tiles; this page lists the tools of each one, with a status filter and a search box, and is where a tool is checked out,
  * returned, edited or (by the Owner) deleted.
  */
-export default async function ToolsPage({ searchParams }: { searchParams: { category?: string; tool?: string; toolq?: string; wh?: string } }) {
+export default async function ToolsPage({ searchParams }: { searchParams: { category?: string; tool?: string; toolq?: string; wh?: string; cond?: string } }) {
   const user = await getSessionUser();
   if (!user || !canAccess(user.role, user.department, "/inventory", user.customMenus, user.useCustomMenus)) redirect("/attendance");
 
@@ -32,6 +32,7 @@ export default async function ToolsPage({ searchParams }: { searchParams: { cate
   const category = toolCategoryFromSlug(searchParams.category);
   const statusFilter = isToolFilter(searchParams.tool) ? searchParams.tool : "all";
   const q = (searchParams.toolq ?? "").trim().slice(0, 80);
+  const cond: ConditionFilterKey = isConditionFilter(searchParams.cond) ? searchParams.cond : "all";
 
   const [everything, projects, pendingTools] = await Promise.all([
     // an empty pool of a counted tool (all its pieces moved elsewhere) is kept for the history but not shown
@@ -51,17 +52,22 @@ export default async function ToolsPage({ searchParams }: { searchParams: { cate
   const rows = inWarehouse.map((t) => ({ ...t, location: t.currentProject?.name ?? warehouseLabel(t.warehouse) }));
   const inCategory = category ? rows.filter((t) => toolCategoryKey(t.category) === category) : rows;
   const statusCounts = toolFilterCounts(inCategory);
-  const visible = filterTools(inCategory, statusFilter, q);
+  // the condition bar narrows whatever the status filter and the search already show
+  const listed = filterTools(inCategory, statusFilter, q);
+  const condCounts = conditionCounts(listed);
+  const visible = listed.filter((t) => toolMatchesCondition(t, cond));
   const projectOptions = projects;
 
-  const href = (over: { category?: string | null; tool?: string | null; toolq?: string | null }) => {
+  const href = (over: { category?: string | null; tool?: string | null; toolq?: string | null; cond?: string | null }) => {
     const qs = new URLSearchParams(whQuery);
     const c = over.category === undefined ? searchParams.category : over.category;
     const t = over.tool === undefined ? (statusFilter === "all" ? null : statusFilter) : over.tool;
     const s = over.toolq === undefined ? q : over.toolq;
+    const k = over.cond === undefined ? (cond === "all" ? null : cond) : over.cond;
     if (c) qs.set("category", c);
     if (t) qs.set("tool", t);
     if (s) qs.set("toolq", s);
+    if (k) qs.set("cond", k);
     return `/inventory/tools${qs.toString() ? `?${qs}` : ""}`;
   };
   const pill = (on: boolean) => `rounded-full border px-3 py-1.5 text-sm font-medium ${on ? "border-[#8a1a28] bg-[#8a1a28] text-white" : "border-ink-200 text-ink-700 hover:bg-ink-100"}`;
@@ -84,7 +90,7 @@ export default async function ToolsPage({ searchParams }: { searchParams: { cate
         <p className="text-sm text-ink-500">Every tool and piece of equipment kept in the {whName}, by category.</p>
       </div>
 
-      <WarehouseTabs current={wh} counts={toolWarehouseCounts} path="/inventory/tools" params={{ category: searchParams.category && category ? searchParams.category : undefined, tool: statusFilter !== "all" ? statusFilter : undefined, toolq: q || undefined }} noun="tools" />
+      <WarehouseTabs current={wh} counts={toolWarehouseCounts} path="/inventory/tools" params={{ category: searchParams.category && category ? searchParams.category : undefined, tool: statusFilter !== "all" ? statusFilter : undefined, toolq: q || undefined, cond: cond !== "all" ? cond : undefined }} noun="tools" />
 
       <div className="flex flex-wrap items-center gap-2">
         {categoryTab(null, "All", inWarehouse.reduce((s, t) => s + t.quantity, 0))}
@@ -93,7 +99,7 @@ export default async function ToolsPage({ searchParams }: { searchParams: { cate
       </div>
 
       <Card>
-        <CardHeader title={`${category ? TOOL_CATEGORY_LABEL[category] : "All categories"} (${visible.length}${visible.length !== inCategory.length ? ` of ${inCategory.length}` : ""})`} subtitle={category === "SCAFFOLD" ? "Counted by quantity — pieces are checked out to projects, returned and transferred by number" : "Individually tracked — each unit checked out to a project and returned to its warehouse. Scaffolding & Shoring is counted by quantity"} />
+        <CardHeader title={`${category ? TOOL_CATEGORY_LABEL[category] : "All categories"} (${visible.length}${visible.length !== inCategory.length ? ` of ${inCategory.length}` : ""})${cond !== "all" ? ` · ${CONDITION_FILTERS.find((f) => f.key === cond)?.label}` : ""}`} subtitle={category === "SCAFFOLD" ? "Counted by quantity — pieces are checked out to projects, returned and transferred by number" : "Individually tracked — each unit checked out to a project and returned to its warehouse. Scaffolding & Shoring is counted by quantity"} />
         <CardBody className="space-y-3 border-b border-ink-100">
           <div className="flex flex-wrap items-center gap-2">
             {TOOL_FILTERS.map((f) => (
@@ -106,6 +112,7 @@ export default async function ToolsPage({ searchParams }: { searchParams: { cate
             {wh !== DEFAULT_WAREHOUSE && <input type="hidden" name="wh" value={warehouseSlug(wh)} />}
             {category && <input type="hidden" name="category" value={searchParams.category} />}
             {statusFilter !== "all" && <input type="hidden" name="tool" value={statusFilter} />}
+            {cond !== "all" && <input type="hidden" name="cond" value={cond} />}
             <input
               type="search"
               name="toolq"
@@ -123,6 +130,25 @@ export default async function ToolsPage({ searchParams }: { searchParams: { cate
               </Link>
             )}
           </form>
+          <nav aria-label="Filter by condition" className="-mx-1 overflow-x-auto px-1">
+            <div className="flex w-max gap-1 rounded-lg bg-ink-200/60 p-1">
+              {CONDITION_FILTERS.map((f) => {
+                const on = cond === f.key;
+                return (
+                  <Link
+                    key={f.key}
+                    href={href({ cond: f.key === "all" ? null : f.key })}
+                    scroll={false}
+                    aria-current={on ? "true" : undefined}
+                    className={`flex items-center gap-2 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium ${on ? "bg-[#8a1a28] text-white shadow-sm" : "text-ink-600 hover:bg-ink-50 hover:text-ink-900"}`}
+                  >
+                    {f.label}
+                    <span className={`rounded-full px-1.5 text-xs tabular-nums ${on ? "bg-white/20 text-white" : f.key !== "all" && f.key !== "WORKING" && condCounts[f.key] > 0 ? "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200" : "bg-ink-100 text-ink-600"}`}>{condCounts[f.key]}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </nav>
         </CardBody>
         <Table>
           <thead>
@@ -167,7 +193,7 @@ export default async function ToolsPage({ searchParams }: { searchParams: { cate
             {visible.length === 0 && (
               <tr>
                 <Td colSpan={canMove ? 8 : 7} className="py-8 text-center text-ink-400">
-                  {inWarehouse.length === 0 ? `No tools are kept in the ${whName} yet.` : q || statusFilter !== "all" ? "No tools match — try another filter or fewer words." : "No tools in this category yet."}
+                  {inWarehouse.length === 0 ? `No tools are kept in the ${whName} yet.` : q || statusFilter !== "all" || cond !== "all" ? "No tools match — try another filter or fewer words." : "No tools in this category yet."}
                 </Td>
               </tr>
             )}

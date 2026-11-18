@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterTools, isToolFilter, needsAttention, toolFilterCounts, type ToolRow } from "./tool-filter";
+import { conditionCounts, filterTools, isConditionFilter, isToolFilter, needsAttention, toolFilterCounts, toolMatchesCondition, type ToolRow } from "./tool-filter";
 
 const t = (name: string, over: Partial<ToolRow> = {}): ToolRow => ({ name, assetTag: null, category: null, status: "IN_WAREHOUSE", workingStatus: "WORKING", location: "Warehouse", ...over });
 const tools: ToolRow[] = [
@@ -45,5 +45,21 @@ describe("narrowing the tools list", () => {
   it("recognises the filter names used in the page address", () => {
     for (const k of ["all", "warehouse", "site", "attention"]) expect(isToolFilter(k)).toBe(true);
     for (const k of ["", "lost", null, undefined]) expect(isToolFilter(k)).toBe(false);
+  });
+});
+
+describe("condition bar", () => {
+  const t = (name: string, workingStatus: string, quantity = 1): ToolRow => ({ name, assetTag: null, category: null, status: "IN_WAREHOUSE", workingStatus, location: "Main Warehouse", quantity });
+  const rows = [t("Drill", "WORKING"), t("Grinder", "FOR_REPAIR"), t("Mixer", "NOT_WORKING"), t("Old saw", "FOR_DISPOSAL"), t("Base jack", "WORKING", 40)];
+
+  it("counts each condition (pieces for counted tools)", () => {
+    expect(conditionCounts(rows)).toEqual({ all: 44, WORKING: 41, FOR_REPAIR: 1, NOT_WORKING: 1, FOR_DISPOSAL: 1 });
+  });
+
+  it("keeps only the tools in the chosen condition", () => {
+    expect(rows.filter((r) => toolMatchesCondition(r, "FOR_REPAIR")).map((r) => r.name)).toEqual(["Grinder"]);
+    expect(rows.filter((r) => toolMatchesCondition(r, "all"))).toHaveLength(5);
+    expect(isConditionFilter("FOR_DISPOSAL")).toBe(true);
+    expect(isConditionFilter("broken")).toBe(false);
   });
 });

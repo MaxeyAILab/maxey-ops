@@ -56,6 +56,25 @@ export function filterTools<T extends ToolRow>(tools: T[], filter: ToolFilterKey
   return tools.filter((t) => toolMatchesFilter(t, filter) && toolMatchesQuery(t, query));
 }
 
+/** The condition bar under the search box (owner's request 2026-11-18): working, for repair, not working, for disposal. */
+export const CONDITION_FILTERS = [
+  { key: "all", label: "All conditions" },
+  { key: "WORKING", label: "Working" },
+  { key: "FOR_REPAIR", label: "For repair" },
+  { key: "NOT_WORKING", label: "Not working" },
+  { key: "FOR_DISPOSAL", label: "For disposal" },
+] as const;
+export type ConditionFilterKey = (typeof CONDITION_FILTERS)[number]["key"];
+
+export const isConditionFilter = (v: unknown): v is ConditionFilterKey => CONDITION_FILTERS.some((f) => f.key === v);
+
+export const toolMatchesCondition = (t: ToolRow, cond: ConditionFilterKey): boolean => cond === "all" || t.workingStatus === cond;
+
+/** How many tools (pieces, for counted tools) each condition button would show among the given rows. */
+export function conditionCounts(tools: ToolRow[]): Record<ConditionFilterKey, number> {
+  return Object.fromEntries(CONDITION_FILTERS.map((f) => [f.key, tools.filter((t) => toolMatchesCondition(t, f.key)).reduce((s, t) => s + (t.quantity ?? 1), 0)])) as Record<ConditionFilterKey, number>;
+}
+
 /** How many tools each filter button would show (before any search). */
 export function toolFilterCounts(tools: ToolRow[]): Record<ToolFilterKey, number> {
   return Object.fromEntries(TOOL_FILTERS.map((f) => [f.key, tools.filter((t) => toolMatchesFilter(t, f.key)).reduce((s, t) => s + (t.quantity ?? 1), 0)])) as Record<ToolFilterKey, number>;
