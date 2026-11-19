@@ -790,7 +790,15 @@ export default async function AttendancePage({ searchParams }: { searchParams: {
   if (!isAdmin) {
     return (
       <div className="space-y-6">
-        <h1 className="text-xl font-bold text-ink-900">Time &amp; Attendance</h1>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <h1 className="text-2xl font-bold tracking-tight text-ink-900">Time &amp; Attendance</h1>
+          {/* timekeepers, foremen and project engineers open the crew's timekeeper sheet from here */}
+          {canOpenTimesheets(user) && (
+            <Link href="/attendance/timekeeper" className="fx-grad rounded-full bg-accent px-4 py-2 text-sm font-semibold text-white hover:brightness-110">
+              Timekeeper sheet →
+            </Link>
+          )}
+        </div>
         <Card className="mx-auto max-w-xl lg:mx-0">
           <CardHeader title="My time clock" subtitle={openEntry ? `Clocked in since ${fmtDateTime(openEntry.timeIn)}` : "Not clocked in"} />
           <CardBody className="space-y-4">
