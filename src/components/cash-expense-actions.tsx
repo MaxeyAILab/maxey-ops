@@ -8,10 +8,10 @@ import { Modal } from "@/components/modal";
 import { NO_PROJECT, PETTY_CASH_CATEGORIES, PETTY_CASH_STATUS_LABEL, advanceDeleteWarning } from "@/lib/cash-expense";
 
 const fieldCls =
-  "block min-h-[44px] w-full rounded-md border border-ink-200 bg-ink-50 px-3 text-sm text-ink-900 placeholder:text-ink-400 focus:border-[#8a1a28] focus:outline-none focus:ring-1 focus:ring-[#8a1a28]";
+  "block min-h-[44px] w-full rounded-md border border-ink-200 bg-ink-50 px-3 text-sm text-ink-900 placeholder:text-ink-400 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 const labelCls = "mb-1.5 block text-sm font-medium text-ink-700";
 const primaryBtn =
-  "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-[#8a1a28] px-4 text-sm font-semibold text-white hover:bg-[#741522] disabled:opacity-50";
+  "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-accent fx-grad px-4 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50";
 const smallBtn = "rounded-md border border-ink-200 bg-ink-50 px-2.5 py-1 text-xs font-medium text-ink-700 hover:bg-ink-100 disabled:opacity-50";
 
 const peso = (n: number) => `₱${n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -421,7 +421,7 @@ export function FundForm() {
   const [error, setError] = useState("");
   if (!open)
     return (
-      <button type="button" onClick={() => setOpen(true)} className="text-xs font-semibold text-[#8a1a28] hover:underline dark:text-rose-300">
+      <button type="button" onClick={() => setOpen(true)} className="text-xs font-semibold text-accent hover:underline dark:text-rose-300">
         + Replenish fund
       </button>
     );

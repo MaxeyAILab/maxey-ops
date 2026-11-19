@@ -21,7 +21,7 @@ function activeHref(path: string, items: SidebarItem[]): string | null {
   return items.some((i) => i.href === tab) ? tab : null;
 }
 
-const ACTIVE = "bg-[#8a1a28] font-semibold text-white shadow-sm";
+const ACTIVE = "bg-accent fx-grad font-semibold text-white shadow-sm";
 
 /** The sidebar's tab list; the tab for the page you're on is highlighted in burgundy (same as Cash Expense). */
 export function SidebarNav({ items }: { items: SidebarItem[] }) {
@@ -43,7 +43,7 @@ export function SidebarNav({ items }: { items: SidebarItem[] }) {
                   : "text-ink-600 hover:bg-brand-50 hover:text-brand-700"
             }`}
           >
-            <span aria-hidden className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-base ${n.chipClass}`}>
+            <span aria-hidden className={`nav-chip flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-base ${n.chipClass}`}>
               {n.icon}
             </span>
             <span className="flex-1">{n.label}</span>

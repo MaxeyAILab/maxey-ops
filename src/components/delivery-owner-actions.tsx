@@ -8,8 +8,8 @@ import { discrepancyLines, dueQty, planAdjustment, type ChecklistRow, type PoLin
 
 const peso = (n: number) => `₱${n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const smallBtn = "text-xs font-medium hover:underline disabled:opacity-50";
-const field = "min-h-[40px] w-full rounded-lg border border-ink-200 bg-ink-50 px-3 text-sm text-ink-900 focus:border-[#8a1a28] focus:outline-none";
-const primary = "min-h-[40px] rounded-lg bg-[#8a1a28] px-4 text-sm font-semibold text-white hover:bg-[#741522] disabled:opacity-50";
+const field = "min-h-[40px] w-full rounded-lg border border-ink-200 bg-ink-50 px-3 text-sm text-ink-900 focus:border-accent focus:outline-none";
+const primary = "min-h-[40px] rounded-lg bg-accent fx-grad px-4 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50";
 const secondary = "min-h-[40px] rounded-lg border border-ink-200 px-4 text-sm font-medium text-ink-700 hover:bg-ink-100";
 
 async function patch(id: string, body: Record<string, unknown>): Promise<string | null> {

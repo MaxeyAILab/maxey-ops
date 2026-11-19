@@ -38,7 +38,7 @@ function Receipts({ urls }: { urls: unknown }) {
   return (
     <span className="flex flex-wrap gap-2 text-xs">
       {list.map((src, i) => (
-        <a key={src} href={src} target="_blank" rel="noopener noreferrer" className="text-[#8a1a28] hover:underline dark:text-rose-300">
+        <a key={src} href={src} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline dark:text-rose-300">
           Receipt {i + 1}
         </a>
       ))}
@@ -371,7 +371,7 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
               <option value={NO_PROJECT}>{NO_PROJECT_LABEL}</option>
             </select>
           </label>
-          <button type="submit" className="min-h-[40px] rounded-md bg-[#8a1a28] px-4 font-semibold text-white hover:bg-[#741522]">
+          <button type="submit" className="min-h-[40px] rounded-md bg-accent fx-grad px-4 font-semibold text-white hover:brightness-110">
             Show
           </button>
         </form>

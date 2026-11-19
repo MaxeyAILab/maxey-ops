@@ -12,7 +12,7 @@ import { passkeyTicket, passkeysSupported, wasCancelled } from "@/lib/passkey-cl
 // keeps the original burgundy accent while the rest of the app moved to the
 // new teal theme, and those primitives now render teal.
 const inputClass =
-  "block min-h-[44px] w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-900 placeholder:text-ink-400 focus:border-[#8a1a28] focus:outline-none focus:ring-1 focus:ring-[#8a1a28]";
+  "block min-h-[44px] w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-900 placeholder:text-ink-400 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
 export function LoginForm() {
   const router = useRouter();
@@ -96,7 +96,7 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={busy}
-        className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-[#8a1a28] px-4 text-sm font-medium text-white transition-colors hover:bg-[#6e1420] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8a1a28] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+        className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-accent fx-grad px-4 text-sm font-medium text-white transition-colors hover:bg-[#6e1420] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
       >
         {busy ? "Signing in…" : "Sign in"}
       </button>
@@ -105,7 +105,7 @@ export function LoginForm() {
           type="button"
           onClick={onPasskey}
           disabled={busy}
-          className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border border-[#8a1a28] px-4 text-sm font-medium text-[#8a1a28] transition-colors hover:bg-[#8a1a28]/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8a1a28] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+          className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border border-accent px-4 text-sm font-medium text-accent transition-colors hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
         >
           <span aria-hidden>🔐</span> Sign in with fingerprint / Face ID
         </button>

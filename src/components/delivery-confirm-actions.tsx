@@ -48,10 +48,10 @@ export function ConfirmDeliveryButtons({ id, poNumber, onBehalfOf }: { id: strin
         <div className="space-y-2 rounded-lg border border-dashed border-ink-200 p-3">
           <label className="block text-xs font-medium text-ink-600">
             What is wrong? (the office and the driver are told; the delivery stays unconfirmed)
-            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g., only 2 bags came, not 5" className="mt-1 min-h-[40px] w-full rounded-lg border border-ink-200 bg-ink-50 px-3 text-sm text-ink-900 focus:border-[#8a1a28] focus:outline-none" />
+            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g., only 2 bags came, not 5" className="mt-1 min-h-[40px] w-full rounded-lg border border-ink-200 bg-ink-50 px-3 text-sm text-ink-900 focus:border-accent focus:outline-none" />
           </label>
           <div className="flex gap-2">
-            <button type="button" disabled={busy || note.trim().length < 5} onClick={() => send({ action: "dispute", note: note.trim() })} className={`${btn} bg-[#8a1a28] text-white hover:bg-[#741522]`}>
+            <button type="button" disabled={busy || note.trim().length < 5} onClick={() => send({ action: "dispute", note: note.trim() })} className={`${btn} bg-accent fx-grad text-white hover:brightness-110`}>
               Send report
             </button>
             <button type="button" onClick={() => setReporting(false)} className={`${btn} border border-ink-200 text-ink-700 hover:bg-ink-100`}>

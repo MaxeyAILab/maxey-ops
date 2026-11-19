@@ -27,7 +27,7 @@ export function LanguageToggle({ className }: { className?: string }) {
       type="button"
       onClick={() => pick(value)}
       aria-pressed={lang === value}
-      className={`px-2 py-1 text-xs font-semibold ${lang === value ? "bg-[#8a1a28] text-white" : "text-ink-600 hover:bg-ink-100"}`}
+      className={`px-2 py-1 text-xs font-semibold ${lang === value ? "bg-accent fx-grad text-white" : "text-ink-600 hover:bg-ink-100"}`}
     >
       {text}
     </button>

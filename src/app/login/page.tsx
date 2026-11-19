@@ -11,7 +11,7 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center bg-[#191715] px-4">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex items-center justify-center gap-2">
-          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#8a1a28] font-black text-white">
+          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent fx-grad font-black text-white">
             M
           </span>
           <span className="text-xl font-bold text-white">Maxey Construction</span>

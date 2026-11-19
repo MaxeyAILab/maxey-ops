@@ -100,7 +100,7 @@ export function ItemPicker({
             {i.tag ? ` · ${i.tag}` : ""}
           </span>
         </span>
-        {selected?.id === i.id && <span aria-hidden className="text-[#8a1a28]">✓</span>}
+        {selected?.id === i.id && <span aria-hidden className="text-accent">✓</span>}
       </button>
     </li>
   );
@@ -117,7 +117,7 @@ export function ItemPicker({
         aria-haspopup="listbox"
         aria-controls={`${id}-list`}
         onClick={() => setOpen((o) => !o)}
-        className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-lg border border-ink-200 bg-ink-50 px-3 text-left text-sm text-ink-900 focus:border-[#8a1a28] focus:outline-none focus:ring-1 focus:ring-[#8a1a28]"
+        className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-lg border border-ink-200 bg-ink-50 px-3 text-left text-sm text-ink-900 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
       >
         <span className={`min-w-0 truncate ${selected ? "" : "text-ink-400"}`}>{selected ? `${selected.name} (${selected.unit})` : placeholder}</span>
         <span aria-hidden className="text-ink-400">
@@ -151,7 +151,7 @@ export function ItemPicker({
                 aria-controls={`${id}-list`}
                 autoComplete="off"
                 enterKeyHint="done"
-                className="block min-h-[44px] w-full rounded-lg border border-ink-200 bg-ink-50 px-3 text-base text-ink-900 placeholder:text-ink-400 focus:border-[#8a1a28] focus:outline-none md:text-sm"
+                className="block min-h-[44px] w-full rounded-lg border border-ink-200 bg-ink-50 px-3 text-base text-ink-900 placeholder:text-ink-400 focus:border-accent focus:outline-none md:text-sm"
               />
               <div className="flex flex-wrap gap-1.5" role="group" aria-label="Category">
                 {[{ value: null as string | null, label: "All" }, ...MATERIAL_CATEGORIES.map((c) => ({ value: c.value as string | null, label: SHORT[c.value] }))].map((c) => (
@@ -160,7 +160,7 @@ export function ItemPicker({
                     type="button"
                     aria-pressed={category === c.value}
                     onClick={() => setCategory(c.value)}
-                    className={`rounded-full border px-3 py-1 text-xs font-medium ${category === c.value ? "border-[#8a1a28] bg-[#8a1a28] text-white" : "border-ink-200 text-ink-700 hover:bg-ink-100"}`}
+                    className={`rounded-full border px-3 py-1 text-xs font-medium ${category === c.value ? "border-accent bg-accent fx-grad text-white" : "border-ink-200 text-ink-700 hover:bg-ink-100"}`}
                   >
                     {c.label}
                   </button>

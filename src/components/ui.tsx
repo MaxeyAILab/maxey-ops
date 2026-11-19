@@ -12,7 +12,7 @@ export function Card({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cx("rounded-sm border border-ink-200 bg-ink-50", className)}
+      className={cx("fx-card rounded-2xl border border-ink-200 bg-ink-50", className)}
       {...props}
     />
   );
@@ -53,18 +53,18 @@ export function Button({
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant }) {
   const styles: Record<ButtonVariant, string> = {
-    primary: "bg-brand-500 text-white hover:bg-brand-600 focus-visible:ring-brand-500",
+    primary: "bg-accent fx-grad text-white hover:brightness-110 focus-visible:ring-accent",
     secondary:
       "border border-ink-200 bg-ink-50 text-ink-700 hover:bg-ink-100 focus-visible:ring-ink-400",
     danger: "bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500",
-    success: "bg-emerald-600 text-white hover:bg-emerald-700 focus-visible:ring-emerald-500",
+    success: "bg-emerald-600 fx-grad-ok text-white hover:bg-emerald-700 hover:brightness-110 focus-visible:ring-emerald-500",
     ghost: "text-ink-600 hover:bg-ink-100 focus-visible:ring-ink-400",
   };
   return (
     <button
       className={cx(
         // min 44px tap target for field use (Spec §8 mobile-first)
-        "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-sm px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+        "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
         styles[variant],
         className
       )}
@@ -80,7 +80,7 @@ export function Input({
   return (
     <input
       className={cx(
-        "block min-h-[44px] w-full rounded-sm border border-ink-200 bg-ink-50 px-3 text-sm text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500",
+        "block min-h-[44px] w-full rounded-xl border border-ink-200 bg-ink-50 px-3 text-sm text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500",
         className
       )}
       {...props}
@@ -95,7 +95,7 @@ export function Textarea({
   return (
     <textarea
       className={cx(
-        "block w-full rounded-sm border border-ink-200 bg-ink-50 px-3 py-2.5 text-sm text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500",
+        "block w-full rounded-xl border border-ink-200 bg-ink-50 px-3 py-2.5 text-sm text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500",
         className
       )}
       {...props}
@@ -110,7 +110,7 @@ export function Select({
   return (
     <select
       className={cx(
-        "block min-h-[44px] w-full rounded-sm border border-ink-200 bg-ink-50 px-3 text-sm text-ink-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500",
+        "block min-h-[44px] w-full rounded-xl border border-ink-200 bg-ink-50 px-3 text-sm text-ink-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500",
         className
       )}
       {...props}

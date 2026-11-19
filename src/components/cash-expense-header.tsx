@@ -52,7 +52,7 @@ export function CashExpenseHeader({
             href={t.href}
             aria-current={t.key === tab ? "page" : undefined}
             className={`rounded-md px-6 py-2.5 text-sm font-medium ${
-              t.key === tab ? "bg-[#8a1a28] text-white shadow-sm" : "text-ink-600 hover:bg-ink-50 hover:text-ink-900"
+              t.key === tab ? "bg-accent fx-grad text-white shadow-sm" : "text-ink-600 hover:bg-ink-50 hover:text-ink-900"
             }`}
           >
             {t.label}

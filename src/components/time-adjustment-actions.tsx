@@ -253,7 +253,7 @@ export function DecideTimeAdjustmentButtons({ request, canExceed = false }: { re
               value={hoursText}
               onChange={(e) => setHoursText(e.target.value)}
               aria-label="Hours to credit"
-              className="min-h-[34px] w-20 rounded-md border border-ink-200 bg-ink-50 px-2 text-right tabular-nums text-ink-900 focus:border-[#8a1a28] focus:outline-none"
+              className="min-h-[34px] w-20 rounded-md border border-ink-200 bg-ink-50 px-2 text-right tabular-nums text-ink-900 focus:border-accent focus:outline-none"
             />
             h {canExceed ? "" : "of it"}
             {partial && <span className="font-medium text-amber-700">— the other {Math.round((claimed - (hours ?? 0)) * 100) / 100} h will not be paid</span>}
@@ -330,7 +330,7 @@ export function EditApprovedHours({ row }: { row: ApprovedHoursRow }) {
     <form onSubmit={save} className="mt-2 space-y-2 rounded-lg border border-ink-200 p-2">
       <label className="flex flex-wrap items-center gap-2 text-xs text-ink-700">
         Credit
-        <input type="number" min="0.25" max="16" step="0.25" inputMode="decimal" value={hoursText} onChange={(e) => setHoursText(e.target.value)} aria-label="Hours to credit" className="min-h-[34px] w-20 rounded-md border border-ink-200 bg-ink-50 px-2 text-right tabular-nums text-ink-900 focus:border-[#8a1a28] focus:outline-none" />
+        <input type="number" min="0.25" max="16" step="0.25" inputMode="decimal" value={hoursText} onChange={(e) => setHoursText(e.target.value)} aria-label="Hours to credit" className="min-h-[34px] w-20 rounded-md border border-ink-200 bg-ink-50 px-2 text-right tabular-nums text-ink-900 focus:border-accent focus:outline-none" />
         h ({row.claimedHours} h were clocked)
         {more && <span className="font-medium text-amber-700">— {Math.round((hours - row.claimedHours) * 100) / 100} h MORE than the clock shows</span>}
       </label>

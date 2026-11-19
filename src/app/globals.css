@@ -32,47 +32,191 @@
   --brand-800: 5 54 44;
   --brand-900: 3 35 29;
   --brand-950: 1 21 18;
+
+  /* company accent (was the hard-coded burgundy #8a1a28) — the staff app overrides it below */
+  --accent: 138 26 40;
+  --grad: linear-gradient(120deg, #8a1a28, #8a1a28);
 }
 
-/* Dark theme — the same 11-step ramps, re-authored (not a naive invert) so
-   the sage/teal hue still reads as intentional against a dark ground.
-   Index meaning stays the same everywhere it's used (ink-50 = lightest
-   surface weight, ink-900 = strongest text weight): the SHADE VALUES flip
-   so bg-ink-50 becomes a dark elevated surface, text-ink-900 becomes
-   near-white, etc. — every existing utility class picks this up with zero
-   per-component changes.
+/* ============================================================================
+   2026-11 retheme of the staff app (.app-shell only — login, client portal and
+   the public site keep their own look). Two looks on the existing light/dark
+   switch:
+     light → "Sunset Vibrant": warm off-white page, white cards, deep plum
+             sidebar, crimson→orange gradient for the main actions, violet links
+     dark  → "Command Center": blue-black page with a faint grid and glows,
+             translucent cards, the same crimson→orange gradient, cyan links,
+             neon green for "all good"
+   Every bg-ink-* / text-brand-* / accent utility in the app follows these.
+   ========================================================================== */
+.app-shell {
+  --ink-50: 255 255 255;   /* cards, bars */
+  --ink-100: 255 247 243;  /* page */
+  --ink-200: 243 227 220;  /* hairlines */
+  --ink-300: 230 208 199;
+  --ink-400: 154 142 171;
+  --ink-500: 125 112 143;
+  --ink-600: 91 77 110;
+  --ink-700: 64 50 84;
+  --ink-800: 44 31 62;
+  --ink-900: 29 18 48;
+  --ink-950: 16 9 28;
 
-   Scoped to .app-shell (the authenticated app's own layout, not :root)
-   deliberately: the "dark" class still lands on <html> immediately so the
-   toggle can apply before first paint (see THEME_INIT_SCRIPT), but the
-   public marketing site and the client portal don't render .app-shell, so
-   toggling dark mode in the staff app never bleeds into those pages. */
+  --brand-50: 245 241 255;
+  --brand-100: 236 229 255;
+  --brand-200: 216 202 255;
+  --brand-300: 189 164 255;
+  --brand-400: 151 112 255;
+  --brand-500: 109 60 255;
+  --brand-600: 92 40 230;
+  --brand-700: 76 29 190;
+  --brand-800: 60 22 150;
+  --brand-900: 42 15 105;
+  --brand-950: 26 9 66;
+
+  --accent: 224 20 76;
+  --grad: linear-gradient(120deg, #c3123f, #ff4d4d 45%, #ffa21a);
+  --grad-cool: linear-gradient(120deg, #6d3cff, #d63cff);
+  --glow: 0 10px 28px -8px rgba(224, 20, 76, 0.45);
+  --card-shadow: 0 8px 28px -12px rgba(80, 30, 60, 0.14);
+  --ok: 0 182 122;
+
+  font-family: var(--font-space), system-ui, sans-serif;
+
+  background-image:
+    radial-gradient(640px 360px at 95% -80px, rgba(255, 122, 26, 0.16), transparent 70%),
+    radial-gradient(560px 320px at 45% -120px, rgba(224, 20, 76, 0.1), transparent 70%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+
+/* the sidebar / phone drawer: deep plum in light mode */
+.app-shell .side-ink {
+  --ink-50: 29 18 48;
+  --ink-100: 41 27 64;
+  --ink-200: 54 38 80;
+  --ink-300: 72 54 100;
+  --ink-400: 150 138 176;
+  --ink-500: 170 160 194;
+  --ink-600: 196 188 214;
+  --ink-700: 220 214 234;
+  --ink-800: 236 232 245;
+  --ink-900: 248 246 252;
+  --ink-950: 255 255 255;
+  --brand-50: 52 34 82;
+  --brand-700: 255 255 255;
+  color-scheme: dark;
+}
+
 html.dark .app-shell {
   color-scheme: dark;
 
-  --ink-50: 30 36 34; /* elevated surface (cards, hover) */
-  --ink-100: 20 24 23; /* page background */
-  --ink-200: 45 53 50; /* hairline borders */
-  --ink-300: 65 75 71; /* stronger borders */
-  --ink-400: 122 132 128; /* muted text/icons */
-  --ink-500: 139 148 145; /* mid gray */
-  --ink-600: 170 179 175; /* secondary text */
-  --ink-700: 198 205 201; /* stronger secondary text */
-  --ink-800: 221 226 223; /* near-primary text */
-  --ink-900: 241 243 241; /* primary text */
-  --ink-950: 251 252 251; /* max-contrast text */
+  --ink-50: 15 17 30;     /* elevated surface (cards, bars) */
+  --ink-100: 7 8 15;      /* page */
+  --ink-200: 32 35 56;    /* hairlines */
+  --ink-300: 50 54 82;
+  --ink-400: 107 113 148;
+  --ink-500: 132 138 172;
+  --ink-600: 169 176 208;
+  --ink-700: 196 201 226;
+  --ink-800: 222 225 240;
+  --ink-900: 242 244 255;
+  --ink-950: 250 251 255;
 
-  --brand-50: 20 38 31;
-  --brand-100: 27 53 44;
-  --brand-200: 32 74 61;
-  --brand-300: 31 101 82;
-  --brand-400: 34 136 111;
-  --brand-500: 17 125 102; /* primary button fill — still supports white text */
-  --brand-600: 20 160 133; /* links/accents — brightened for contrast on dark */
-  --brand-700: 61 193 163;
-  --brand-800: 120 217 193;
-  --brand-900: 179 236 223;
-  --brand-950: 217 245 236;
+  --brand-50: 8 30 40;
+  --brand-100: 10 42 56;
+  --brand-200: 12 62 82;
+  --brand-300: 14 92 120;
+  --brand-400: 18 140 175;
+  --brand-500: 8 145 178;  /* button fill — white text */
+  --brand-600: 34 211 238; /* links/accents */
+  --brand-700: 103 232 249;
+  --brand-800: 165 243 252;
+  --brand-900: 207 250 254;
+  --brand-950: 236 254 255;
+
+  --accent: 255 46 99;
+  --grad: linear-gradient(120deg, #ff2e63, #ff8a3d);
+  --grad-cool: linear-gradient(120deg, #22d3ee, #7c5cff);
+  --glow: 0 0 22px -2px rgba(255, 46, 99, 0.5);
+  --card-shadow: none;
+  --ok: 43 255 177;
+
+  background-image:
+    radial-gradient(700px 420px at 90% -120px, rgba(255, 46, 99, 0.16), transparent 70%),
+    radial-gradient(600px 400px at 20% 110%, rgba(34, 211, 238, 0.09), transparent 70%),
+    linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+  background-size: auto, auto, 32px 32px, 32px 32px;
+}
+
+html.dark .app-shell .side-ink {
+  --ink-50: 9 10 19;
+  --ink-100: 18 20 34;
+  --ink-200: 28 31 50;
+  --ink-300: 44 48 74;
+  --brand-50: 30 14 26;
+  --brand-700: 255 255 255;
+}
+
+/* page backgrounds behind the glows stay see-through */
+.app-shell > div > main,
+.app-shell main {
+  background: transparent;
+}
+
+/* ---- shared effects ---- */
+.app-shell .fx-grad {
+  background-image: var(--grad);
+  box-shadow: var(--glow);
+}
+.app-shell .fx-grad-cool {
+  background-image: var(--grad-cool);
+}
+.app-shell .fx-text-grad {
+  background-image: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.app-shell .fx-card {
+  box-shadow: var(--card-shadow);
+}
+html.dark .app-shell .fx-card {
+  background-color: rgb(15 17 30 / 0.78);
+}
+.app-shell .fx-live {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: rgb(var(--ok));
+  box-shadow: 0 0 10px rgb(var(--ok));
+}
+.app-shell .fx-ok {
+  color: rgb(var(--ok));
+}
+.app-shell .fx-ok-bg {
+  background-color: rgb(var(--ok));
+}
+html.dark .app-shell .fx-ok-bg {
+  box-shadow: 0 0 6px rgb(var(--ok) / 0.6);
+}
+
+/* sidebar icon chips sit on the plum/black panel: soft glass instead of pastel squares */
+.app-shell .side-ink .nav-chip {
+  background-color: rgb(255 255 255 / 0.08);
+}
+.app-shell .side-ink a[aria-current="page"] .nav-chip {
+  background-color: rgb(255 255 255 / 0.25);
+}
+.app-shell .side-ink .bg-emerald-50 {
+  background-color: rgb(var(--ok) / 0.14);
+  color: rgb(var(--ok));
+}
+html.dark .app-shell .side-ink a[aria-current="page"] {
+  background-image: linear-gradient(90deg, rgba(255, 46, 99, 0.28), rgba(255, 46, 99, 0));
+  box-shadow: inset 3px 0 0 rgb(var(--accent));
 }
 
 body {
@@ -103,4 +247,95 @@ body {
   body {
     background: white !important;
   }
+}
+
+/* ---- Attendance page pieces (also usable elsewhere) ---- */
+.app-shell .fx-tile-hot {
+  background-image: var(--grad);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: var(--glow);
+}
+.app-shell .fx-tile-hot .fx-sub {
+  color: rgb(255 255 255 / 0.88);
+}
+html.dark .app-shell .fx-tile-hot {
+  background-image: linear-gradient(135deg, rgba(255, 46, 99, 0.24), rgba(255, 138, 61, 0.08));
+  background-color: rgb(15 17 30 / 0.8);
+  border-color: rgba(255, 46, 99, 0.5);
+  color: rgb(var(--ink-900));
+}
+html.dark .app-shell .fx-tile-hot .fx-num {
+  background-image: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+html.dark .app-shell .fx-tile-hot .fx-sub {
+  color: rgb(var(--ink-600));
+}
+html.dark .app-shell .fx-tile-hot .fx-cta {
+  color: #ff8a3d;
+}
+.app-shell .fx-pills {
+  display: inline-flex;
+  max-width: 100%;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 9999px;
+  border: 1px solid rgb(var(--ink-200));
+  background: rgb(var(--ink-50));
+  overflow-x: auto;
+}
+.app-shell .fx-pill {
+  white-space: nowrap;
+  border-radius: 9999px;
+  padding: 7px 15px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: rgb(var(--ink-600));
+}
+.app-shell .fx-pill:hover {
+  color: rgb(var(--ink-900));
+}
+.app-shell .fx-pill-on,
+.app-shell .fx-chip-on {
+  background: rgb(var(--ink-900));
+  color: rgb(var(--ink-50));
+}
+.app-shell .fx-pill-on:hover {
+  color: rgb(var(--ink-50));
+}
+html.dark .app-shell .fx-pill-on {
+  background-image: var(--grad-cool);
+  color: #fff;
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.35);
+}
+.app-shell .fx-ring {
+  display: grid;
+  place-items: center;
+  flex: none;
+  border-radius: 9999px;
+}
+.app-shell .fx-ring > span {
+  display: grid;
+  place-items: center;
+  border-radius: 9999px;
+  background: rgb(var(--ink-50));
+}
+.app-shell .fx-avatar {
+  background-image: var(--grad-cool);
+}
+.app-shell .fx-clock-on {
+  background-image: linear-gradient(100deg, rgb(var(--ok) / 0.09), transparent 55%);
+  border-color: rgb(var(--ok) / 0.35);
+}
+.app-shell .fx-grad-ok {
+  background-image: linear-gradient(120deg, #00a86b, #12c79a);
+  box-shadow: 0 10px 24px -10px rgba(0, 168, 107, 0.55);
+}
+html.dark .app-shell .fx-grad-ok {
+  background-image: linear-gradient(120deg, #10b981, #2bffb1);
+  box-shadow: 0 0 20px -4px rgba(43, 255, 177, 0.5);
+  color: #04120c;
 }

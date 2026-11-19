@@ -38,7 +38,7 @@ export function WarehouseTabs({
             scroll={false}
             aria-current={on ? "page" : undefined}
             title={`${w.label} — ${counts[w.value]} ${noun}`}
-            className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition ${on ? "border-[#8a1a28] bg-[#8a1a28] text-white" : "border-ink-200 text-ink-700 hover:bg-ink-100"}`}
+            className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition ${on ? "border-accent bg-accent fx-grad text-white" : "border-ink-200 text-ink-700 hover:bg-ink-100"}`}
           >
             {w.short}
             <span className={`rounded-full px-1.5 text-xs tabular-nums ${on ? "bg-white/20 text-white" : "bg-ink-100 text-ink-500"}`}>{counts[w.value]}</span>

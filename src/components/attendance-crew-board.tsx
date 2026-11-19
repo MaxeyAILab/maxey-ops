@@ -89,26 +89,24 @@ export function AttendanceCrewBoard({
             key={f.id}
             type="button"
             onClick={() => setFilter(f.id)}
-            className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
-              filter === f.id
-                ? "border-ink-900 bg-ink-900 text-white dark:border-ink-100 dark:bg-ink-100 dark:text-ink-900"
-                : "border-ink-200 bg-white text-ink-600 hover:border-ink-400 dark:bg-transparent"
+            className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${
+              filter === f.id ? "fx-chip-on border-transparent" : "border-ink-200 bg-ink-50 text-ink-600 hover:border-ink-400"
             }`}
           >
-            {f.label} ({counts[f.id]})
+            {f.label} <span className="font-mono opacity-70">{counts[f.id]}</span>
           </button>
         ))}
         <input
           type="search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search name or position…"
-          className="w-full rounded-md border border-ink-200 bg-white px-3 py-1.5 text-sm sm:ml-auto sm:w-64 dark:bg-transparent"
+          placeholder="⌕  Search name or position…"
+          className="w-full rounded-full border border-ink-200 bg-ink-50 px-4 py-2 text-sm text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-none sm:ml-auto sm:w-64"
         />
       </div>
 
       {view.length === 0 && (
-        <div className="rounded-sm border border-ink-200 bg-ink-50 p-6 text-center text-sm text-ink-400">
+        <div className="fx-card rounded-2xl border border-ink-200 bg-ink-50 p-6 text-center text-sm text-ink-400">
           {sections.length === 0 ? emptyNote ?? "No personnel yet." : "Nobody matches."}
         </div>
       )}
@@ -117,11 +115,11 @@ export function AttendanceCrewBoard({
         const open = narrowing ? true : toggled[s.key] ?? s.missing > 0;
         const pct = s.rows.length ? Math.round((s.logged / s.rows.length) * 100) : 0;
         return (
-          <div key={s.key} className="overflow-hidden rounded-sm border border-ink-200 bg-ink-50">
+          <div key={s.key} className="fx-card overflow-hidden rounded-2xl border border-ink-200 bg-ink-50">
             <button
               type="button"
               onClick={() => setToggled((t) => ({ ...t, [s.key]: !open }))}
-              className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-left hover:bg-ink-100/50 sm:px-5"
+              className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3.5 text-left hover:bg-ink-100/40 sm:px-5"
               aria-expanded={open}
             >
               <span className={`text-xs text-ink-400 transition ${open ? "rotate-90" : ""}`}>▶</span>
@@ -129,16 +127,26 @@ export function AttendanceCrewBoard({
                 <span className="block text-sm font-semibold text-ink-900">{s.title}</span>
                 <span className="block text-[11px] text-ink-400">{s.subtitle}</span>
               </span>
-              <span className="text-xs tabular-nums text-ink-500">
-                {s.logged} / {s.rows.length} logged
+              <span className="font-mono text-xs text-ink-500">
+                {s.logged}/{s.rows.length}
               </span>
-              <span className="hidden h-1.5 w-24 overflow-hidden rounded-full bg-ink-100 sm:block">
-                <span
-                  className={`block h-full ${s.missing === 0 ? "bg-emerald-500" : pct >= 50 ? "bg-emerald-500" : "bg-red-400"}`}
-                  style={{ width: `${pct}%` }}
-                />
-              </span>
-              <span className={`w-24 text-right text-xs font-semibold ${s.missing ? "text-red-600" : "text-emerald-600"}`}>
+              {s.rows.length > 0 && s.rows.length <= 24 ? (
+                // one block per worker, lit when they have logged today
+                <span className="hidden w-36 gap-0.5 sm:flex">
+                  {s.rows.map((r, i) => (
+                    <span key={i} className={`h-2 flex-1 rounded-sm ${i < s.logged ? "fx-ok-bg" : "bg-ink-200"}`} />
+                  ))}
+                </span>
+              ) : (
+                <span className="hidden h-2 w-36 overflow-hidden rounded-full bg-ink-200 sm:block">
+                  <span className="fx-ok-bg block h-full" style={{ width: `${pct}%` }} />
+                </span>
+              )}
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                  s.rows.length === 0 ? "bg-ink-100 text-ink-500" : s.missing ? "bg-accent/10 text-accent" : "fx-ok bg-emerald-500/10"
+                }`}
+              >
                 {s.rows.length === 0 ? "No one yet" : s.missing ? `${s.missing} not logged` : "All in ✓"}
               </span>
             </button>

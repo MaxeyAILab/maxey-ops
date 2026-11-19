@@ -46,7 +46,7 @@ export function RequestPhotos({ kind, id, photos, label, canAdd }: { kind: "stoc
         <div className="space-y-2 rounded-lg border border-dashed border-ink-200 p-2">
           <PhotoInput key={pickerKey} label="Photo of the items" max={Math.min(4, room)} onChange={setFresh} />
           <div className="flex items-center gap-3">
-            <button type="button" disabled={busy || fresh.length === 0} onClick={attach} className="rounded-md bg-[#8a1a28] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#741522] disabled:opacity-50">
+            <button type="button" disabled={busy || fresh.length === 0} onClick={attach} className="rounded-md bg-accent fx-grad px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110 disabled:opacity-50">
               {busy ? "Attaching…" : "Attach"}
             </button>
             <button

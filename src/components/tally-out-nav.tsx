@@ -12,9 +12,9 @@ export function TallyOutNav() {
       <Link
         href="/inventory/tally-outs"
         aria-current={active ? "page" : undefined}
-        className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium ${active ? "bg-[#8a1a28] font-semibold text-white shadow-sm" : "text-ink-600 hover:bg-brand-50 hover:text-brand-700"}`}
+        className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium ${active ? "bg-accent fx-grad font-semibold text-white shadow-sm" : "text-ink-600 hover:bg-brand-50 hover:text-brand-700"}`}
       >
-        <span aria-hidden className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-base ${active ? "bg-white/20" : "bg-amber-100"}`}>
+        <span aria-hidden className={`nav-chip flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-base ${active ? "bg-white/20" : "bg-amber-100"}`}>
           📋
         </span>
         <span className="flex-1">Tally-out forms</span>

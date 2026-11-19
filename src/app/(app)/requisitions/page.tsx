@@ -152,7 +152,7 @@ export default async function RequisitionsPage({ searchParams }: { searchParams:
               href={`/requisitions?tab=${t.key}`}
               aria-current={active ? "page" : undefined}
               className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium sm:px-5 ${
-                active ? "bg-[#8a1a28] text-white shadow-sm" : "text-ink-600 hover:bg-ink-50 hover:text-ink-900"
+                active ? "bg-accent fx-grad text-white shadow-sm" : "text-ink-600 hover:bg-ink-50 hover:text-ink-900"
               }`}
             >
               {t.label}

@@ -23,11 +23,16 @@ const config: Config = {
   content: ["./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      fontFamily: {
+        mono: ["var(--font-mono)", "ui-monospace", "Consolas", "monospace"],
+      },
       colors: {
         // Maxey Construction — editorial teal / cement-sage palette, matching
         // the Finance tab's design system (2026-09 retheme, applied app-wide).
         brand: shadeScale("brand"),
         ink: shadeScale("ink"),
+        // company accent (crimson in the staff app, burgundy on login/portal) — replaces the old hard-coded #8a1a28
+        accent: cssVarColor("--accent"),
       },
     },
   },

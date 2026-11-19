@@ -118,7 +118,7 @@ export function MobileDrawer({ children, alert }: { children: React.ReactNode; a
         aria-label={t("chrome.menu")}
         // choosing a tab (even the one you're already on) puts the panel away
         onClick={(e) => (e.target as HTMLElement).closest("a") && setOpen(false)}
-        className={`no-print fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-ink-200 bg-ink-50 shadow-xl transition-[transform,visibility] duration-200 motion-reduce:transition-none ${open ? "visible translate-x-0" : "invisible -translate-x-full"}`}
+        className={`side-ink no-print fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-ink-200 bg-ink-50 shadow-xl transition-[transform,visibility] duration-200 motion-reduce:transition-none ${open ? "visible translate-x-0" : "invisible -translate-x-full"}`}
         style={{ height: "100dvh" }}
       >
         <button

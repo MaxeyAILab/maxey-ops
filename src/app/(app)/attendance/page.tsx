@@ -86,6 +86,11 @@ function summarize(
   return { open, todayHours, periodHours, periodLabel: period.label, projectId, loggedToday };
 }
 
+function initials(name: string) {
+  const parts = name.replace(/^(DEMO|Engr\.?|Arch\.?)\s+/i, "").trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
+}
+
 function StatusCell({
   open,
   loggedToday,
@@ -95,16 +100,16 @@ function StatusCell({
 }) {
   if (open) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700">
-        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+      <span className="fx-ok inline-flex items-center gap-1.5 text-xs font-semibold">
+        <span className="fx-live" />
         On duty since {manilaDayKey(open.timeIn) === manilaDayKey(new Date()) ? timeFmt.format(open.timeIn) : sinceFmt.format(open.timeIn)}
       </span>
     );
   }
   if (loggedToday) {
-    return <span className="text-xs font-medium text-blue-700">✓ Logged today</span>;
+    return <span className="text-xs font-semibold text-brand-600">✓ Logged today</span>;
   }
-  return <span className="text-xs text-red-500">Not logged in</span>;
+  return <span className="text-xs font-semibold text-accent">● Not logged in</span>;
 }
 
 type Tab = "today" | "requests" | "approved" | "mine";
@@ -544,8 +549,15 @@ export default async function AttendancePage({ searchParams }: { searchParams: {
   );
 
   const tableRow = (r: SummaryRow, showDept: boolean) => (
-    <tr className={!r.summary.loggedToday ? "bg-red-50/40" : ""}>
-      <Td className="font-medium">{r.name}</Td>
+    <tr className={!r.summary.loggedToday ? "bg-accent/[0.05]" : ""}>
+      <Td className="font-semibold">
+        <span className="flex items-center gap-2.5">
+          <span aria-hidden className="fx-avatar flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-500 text-[10px] font-bold text-white">
+            {initials(r.name)}
+          </span>
+          {r.name}
+        </span>
+      </Td>
       <Td className="text-ink-600">{r.position}</Td>
       {showDept && <Td className="text-xs text-ink-500">{r.department === "SITE" ? "TBA" : r.department}</Td>}
       <Td>
@@ -559,11 +571,11 @@ export default async function AttendancePage({ searchParams }: { searchParams: {
           />
         )}
       </Td>
-      <Td className="relative text-right tabular-nums">
+      <Td className="relative text-right font-mono">
         {r.summary.todayHours.toFixed(1)}
         {canManagePersonnel && <EditTodayHoursButton userId={r.userId} currentHours={r.summary.todayHours} />}
       </Td>
-      <Td className="relative text-right tabular-nums">
+      <Td className="relative text-right font-mono">
         {r.summary.periodHours.toFixed(1)}
         {canManagePersonnel && (
           <EditPeriodTotalButton
@@ -679,7 +691,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: {
   const tab: Tab = isAdmin ? (tabs.find((t) => t.id === searchParams.tab)?.id ?? "today") : "mine";
   const initialFilter: CrewFilter = (["none", "in", "done", "stale"] as const).find((f) => f === searchParams.show) ?? "all";
 
-  const btn = "rounded-md border border-ink-200 bg-white px-3 py-1.5 text-xs font-semibold text-ink-700 hover:border-ink-400 dark:bg-transparent";
+  const btn = "rounded-full border border-ink-200 bg-ink-50 px-3.5 py-1.5 text-xs font-semibold text-ink-700 hover:border-ink-400";
 
   const weekendBlock = iAmWeekendRestricted ? (
     <div className="rounded-lg border border-ink-100 p-3">
@@ -791,30 +803,23 @@ export default async function AttendancePage({ searchParams }: { searchParams: {
     );
   }
 
-  const tile = (href: string, count: number, label: string, tone: "amber" | "red" | "neutral", cta: string) => {
+  // hot = needs a decision (gradient tile), warn = worth a look (amber number); grey "All clear" when nothing is waiting
+  const tile = (href: string, count: number, label: string, tone: "hot" | "warn", cta: string) => {
     const active = count > 0;
-    const toneCls = !active
-      ? "border-ink-200 bg-ink-50"
-      : tone === "amber"
-        ? "border-amber-300 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/30"
-        : tone === "red"
-          ? "border-red-300 bg-red-50 dark:border-red-900/60 dark:bg-red-950/30"
-          : "border-ink-300 bg-ink-50";
-    const numCls = !active ? "text-ink-300" : tone === "amber" ? "text-amber-700" : tone === "red" ? "text-red-600" : "text-ink-900";
     const body = (
       <>
-        <span>
-          <span className={`block text-2xl font-bold tabular-nums ${numCls}`}>{count}</span>
-          <span className="block text-xs text-ink-600">{label}</span>
+        <span className="flex items-start justify-between gap-2">
+          <span className={`fx-num font-mono text-3xl font-bold leading-none ${!active ? "text-ink-300" : tone === "warn" ? "text-amber-500" : ""}`}>{count}</span>
+          <span className={`fx-cta whitespace-nowrap text-[11px] font-bold uppercase tracking-wide ${!active ? "fx-ok" : tone === "hot" ? "text-white/90" : "text-ink-400"}`}>
+            {active ? `${cta} →` : "All clear ✓"}
+          </span>
         </span>
-        <span className={`whitespace-nowrap text-xs font-semibold ${active ? "text-brand-600" : "text-ink-400"}`}>
-          {active ? `${cta} →` : "All clear"}
-        </span>
+        <span className={`fx-sub mt-1.5 block text-xs ${active && tone === "hot" ? "" : "text-ink-600"}`}>{label}</span>
       </>
     );
-    const cls = `flex flex-col items-start justify-between gap-1 rounded-sm border px-4 py-3 sm:flex-row sm:items-center sm:gap-2 ${toneCls}`;
+    const cls = `fx-card block rounded-2xl border px-4 py-3.5 ${active && tone === "hot" ? "fx-tile-hot" : "border-ink-200 bg-ink-50"}`;
     return active ? (
-      <Link href={href} className={`${cls} transition hover:shadow-sm`}>
+      <Link href={href} className={`${cls} transition hover:-translate-y-0.5`}>
         {body}
       </Link>
     ) : (
@@ -822,15 +827,33 @@ export default async function AttendancePage({ searchParams }: { searchParams: {
     );
   };
 
-  const kpiLabel = "text-[10px] font-semibold uppercase tracking-wide text-ink-400";
+  /** A ring gauge: `pct` 0–100 filled in `color`, with the label in the middle. */
+  const ring = (pct: number, color: string, label: React.ReactNode, size = 52) => (
+    <span
+      className="fx-ring"
+      style={{ width: size, height: size, background: `conic-gradient(${color} 0 ${pct}%, rgb(var(--ink-200)) ${pct}% 100%)` }}
+    >
+      <span className="font-mono text-[11px] font-bold text-ink-900" style={{ width: size - 12, height: size - 12 }}>
+        {label}
+      </span>
+    </span>
+  );
+  const pctOf = (n: number, d: number) => (d ? Math.min(100, Math.round((n / d) * 100)) : 0);
+
+  const kpiLabel = "text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400";
 
   return (
     <div className="space-y-5">
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-ink-900">Time &amp; Attendance</h1>
-          <p className="text-xs text-ink-500">{fmtDate(now)} · hours here feed the Payroll tab automatically</p>
+          <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-400">
+            {fmtDate(now)}
+            <span className="fx-ok inline-flex items-center gap-1.5">
+              <span className="fx-live" /> Live
+            </span>
+          </p>
+          <h1 className="text-2xl font-bold tracking-tight text-ink-900">Time &amp; Attendance</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {canOpenTimesheets(user) && (
@@ -851,38 +874,48 @@ export default async function AttendancePage({ searchParams }: { searchParams: {
       </div>
 
       {/* 1 — My time clock */}
-      <Card className={`border-l-4 ${openEntry ? "border-l-emerald-500" : "border-l-ink-300"}`}>
-        <div className="flex flex-col gap-4 px-4 py-3 sm:flex-row sm:items-center sm:px-5">
-          <div className="min-w-0 flex-1">
-            <p className={kpiLabel}>My time clock</p>
-            <p className="mt-0.5 flex items-center gap-2 text-sm font-semibold text-ink-900">
-              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${openEntry ? "bg-emerald-500" : "bg-ink-300"}`} />
-              {openEntry
-                ? `Clocked in since ${manilaDayKey(openEntry.timeIn) === todayKey ? timeFmt.format(openEntry.timeIn) : sinceFmt.format(openEntry.timeIn)} · ${openEntry.project?.name ?? "Office"}`
-                : "Not clocked in"}
-            </p>
-            <p className="mt-0.5 text-xs text-ink-500">
-              <Link href="/attendance?tab=mine" className="font-medium text-brand-600 hover:underline">
-                My entries this cut-off →
-              </Link>
-              {iAmWeekendRestricted && (
-                <>
-                  {" · "}
-                  <Link href="/attendance?tab=mine#weekend" className="font-medium text-brand-600 hover:underline">
-                    Weekend work request
-                  </Link>
-                </>
-              )}
-            </p>
+      <Card className={openEntry ? "fx-clock-on" : ""}>
+        <div className="flex flex-col gap-4 px-4 py-4 sm:px-5 lg:flex-row lg:items-center">
+          <div className="flex min-w-0 flex-1 items-center gap-4">
+            {ring(pctOf(myToday, 8), "rgb(var(--ok))", `${myToday.toFixed(1)}h`, 62)}
+            <div className="min-w-0">
+              <p className={kpiLabel}>My time clock</p>
+              <p className="mt-0.5 flex items-center gap-2 text-base font-bold text-ink-900">
+                {openEntry ? <span className="fx-live shrink-0" /> : <span className="h-2 w-2 shrink-0 rounded-full bg-ink-300" />}
+                {openEntry
+                  ? `On duty since ${manilaDayKey(openEntry.timeIn) === todayKey ? timeFmt.format(openEntry.timeIn) : sinceFmt.format(openEntry.timeIn)}`
+                  : "Not clocked in"}
+              </p>
+              <p className="mt-0.5 text-xs text-ink-500">
+                {openEntry && <>{openEntry.project?.name ?? "Office"} · </>}
+                <Link href="/attendance?tab=mine" className="font-semibold text-brand-600 hover:underline">
+                  My entries →
+                </Link>
+                {iAmWeekendRestricted && (
+                  <>
+                    {" · "}
+                    <Link href="/attendance?tab=mine#weekend" className="font-semibold text-brand-600 hover:underline">
+                      Weekend work request
+                    </Link>
+                  </>
+                )}
+              </p>
+            </div>
           </div>
-          <div className="flex gap-6">
+          <div className="flex gap-7">
             <div>
               <p className={kpiLabel}>Today</p>
-              <p className="text-lg font-bold tabular-nums text-ink-900">{myToday.toFixed(1)} h</p>
+              <p className="font-mono text-2xl font-bold text-ink-900">
+                {myToday.toFixed(1)}
+                <span className="text-xs font-medium text-ink-400"> h</span>
+              </p>
             </div>
             <div>
-              <p className={kpiLabel}>This cut-off</p>
-              <p className="text-lg font-bold tabular-nums text-ink-900">{myPeriodHours.toFixed(1)} h</p>
+              <p className={kpiLabel}>Cut-off</p>
+              <p className="font-mono text-2xl font-bold text-ink-900">
+                {myPeriodHours.toFixed(1)}
+                <span className="text-xs font-medium text-ink-400"> h</span>
+              </p>
             </div>
           </div>
           <AttendanceClock projects={projects} clockedIn={!!openEntry} needsProject={needsProject} compact />
@@ -891,27 +924,28 @@ export default async function AttendancePage({ searchParams }: { searchParams: {
 
       {/* 2 — Needs your action */}
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-ink-900">Needs your action</h2>
-        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-          {canDecideAdjustments && tile("/attendance?tab=requests", pendingAdjustments.length, "Overtime / early-start requests", "amber", "Review")}
-          {tile("/attendance?show=none", notLogged, "Not logged today", "red", "Show")}
-          {tile("/attendance?show=stale", kpi.stale, "Still clocked in from earlier days", "neutral", "Show")}
-          {tile("/attendance#devices", sharedDeviceWarnings.length, "Shared-device warnings", "red", "See")}
+        <div className="mb-2.5 flex items-center gap-3">
+          <h2 className="text-sm font-bold text-ink-900">Needs your action</h2>
+          <span className="h-px flex-1 bg-ink-200" />
+        </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {canDecideAdjustments && tile("/attendance?tab=requests", pendingAdjustments.length, "Overtime / early-start requests", "hot", "Review")}
+          {tile("/attendance?show=none", notLogged, "Not logged today", "hot", "Show")}
+          {tile("/attendance?show=stale", kpi.stale, "Still clocked in from earlier days", "warn", "Show")}
+          {tile("/attendance#devices", sharedDeviceWarnings.length, "Shared-device warnings", "hot", "See")}
         </div>
       </div>
 
       {/* 3 — Tabs */}
-      <nav className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-ink-200">
+      <nav className="fx-pills">
         {tabs.map((t) => (
           <Link
             key={t.id}
             href={t.id === "today" ? "/attendance" : `/attendance?tab=${t.id}`}
-            className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm font-semibold ${
-              tab === t.id ? "border-brand-600 text-brand-600" : "border-transparent text-ink-500 hover:text-ink-800"
-            }`}
+            className={`fx-pill ${tab === t.id ? "fx-pill-on" : ""}`}
           >
             {t.label}
-            {!!t.badge && <span className="ml-1.5 rounded-full bg-amber-200 px-1.5 text-[11px] text-amber-900">{t.badge}</span>}
+            {!!t.badge && <span className="ml-1.5 rounded-full bg-amber-400 px-1.5 text-[11px] font-bold text-ink-950 dark:text-[#1d1230]">{t.badge}</span>}
           </Link>
         ))}
       </nav>
@@ -926,7 +960,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: {
               />
               <CardBody className="space-y-1.5 text-sm">
                 {sharedDeviceWarnings.map((w) => (
-                  <p key={w.deviceId} className="text-red-700">
+                  <p key={w.deviceId} className="text-red-700 dark:text-red-300">
                     <span className="font-medium">{w.names.join(" & ")}</span> tapped in from the same device this week
                   </p>
                 ))}
@@ -935,30 +969,38 @@ export default async function AttendancePage({ searchParams }: { searchParams: {
           )}
 
           {/* 4 — Today at a glance */}
-          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-            <Card className="px-4 py-3">
-              <p className={kpiLabel}>Present today</p>
-              <p className="text-2xl font-bold tabular-nums text-ink-900">
-                {kpi.present} <span className="text-sm font-medium text-ink-400">/ {kpi.total}</span>
-              </p>
-              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ink-100">
-                <div className="h-full bg-emerald-500" style={{ width: `${kpi.total ? Math.round((kpi.present / kpi.total) * 100) : 0}%` }} />
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Card className="flex flex-col items-start gap-2 px-4 py-3.5 sm:flex-row sm:items-center sm:gap-3.5">
+              {ring(pctOf(kpi.present, kpi.total), "rgb(var(--ok))", `${pctOf(kpi.present, kpi.total)}%`)}
+              <div>
+                <p className={kpiLabel}>Present today</p>
+                <p className="font-mono text-2xl font-bold text-ink-900">
+                  {kpi.present}
+                  <span className="text-sm font-medium text-ink-400"> / {kpi.total}</span>
+                </p>
               </div>
             </Card>
-            <Card className="px-4 py-3">
-              <p className={kpiLabel}>Clocked in now</p>
-              <p className="text-2xl font-bold tabular-nums text-emerald-600">{kpi.onNow}</p>
-              <p className="text-xs text-ink-500">on duty right now</p>
+            <Card className="flex flex-col items-start gap-2 px-4 py-3.5 sm:flex-row sm:items-center sm:gap-3.5">
+              {ring(pctOf(kpi.onNow, kpi.total), "rgb(var(--brand-600))", kpi.onNow)}
+              <div>
+                <p className={kpiLabel}>Clocked in now</p>
+                <p className="font-mono text-2xl font-bold text-brand-600">{kpi.onNow}</p>
+              </div>
             </Card>
-            <Card className="px-4 py-3">
-              <p className={kpiLabel}>Not logged</p>
-              <p className={`text-2xl font-bold tabular-nums ${notLogged ? "text-red-600" : "text-ink-300"}`}>{notLogged}</p>
-              <p className="text-xs text-ink-500">{notLogged ? `across ${groupsMissing} group${groupsMissing === 1 ? "" : "s"}` : "everyone is in"}</p>
+            <Card className="flex flex-col items-start gap-2 px-4 py-3.5 sm:flex-row sm:items-center sm:gap-3.5">
+              {ring(pctOf(notLogged, kpi.total), "rgb(var(--accent))", notLogged)}
+              <div>
+                <p className={kpiLabel}>Not logged</p>
+                <p className={`font-mono text-2xl font-bold ${notLogged ? "text-accent" : "text-ink-300"}`}>{notLogged}</p>
+                <p className="text-[11px] text-ink-500">{notLogged ? `in ${groupsMissing} group${groupsMissing === 1 ? "" : "s"}` : "everyone is in"}</p>
+              </div>
             </Card>
-            <Card className="px-4 py-3">
-              <p className={kpiLabel}>Man-hours today</p>
-              <p className="text-2xl font-bold tabular-nums text-ink-900">{kpi.manHours.toFixed(1)}</p>
-              <p className="text-xs text-ink-500">so far, as payroll counts them</p>
+            <Card className="flex flex-col items-start gap-2 px-4 py-3.5 sm:flex-row sm:items-center sm:gap-3.5">
+              {ring(pctOf(kpi.manHours, Math.max(1, kpi.total) * 8), "#ff8a3d", "↑")}
+              <div>
+                <p className={kpiLabel}>Man-hours today</p>
+                <p className="font-mono text-2xl font-bold text-ink-900">{kpi.manHours.toFixed(1)}</p>
+              </div>
             </Card>
           </div>
 

@@ -21,7 +21,7 @@ export function CashExpenseNav({ showAdvances }: { showAdvances: boolean }) {
           path.startsWith("/cash-expense") ? "text-ink-900" : "text-ink-600 hover:bg-brand-50 hover:text-brand-700"
         }`}
       >
-        <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-lime-100 text-base">
+        <span aria-hidden className="nav-chip flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-lime-100 text-base">
           💵
         </span>
         <span className="flex-1">{t("nav.cash")}</span>
@@ -36,7 +36,7 @@ export function CashExpenseNav({ showAdvances }: { showAdvances: boolean }) {
               href={l.href}
               aria-current={active ? "page" : undefined}
               className={`flex items-center gap-3 rounded-lg py-2 pl-6 pr-3 text-sm ${
-                active ? "bg-[#8a1a28] font-semibold text-white" : "text-ink-600 hover:bg-ink-100 hover:text-ink-900"
+                active ? "bg-accent fx-grad font-semibold text-white" : "text-ink-600 hover:bg-ink-100 hover:text-ink-900"
               }`}
             >
               <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${active ? "bg-white" : "bg-ink-400"}`} />

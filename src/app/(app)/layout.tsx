@@ -108,7 +108,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <Link href="/notifications" aria-label={unreadNotifications > 0 ? `${t("nav.notifications")}, ${unreadNotifications}` : t("nav.notifications")} className="relative rounded-lg border border-ink-200 px-2 py-1.5 text-xs text-ink-600 hover:bg-ink-50">
       <span aria-hidden>🔔</span>
       {unreadNotifications > 0 && (
-        <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#8a1a28] px-1 text-[10px] font-bold text-white">{unreadNotifications > 99 ? "99+" : unreadNotifications}</span>
+        <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent fx-grad px-1 text-[10px] font-bold text-white">{unreadNotifications > 99 ? "99+" : unreadNotifications}</span>
       )}
     </Link>
   );
@@ -117,7 +117,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const panel = (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-ink-100 px-4 py-4" style={{ paddingTop: "max(1rem, env(safe-area-inset-top))" }}>
-        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#8a1a28] text-sm font-black text-white">M</span>
+        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent fx-grad text-sm font-black text-white">M</span>
         <div>
           <div className="text-sm font-bold leading-tight text-ink-900">Maxey Ops</div>
           <div className="text-[10px] uppercase tracking-wide text-ink-400">{t("chrome.platform")}</div>
@@ -165,7 +165,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {lang !== cookieLang && <LangSync saved={lang} />}
 
           {/* Left sidebar — command panel (desktop); on phones the same panel slides out from the left */}
-          <aside className="no-print hidden w-56 shrink-0 flex-col border-r border-ink-200 bg-ink-50 md:flex">
+          <aside className="side-ink no-print hidden w-56 shrink-0 flex-col border-r border-ink-200 bg-ink-50 md:flex">
             <div className="sticky top-0 h-screen">{panel}</div>
           </aside>
 
@@ -187,7 +187,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <div className="flex items-center justify-between gap-2 px-3 py-2">
                 <div className="flex min-w-0 items-center gap-2">
                   <MobileDrawer alert={instructionsBadge > 0 || activityElsewhere > 0}>{panel}</MobileDrawer>
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#8a1a28] text-sm font-black text-white">M</span>
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent fx-grad text-sm font-black text-white">M</span>
                   <CurrentSection items={sidebarItems} />
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">

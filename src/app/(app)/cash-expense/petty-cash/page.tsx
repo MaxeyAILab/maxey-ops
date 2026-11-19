@@ -115,7 +115,7 @@ export default async function PettyCashPage({ searchParams }: { searchParams: { 
         subtitle="Submit requests, record disbursements, and track the running balance in real time."
         showAdvances
         action={
-          <a href="#quick-record" className="inline-flex min-h-[44px] items-center gap-2 rounded-md bg-[#8a1a28] px-4 text-sm font-semibold text-white hover:bg-[#741522]">
+          <a href="#quick-record" className="inline-flex min-h-[44px] items-center gap-2 rounded-md bg-accent fx-grad px-4 text-sm font-semibold text-white hover:brightness-110">
             <span aria-hidden className="text-lg leading-none">+</span> New Petty Cash Request
           </a>
         }
@@ -188,7 +188,7 @@ export default async function PettyCashPage({ searchParams }: { searchParams: { 
                         {missingReceipt(r) && (
                           <div className="mt-1 flex flex-wrap items-center gap-2">
                             <NoReceiptFlag />
-                            <a href="/cash-expense/report#missing-receipts" className="text-xs font-medium text-[#8a1a28] hover:underline dark:text-rose-300">
+                            <a href="/cash-expense/report#missing-receipts" className="text-xs font-medium text-accent hover:underline dark:text-rose-300">
                               Attach it on the Petty Cash Report →
                             </a>
                           </div>
@@ -197,7 +197,7 @@ export default async function PettyCashPage({ searchParams }: { searchParams: { 
                         {Array.isArray(r.receipts) && (r.receipts as string[]).length > 0 && (
                           <div className="mt-1 flex gap-2 text-xs">
                             {(r.receipts as string[]).map((src, i) => (
-                              <a key={src} href={src} target="_blank" rel="noopener noreferrer" className="text-[#8a1a28] hover:underline dark:text-rose-300">
+                              <a key={src} href={src} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline dark:text-rose-300">
                                 Receipt {i + 1}
                               </a>
                             ))}

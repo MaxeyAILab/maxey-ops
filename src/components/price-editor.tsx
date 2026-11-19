@@ -75,7 +75,7 @@ export function PriceEditor({ rows, doneHref }: { rows: PriceRow[]; doneHref: st
                     value={values[row.id] ?? ""}
                     onChange={(e) => setValues((v) => ({ ...v, [row.id]: e.target.value }))}
                     placeholder="0.00"
-                    className={`block min-h-[36px] w-full rounded-md border bg-ink-50 px-2 text-right tabular-nums text-ink-900 focus:outline-none focus:ring-1 ${price === undefined ? "border-red-400 focus:ring-red-400" : "border-ink-200 focus:border-[#8a1a28] focus:ring-[#8a1a28]"}`}
+                    className={`block min-h-[36px] w-full rounded-md border bg-ink-50 px-2 text-right tabular-nums text-ink-900 focus:outline-none focus:ring-1 ${price === undefined ? "border-red-400 focus:ring-red-400" : "border-ink-200 focus:border-accent focus:ring-accent"}`}
                   />
                 </td>
                 <td className="px-3 py-1.5 text-right tabular-nums text-ink-700">{price == null || price === undefined ? "—" : peso(lineValue(row.qty, price) ?? 0)}</td>

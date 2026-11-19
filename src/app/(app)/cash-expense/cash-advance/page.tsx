@@ -103,7 +103,7 @@ export default async function CashAdvancePage() {
                       {a.status === "REJECTED" && a.rejectedReason && <div className="text-xs text-red-700 dark:text-red-300">Rejected: {a.rejectedReason}</div>}
                       {a.deductions.length > 0 && (
                         <details className="mt-1.5 text-xs">
-                          <summary className="cursor-pointer text-[#8a1a28] dark:text-rose-300">Repayments ({a.deductions.length})</summary>
+                          <summary className="cursor-pointer text-accent dark:text-rose-300">Repayments ({a.deductions.length})</summary>
                           <ul className="mt-1 space-y-0.5 text-ink-600">
                             {a.deductions.map((d) => (
                               <li key={d.id}>

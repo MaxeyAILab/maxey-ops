@@ -99,7 +99,7 @@ function PickSection({
           const full = !on && picked.length >= max;
           return (
             <li key={o.key}>
-              <label className={`flex min-h-[40px] cursor-pointer items-center gap-2 rounded-lg border px-3 text-sm ${on ? "border-[#8a1a28] bg-[#8a1a28]/5 text-ink-900" : "border-ink-200 text-ink-700"} ${full ? "opacity-50" : ""}`}>
+              <label className={`flex min-h-[40px] cursor-pointer items-center gap-2 rounded-lg border px-3 text-sm ${on ? "border-accent bg-accent/5 text-ink-900" : "border-ink-200 text-ink-700"} ${full ? "opacity-50" : ""}`}>
                 <input type="checkbox" checked={on} disabled={full} onChange={() => toggle(o.key)} />
                 <span aria-hidden>{o.icon}</span>
                 {o.label}

@@ -43,7 +43,7 @@ export function MovementPriceEditor({ id, itemName, current, itemPrice, otherUnp
     <form onSubmit={save} className="mt-1 w-52 space-y-1.5 rounded-lg border border-ink-200 bg-ink-50 p-2 text-left">
       <label className="block text-[11px] text-ink-600">
         Price per unit (₱)
-        <input value={text} onChange={(e) => setText(e.target.value)} inputMode="decimal" autoFocus className="mt-0.5 min-h-[34px] w-full rounded-md border border-ink-200 bg-white px-2 text-right tabular-nums text-sm text-ink-900 focus:border-[#8a1a28] focus:outline-none dark:bg-transparent" />
+        <input value={text} onChange={(e) => setText(e.target.value)} inputMode="decimal" autoFocus className="mt-0.5 min-h-[34px] w-full rounded-md border border-ink-200 bg-white px-2 text-right tabular-nums text-sm text-ink-900 focus:border-accent focus:outline-none dark:bg-transparent" />
       </label>
       {itemPrice !== null && itemPrice !== current && (
         <button type="button" onClick={() => setText(String(itemPrice))} className="text-[11px] text-brand-600 hover:underline">
@@ -58,7 +58,7 @@ export function MovementPriceEditor({ id, itemName, current, itemPrice, otherUnp
       )}
       {error && <p className="text-[11px] text-red-600">{error}</p>}
       <div className="flex gap-2">
-        <button type="submit" disabled={busy} className="rounded-md bg-[#8a1a28] px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-50">
+        <button type="submit" disabled={busy} className="rounded-md bg-accent fx-grad px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-50">
           {busy ? "Saving…" : "Save"}
         </button>
         <button type="button" onClick={() => setOpen(false)} className="text-[11px] text-ink-500 hover:underline">

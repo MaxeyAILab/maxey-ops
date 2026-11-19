@@ -230,7 +230,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
                 <Link
                   key={c.value}
                   href={stockHref(c.slug)}
-                  className="group rounded-xl border border-ink-200 p-4 transition hover:border-[#8a1a28] hover:bg-ink-100/50"
+                  className="group rounded-xl border border-ink-200 p-4 transition hover:border-accent hover:bg-ink-100/50"
                 >
                   <div className="flex items-start gap-3">
                     <span aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ink-100 text-xl">
@@ -298,7 +298,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: { 
             {[...TOOL_CATEGORIES.map((c) => ({ key: c.value as ToolCategoryKey, label: c.label, icon: c.icon, slug: c.slug })), ...(toolTiles[NO_TOOL_CATEGORY].tools > 0 ? [{ key: NO_TOOL_CATEGORY as ToolCategoryKey, label: TOOL_CATEGORY_LABEL[NO_TOOL_CATEGORY], icon: "❔", slug: toolCategorySlug(NO_TOOL_CATEGORY) }] : [])].map((c) => {
               const n = toolTiles[c.key];
               return (
-                <Link key={c.key} href={toolsHref(c.slug)} className="group rounded-xl border border-ink-200 p-4 transition hover:border-[#8a1a28] hover:bg-ink-100/50">
+                <Link key={c.key} href={toolsHref(c.slug)} className="group rounded-xl border border-ink-200 p-4 transition hover:border-accent hover:bg-ink-100/50">
                   <div className="flex items-start gap-3">
                     <span aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ink-100 text-xl">
                       {c.icon}

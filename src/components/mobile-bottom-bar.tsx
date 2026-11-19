@@ -22,7 +22,7 @@ export interface BarTab {
 
 export type QuickAction = QuickDef;
 
-const ACTIVE = "text-[#8a1a28] dark:text-red-300";
+const ACTIVE = "text-accent dark:text-red-300";
 const FAB_SIZE = 56;
 const FAB_MARGIN = 8;
 const FAB_KEY = "maxey_fab";
@@ -142,7 +142,7 @@ export function MobileBottomBar({
                   aria-label={badge > 0 ? `${t(tab.labelKey)}, ${badge}` : undefined}
                   className={`relative flex min-h-[56px] flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-[11px] font-medium leading-tight ${on ? ACTIVE : "text-ink-500"}`}
                 >
-                  <span aria-hidden className={`absolute inset-x-5 top-0 h-0.5 rounded-b ${on ? "bg-[#8a1a28] dark:bg-red-300" : "bg-transparent"}`} />
+                  <span aria-hidden className={`absolute inset-x-5 top-0 h-0.5 rounded-b ${on ? "bg-accent fx-grad dark:bg-red-300" : "bg-transparent"}`} />
                   <span aria-hidden className="relative text-xl leading-none">
                     {tab.icon}
                     {badge > 0 && <span className="absolute -right-3 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">{badgeText(badge)}</span>}
@@ -279,7 +279,7 @@ function QuickAdd({ actions, progressProjects, hide }: { actions: QuickAction[];
         aria-label={t("chrome.quickAdd")}
         aria-haspopup="dialog"
         title={t("quick.dragHint")}
-        className={`no-print fixed z-[15] flex h-14 w-14 cursor-grab touch-none select-none items-center justify-center rounded-full bg-[#8a1a28] text-3xl font-light leading-none text-white shadow-lg active:cursor-grabbing active:scale-95 ${hide ? "max-md:hidden" : ""} ${pos ? "" : "bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] right-4 md:bottom-6 md:right-6"}`}
+        className={`no-print fixed z-[15] flex h-14 w-14 cursor-grab touch-none select-none items-center justify-center rounded-full bg-accent fx-grad text-3xl font-light leading-none text-white shadow-lg active:cursor-grabbing active:scale-95 ${hide ? "max-md:hidden" : ""} ${pos ? "" : "bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] right-4 md:bottom-6 md:right-6"}`}
         style={pos ? { left: pos.x, top: pos.y } : undefined}
       >
         <span aria-hidden>+</span>

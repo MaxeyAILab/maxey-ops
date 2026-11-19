@@ -109,7 +109,7 @@ function ProjectTabBar({ tabs, active, param, otherParam, otherValue, anchor }: 
               href={href(t.key)}
               scroll={false}
               aria-current={on ? "page" : undefined}
-              className={`flex items-center gap-2 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium ${on ? "bg-[#8a1a28] text-white shadow-sm" : "text-ink-600 hover:bg-ink-50 hover:text-ink-900"}`}
+              className={`flex items-center gap-2 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium ${on ? "bg-accent fx-grad text-white shadow-sm" : "text-ink-600 hover:bg-ink-50 hover:text-ink-900"}`}
             >
               {t.label}
               <span className={`rounded-full px-1.5 text-xs tabular-nums ${on ? "bg-white/20 text-white" : "bg-ink-100 text-ink-600"}`}>{t.count}</span>

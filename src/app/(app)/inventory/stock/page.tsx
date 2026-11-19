@@ -59,7 +59,7 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
         key={slug ?? "all"}
         href={`/inventory/stock${qs.toString() ? `?${qs}` : ""}`}
         aria-current={on ? "page" : undefined}
-        className={`rounded-full border px-3 py-1.5 text-sm font-medium ${on ? "border-[#8a1a28] bg-[#8a1a28] text-white" : "border-ink-200 text-ink-700 hover:bg-ink-100"}`}
+        className={`rounded-full border px-3 py-1.5 text-sm font-medium ${on ? "border-accent bg-accent fx-grad text-white" : "border-ink-200 text-ink-700 hover:bg-ink-100"}`}
       >
         {label} <span className={on ? "text-white/80" : "text-ink-400"}>({n})</span>
       </Link>
@@ -141,9 +141,9 @@ export default async function WarehouseStockPage({ searchParams }: { searchParam
           defaultValue={q}
           placeholder="Search an item…"
           aria-label="Search an item"
-          className="min-h-[40px] w-full max-w-xs rounded-lg border border-ink-200 bg-ink-50 px-3 text-sm text-ink-900 placeholder:text-ink-400 focus:border-[#8a1a28] focus:outline-none"
+          className="min-h-[40px] w-full max-w-xs rounded-lg border border-ink-200 bg-ink-50 px-3 text-sm text-ink-900 placeholder:text-ink-400 focus:border-accent focus:outline-none"
         />
-        <button type="submit" className="min-h-[40px] rounded-lg bg-[#8a1a28] px-4 text-sm font-semibold text-white hover:bg-[#741522]">
+        <button type="submit" className="min-h-[40px] rounded-lg bg-accent fx-grad px-4 text-sm font-semibold text-white hover:brightness-110">
           Search
         </button>
         {q && (
