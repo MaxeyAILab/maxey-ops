@@ -79,10 +79,13 @@ export function AttendanceClock({
   projects,
   clockedIn,
   needsProject,
+  compact = false,
 }: {
   projects: ProjectOption[];
   clockedIn: boolean;
   needsProject: boolean;
+  /** Slim version for the top strip of the Attendance page: shorter button, project picker beside it, no footer. */
+  compact?: boolean;
 }) {
   const t = useT();
   const router = useRouter();
@@ -133,6 +136,38 @@ export function AttendanceClock({
     } else {
       router.refresh();
     }
+  }
+
+  if (compact) {
+    return (
+      <div className="w-full space-y-1.5 sm:w-auto">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          {!clockedIn && needsProject && (
+            <Select aria-label={t("clock.project")} value={projectId} onChange={(e) => setProjectId(e.target.value)} className="sm:w-48">
+              <option value="">{t("clock.office")}</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </Select>
+          )}
+          <Button
+            variant={clockedIn ? "danger" : "success"}
+            disabled={busy}
+            onClick={() => tap(clockedIn ? "OUT" : "IN")}
+            className="h-12 w-full px-8 text-base font-bold sm:w-44"
+          >
+            {busy ? t("clock.recording") : t(clockedIn ? "clock.timeOut" : "clock.timeIn")}
+          </Button>
+        </div>
+        {msg && <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-700">{msg}</p>}
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        {(locState === "denied" || lastFix === "no") && (
+          <p className="text-xs text-amber-700">{locState === "denied" ? t("clock.locBlocked") : t("clock.locMissing")}</p>
+        )}
+      </div>
+    );
   }
 
   return (
