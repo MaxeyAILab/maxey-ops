@@ -166,3 +166,56 @@ export function Panel({ title, action, children, className = "" }: { title: Reac
     </section>
   );
 }
+
+/** One slim strip of up to four money figures across the top of a Cash Expense page (two per row on a phone). */
+export function CashStrip({ items }: { items: { label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: "good" | "bad" }[] }) {
+  return (
+    <div className="fx-card grid grid-cols-2 overflow-hidden rounded-2xl border border-ink-200 bg-ink-50 lg:grid-cols-4">
+      {items.map((it, i) => (
+        <div
+          key={it.label}
+          className={`min-w-0 px-4 py-3.5 sm:px-5 ${i % 2 === 1 ? "border-l border-ink-200" : ""} ${i >= 2 ? "border-t border-ink-200 lg:border-t-0 lg:border-l" : ""}`}
+        >
+          <div className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">{it.label}</div>
+          <div className={`mt-0.5 truncate font-mono text-xl font-bold sm:text-2xl ${it.tone === "good" ? "fx-ok" : it.tone === "bad" ? "text-accent" : "text-ink-900"}`}>{it.value}</div>
+          {it.sub && <div className="mt-0.5 text-xs text-ink-500">{it.sub}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** A "Needs your action" tile: gradient when something waits on you, amber for worth-a-look, grey "All clear ✓" when empty. */
+export function ActionTile({ href, count, label, sub, cta, tone = "hot" }: { href: string; count: number; label: string; sub?: string; cta: string; tone?: "hot" | "warn" }) {
+  const active = count > 0;
+  const hot = active && tone === "hot";
+  const body = (
+    <>
+      <span className="flex items-start justify-between gap-2">
+        <span className={`fx-num font-mono text-3xl font-bold leading-none ${!active ? "text-ink-300" : tone === "warn" ? "text-amber-500" : ""}`}>{count}</span>
+        <span className={`fx-cta whitespace-nowrap text-[11px] font-bold uppercase tracking-wide ${!active ? "fx-ok" : hot ? "text-white/90" : "text-ink-400"}`}>{active ? `${cta} →` : "All clear ✓"}</span>
+      </span>
+      <span className={`fx-sub mt-1.5 block text-xs ${hot ? "" : "text-ink-600"}`}>{label}</span>
+      {sub && active && <span className={`fx-sub block text-[11px] ${hot ? "" : "text-ink-400"}`}>{sub}</span>}
+    </>
+  );
+  const cls = `fx-card block rounded-2xl border px-4 py-3.5 ${hot ? "fx-tile-hot" : "border-ink-200 bg-ink-50"}`;
+  return active ? (
+    <Link href={href} className={`${cls} transition hover:-translate-y-0.5`}>
+      {body}
+    </Link>
+  ) : (
+    <div className={cls}>{body}</div>
+  );
+}
+
+/** Section title with a hairline, used above tiles and lists. */
+export function SectionTitle({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
+  return (
+    <div className="mb-2.5 flex items-center gap-3">
+      <h2 className="text-sm font-bold text-ink-900">{children}</h2>
+      <span className="h-px flex-1 bg-ink-200" />
+      {action}
+    </div>
+  );
+}

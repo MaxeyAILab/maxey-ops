@@ -240,7 +240,14 @@ body {
   }
 }
 
+/* shown only on paper (e.g. the full Petty Cash Report table behind the folded screen view) */
+.print-only {
+  display: none;
+}
 @media print {
+  .print-only {
+    display: block !important;
+  }
   .no-print {
     display: none !important;
   }
