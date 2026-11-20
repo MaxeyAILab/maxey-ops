@@ -38,6 +38,8 @@ const securityHeaders = [
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // exceljs (payroll Excel download) runs as a normal Node package instead of being bundled
+  experimental: { serverComponentsExternalPackages: ["exceljs"] },
   // Don't advertise the framework version in every response.
   poweredByHeader: false,
   async headers() {

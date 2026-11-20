@@ -13,6 +13,8 @@ import { ActionTile, CashStatus, CashStrip, SectionTitle } from "@/components/ca
 import { AddEmployeeDialog, NewRunDialog } from "@/components/payroll-layout";
 import { manilaDayKey, manilaSemiMonthlyPeriod, manilaWeeklySitePeriod } from "@/lib/time-rules";
 import { ClassicPayrollAdmin } from "./classic-admin";
+import { PayrollDownloadCard } from "@/components/payroll-download";
+import { payPeriods } from "@/lib/payroll-export";
 
 export const metadata = { title: "Payroll" };
 export const dynamic = "force-dynamic";
@@ -244,6 +246,18 @@ export default async function PayrollPage({
     groups.push({ key: "office", name: "Office & Drivers (no project)", meta: "semi-monthly · Office, Drivers, Engineers, Architects", projectId: null, allRuns: deptRuns, shown: officeShown });
   }
 
+  const DEPT_NAME: Record<string, string> = { DRIVER: "Drivers", OFFICE: "Office", ENGINEER: "Engineers", ARCHITECT: "Architects", SITE: "Site" };
+  const exportRuns = runs.map((r) => ({
+    id: r.id,
+    projectId: r.projectId,
+    department: r.department,
+    status: r.status,
+    periodStart: r.periodStart,
+    periodEnd: r.periodEnd,
+    name: r.project?.name ?? DEPT_NAME[r.department ?? ""] ?? r.department ?? "Payroll",
+    net: netOf(r),
+  }));
+
   const PREVIEW = 3;
   const projectOptions = projects.map((p) => ({ id: p.id, name: p.name }));
 
@@ -333,6 +347,9 @@ export default async function PayrollPage({
           <ActionTile href={href({ status: "empty", period: "", q: "" })} count={emptyIds.size} label="Projects with nobody on the roster" cta="Show" tone="warn" />
         </div>
       </div>
+
+      {/* Excel download of a whole pay period (approved runs) */}
+      <PayrollDownloadCard site={payPeriods(exportRuns, "site")} office={payPeriods(exportRuns, "office")} />
 
       {/* 3 — search + filters, 4 — runs folded per project */}
       <section className="fx-card min-w-0 overflow-hidden rounded-2xl border border-ink-200 bg-ink-50">
