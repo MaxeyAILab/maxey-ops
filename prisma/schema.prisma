@@ -1364,6 +1364,15 @@ model SiteInstruction {
   supervisorRemarks String?
   approval          InstructionApproval  @default(PENDING)
   createdAt         DateTime             @default(now())
+  // Extension of the target date (owner's request 2026-11-22): the person doing the task asks for a new date with a reason; the
+  // Owner/PM approves (dueDate moves, the first target is kept in originalDueDate) or rejects. One request waits at a time.
+  originalDueDate   DateTime? // the target date before the first approved extension
+  extensionCount    Int                  @default(0) // approved extensions
+  extensionDue      DateTime? // the new date asked for — set while a request waits for the Owner/PM
+  extensionReason   String?
+  extensionById     String?
+  extensionByName   String?
+  extensionAt       DateTime?
 
   seenBy InstructionSeen[]
   rfis   Rfi[]

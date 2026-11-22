@@ -4,6 +4,10 @@ import { audit } from "@/lib/audit";
 import { logProjectActivity } from "@/lib/project-activity";
 import { DAILY_REPORT_LIFETIME_DAYS } from "@/lib/daily-reports";
 import { sendTimesheetReminders } from "@/lib/timesheet-notify";
+import { sendInstructionReminders } from "@/lib/instruction-reminders";
+
+// the daily run now also sends instruction reminders — give it room beyond the default time limit
+export const maxDuration = 60;
 
 /**
  * GET /api/cron/daily-reports-cleanup — Vercel Cron hits this once a day at 8:00 AM Manila
@@ -83,5 +87,13 @@ export async function GET(req: NextRequest) {
     console.error("[cron] timesheet reminders failed", err);
   }
 
-  return NextResponse.json({ deleted: expired.length, timesheetReminders: reminders });
+  // ...and reminds the people doing instructions that are due today or overdue (owner's request 2026-11-22)
+  let instructionReminders: Awaited<ReturnType<typeof sendInstructionReminders>> | null = null;
+  try {
+    instructionReminders = await sendInstructionReminders();
+  } catch (err) {
+    console.error("[cron] instruction reminders failed", err);
+  }
+
+  return NextResponse.json({ deleted: expired.length, timesheetReminders: reminders, instructionReminders });
 }

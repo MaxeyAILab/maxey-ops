@@ -10,6 +10,9 @@ import {
   InstructionUpdateForm,
 } from "@/components/instruction-actions";
 import { instructionProjectOrCategoryLabel } from "@/lib/instructions";
+import { InstructionExtension } from "@/components/instruction-extension";
+import { canAskExtension, dueState } from "@/lib/instruction-due";
+import { manilaDayKey } from "@/lib/time-rules";
 
 export const dynamic = "force-dynamic";
 
@@ -51,8 +54,18 @@ export default async function InstructionDetailPage({ params }: { params: { id: 
 
   const canUpdate = isSupervisor || isAssignee || isBroadcastForForeman;
   const showReview = isSupervisor && ["FOR_REVIEW", "COMPLETED"].includes(instruction.status);
-  const overdue =
-    !!instruction.dueDate && instruction.dueDate < new Date() && !CLOSED_STATUSES.includes(instruction.status);
+  // target date: due/overdue state, extension requests (owner's request 2026-11-22). Overdue = the target DAY has passed (Manila);
+  // a task due today is not overdue yet.
+  const todayKey = manilaDayKey(new Date());
+  const dueKey = instruction.dueDate ? manilaDayKey(instruction.dueDate) : null;
+  const overdue = !!dueKey && dueKey < todayKey && !CLOSED_STATUSES.includes(instruction.status);
+  const open = !CLOSED_STATUSES.includes(instruction.status);
+  const dueNow = dueState(dueKey, todayKey, instruction.status);
+  const canAsk = open && canAskExtension({ role: user.role, isAssignee, broadcast: instruction.assignees.length === 0 });
+  const pending =
+    open && instruction.extensionAt && instruction.extensionDue
+      ? { dueKey: manilaDayKey(instruction.extensionDue), reason: instruction.extensionReason ?? "", byName: instruction.extensionByName ?? "—", mine: instruction.extensionById === user.id }
+      : null;
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -123,6 +136,25 @@ export default async function InstructionDetailPage({ params }: { params: { id: 
           )}
         </CardBody>
       </Card>
+
+      {instruction.dueDate && (canAsk || isSupervisor || dueNow || pending || instruction.extensionCount > 0) && (
+        <Card>
+          <CardHeader title="Target date" subtitle={`${fmtDate(instruction.dueDate)} · a reminder goes to the people doing it every morning once it is due, until it is updated`} />
+          <CardBody>
+            <InstructionExtension
+              instructionId={instruction.id}
+              dueKey={dueKey}
+              todayKey={todayKey}
+              state={dueNow}
+              canAsk={canAsk}
+              canDecide={isSupervisor && open}
+              pending={pending}
+              extensionCount={instruction.extensionCount}
+              originalDueKey={instruction.originalDueDate ? manilaDayKey(instruction.originalDueDate) : null}
+            />
+          </CardBody>
+        </Card>
+      )}
 
       {canUpdate && (
         <Card>

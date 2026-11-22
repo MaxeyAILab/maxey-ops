@@ -9,6 +9,8 @@ import { manilaDayKey } from "@/lib/time-rules";
 import { ActionTile, CashStrip, SectionTitle } from "@/components/cash-expense-header";
 import { BoardStatusCell, DeleteInstructionButton, EditInstructionForm, InstructionReviewForm, InstructionUpdateForm, AssigneeSeenList } from "@/components/instruction-actions";
 import { NewAssignmentDialog } from "@/components/instruction-layout";
+import { InstructionExtension } from "@/components/instruction-extension";
+import { canAskExtension, dueState } from "@/lib/instruction-due";
 import { ClassicInstructionsPage } from "./classic";
 
 export const metadata = { title: "Instructions" };
@@ -96,6 +98,7 @@ export default async function InstructionsPage({
   const dueThisWeek = (i: Row) => isOpen(i) && !!dueKey(i) && dueKey(i)! >= todayKey && dueKey(i)! <= weekEnd;
   const notSeen = (i: Row) => isOpen(i) && i.assignees.length > 0 && i.assignees.some((a) => !i.seenBy.some((s) => s.userId === a.id));
   const sentBack = (i: Row) => isOpen(i) && i.approval === "NEEDS_REVISION";
+  const extensionAsked = (i: Row) => isOpen(i) && !!i.extensionAt;
   // "My tasks": given to me, posted by me, or a whole-team task (those were always on everyone's list)
   const isMine = (i: Row) => i.assignees.some((a) => a.id === user.id) || i.postedById === user.id || (i.assignees.length === 0 && !isSupervisor);
   const canUpdateFor = (i: Row) => isSupervisor || i.assignees.some((a) => a.id === user.id) || (i.assignees.length === 0 && user.role === "FOREMAN");
@@ -103,7 +106,7 @@ export default async function InstructionsPage({
   // ----- filters (plain GET params, so links from tiles / bookmarks work) -----
   const view = searchParams.view === "board" ? "board" : "feed";
   const scope = searchParams.scope === "mine" || searchParams.scope === "all" ? searchParams.scope : isSupervisor ? "all" : "mine";
-  const show = ["overdue", "unseen", "revision", "week"].includes(searchParams.show ?? "") ? searchParams.show! : "";
+  const show = ["overdue", "unseen", "revision", "week", "extension"].includes(searchParams.show ?? "") ? searchParams.show! : "";
   const status = ["open", "all", ...Object.keys(STATUS_LABEL)].includes(searchParams.status ?? "") ? searchParams.status! : "open";
   const group = searchParams.group === "person" || searchParams.group === "due" ? searchParams.group : "project";
   const q = (searchParams.q ?? "").trim().toLowerCase();
@@ -128,7 +131,7 @@ export default async function InstructionsPage({
   const hit = (i: Row) =>
     !q || `${i.taskId ?? ""} ${i.title ?? ""} ${i.text} ${i.assignees.map((a) => a.name).join(" ")} ${instructionProjectOrCategoryLabel(i)} ${i.postedBy.name}`.toLowerCase().includes(q);
   const projectOk = (i: Row) => !projectId || (projectId.startsWith("cat-") ? !i.projectId && i.category === projectId.slice(4) : i.projectId === projectId);
-  const showOk = (i: Row) => (show === "overdue" ? isOverdue(i) : show === "unseen" ? notSeen(i) : show === "revision" ? sentBack(i) : show === "week" ? dueThisWeek(i) : true);
+  const showOk = (i: Row) => (show === "overdue" ? isOverdue(i) : show === "unseen" ? notSeen(i) : show === "revision" ? sentBack(i) : show === "week" ? dueThisWeek(i) : show === "extension" ? extensionAsked(i) : true);
   const base = inScope.filter((i) => periodOk(i) && hit(i) && projectOk(i) && showOk(i));
   const statusOk = (i: Row) => (status === "open" ? isOpen(i) : status === "all" ? true : i.status === status);
   const listed = base.filter(statusOk);
@@ -228,6 +231,17 @@ export default async function InstructionsPage({
       <div className="text-xs text-ink-500">
         Assigned to: {i.assignees.length > 0 ? <AssigneeSeenList assignees={i.assignees} seenUserIds={i.seenBy.map((s) => s.userId)} /> : <span className="font-medium text-ink-700">Whole site team</span>}
       </div>
+      <InstructionExtension
+        instructionId={i.id}
+        dueKey={dueKey(i)}
+        todayKey={todayKey}
+        state={dueState(dueKey(i), todayKey, i.status)}
+        canAsk={isOpen(i) && canAskExtension({ role: user.role, isAssignee: i.assignees.some((a) => a.id === user.id), broadcast: i.assignees.length === 0 })}
+        canDecide={isSupervisor && isOpen(i)}
+        pending={extensionAsked(i) && i.extensionDue ? { dueKey: manilaDayKey(i.extensionDue), reason: i.extensionReason ?? "", byName: i.extensionByName ?? "—", mine: i.extensionById === user.id } : null}
+        extensionCount={i.extensionCount}
+        originalDueKey={i.originalDueDate ? manilaDayKey(i.originalDueDate) : null}
+      />
       {i.remarks && <p className="rounded-lg bg-ink-100 p-2 text-xs text-ink-600">📝 {i.remarks}</p>}
       {i.supervisorRemarks && <p className="rounded-lg bg-brand-50 p-2 text-xs text-brand-700">Supervisor: {i.supervisorRemarks}</p>}
       {canUpdateFor(i) && <InstructionUpdateForm instructionId={i.id} status={i.status} remarks={i.remarks} />}
@@ -261,6 +275,7 @@ export default async function InstructionsPage({
             {group !== "project" && `${instructionProjectOrCategoryLabel(i)} · `}
             {i.postedBy.name.split(" ")[0]}
             {sentBack(i) && <span className="font-semibold text-accent"> · sent back to fix</span>}
+            {extensionAsked(i) && i.extensionDue && <span className="font-semibold text-amber-600"> · ⏳ extension asked → {fmtDate(i.extensionDue)}</span>}
           </span>
         </span>
         <span className="col-start-3 row-start-1 justify-self-end sm:col-start-auto sm:row-start-auto sm:justify-self-start">
@@ -320,6 +335,15 @@ export default async function InstructionsPage({
           { label: `Done · ${new Date(`${monthKey}-01T00:00:00Z`).toLocaleString("en-US", { month: "short", timeZone: "UTC" })}`, value: doneMonth.length, sub: withDue.length ? `${Math.round((onTime / withDue.length) * 100)}% on time` : "no target dates", tone: "good" },
         ]}
       />
+
+      {isSupervisor && inScope.some(extensionAsked) && (
+        <Link href={href({ show: "extension", status: "", q: "", period: "" })} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+          <span>
+            <b>⏳ {inScope.filter(extensionAsked).length} extension request{inScope.filter(extensionAsked).length === 1 ? "" : "s"}</b> waiting for your decision — {inScope.filter(extensionAsked).slice(0, 2).map((i) => i.title ?? i.text.slice(0, 40)).join(" · ")}
+          </span>
+          <span className="text-xs font-bold uppercase tracking-wide">Decide →</span>
+        </Link>
+      )}
 
       {/* 2 — needs your action */}
       <div>
@@ -404,7 +428,7 @@ export default async function InstructionsPage({
           ))}
           {show && (
             <Link href={href({ show: "" })} scroll={false} className="fx-pill fx-pill-on">
-              {{ overdue: "Overdue", unseen: "Not seen yet", revision: "Sent back to fix", week: "Due this week" }[show]} ✕
+              {{ overdue: "Overdue", unseen: "Not seen yet", revision: "Sent back to fix", week: "Due this week", extension: "Extension requests" }[show]} ✕
             </Link>
           )}
         </div>
@@ -512,6 +536,7 @@ export default async function InstructionsPage({
                             {i.title ?? i.text}
                           </Link>
                           <div className="mt-1 truncate text-[11px] text-ink-500">{instructionProjectOrCategoryLabel(i)}</div>
+                          {extensionAsked(i) && i.extensionDue && <div className="mt-1 text-[11px] font-semibold text-amber-600">⏳ extension asked → {fmtDate(i.extensionDue)}</div>}
                           <div className="mt-2.5 flex items-center justify-between gap-2">
                             <Avatars i={i} />
                             <DueChip i={i} />
