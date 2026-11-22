@@ -101,10 +101,13 @@ export function PostInstructionForm({
   projects,
   employees,
   postedByName,
+  onPosted,
 }: {
   projects: ProjectOption[];
   employees: EmployeeOption[];
   postedByName: string;
+  /** called after a successful post (the pop-up closes itself) */
+  onPosted?: () => void;
 }) {
   const router = useRouter();
   const [photos, setPhotos] = useState<string[]>([]);
@@ -139,6 +142,7 @@ export function PostInstructionForm({
       setPhotos([]);
       setAssigneeIds(new Set());
       router.refresh();
+      onPosted?.();
     } else {
       setError((await res.json()).error ?? "Failed to post instruction");
     }
