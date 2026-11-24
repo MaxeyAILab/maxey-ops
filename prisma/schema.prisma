@@ -304,6 +304,7 @@ model User {
   employeeNo          String?            @unique // company employee ID printed on the payslip, e.g. VCDC-016
   canRequisition      Boolean            @default(false) // the Owner lets this person raise material requisitions even though their role doesn't already allow it
   canApproveTallyOut  Boolean            @default(false) // may approve tally-out forms (materials leaving the warehouse for a project), like the Owner
+  verifiesDeliveries  Boolean            @default(false) // may verify deliveries (the receiving side) although the account type doesn't already allow it — e.g. a timekeeper who is also the warehouse man
   inventoryRestricted Boolean            @default(false) // Inventory: may not log usage, and the Owner alone approves their return/transfer requests
   ownRequisitionsOnly Boolean            @default(false) // sees only the requisitions they raised themselves (Foremen always do); gives them the Requisitions tab
   canApprovePettyCash Boolean            @default(false) // the Owner lets this person approve petty cash requests (the Owner always can)

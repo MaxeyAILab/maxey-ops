@@ -43,7 +43,7 @@ const createSchema = z.object({
  */
 export const POST = handleApi(async (req: NextRequest) => {
   const user = await requireUser();
-  if (!canVerifyDelivery(user.role, user.department)) {
+  if (!canVerifyDelivery(user.role, user.department, user.verifiesDeliveries)) {
     throw new ApiError(403, "Not authorized for this action");
   }
   const body = createSchema.parse(await req.json());

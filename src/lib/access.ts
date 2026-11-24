@@ -160,9 +160,12 @@ export function canAccess(
  * role, plus Drivers and Engineers (2026-09-21). "Driver" counts both as the
  * account type and as the department: some drivers have an Office account in the
  * Driver department (payroll treats them as drivers), and they must be able to
- * verify too. Deliberately separate from delete, which stays Owner-only. */
-export function canVerifyDelivery(role: Role, department: Department | null): boolean {
-  return ["FOREMAN", "PM", "OWNER", "DRIVER"].includes(role) || department === "ENGINEER" || department === "DRIVER";
+ * verify too. Deliberately separate from delete, which stays Owner-only.
+ * A person the Owner switched on under "Verifies deliveries" (People page, 2026-11-24 — e.g. a timekeeper who is also the
+ * warehouse man) can verify whatever their account type. */
+export function canVerifyDelivery(role: Role, department: Department | null, verifiesDeliveries?: boolean | null): boolean {
+  if (role === "CLIENT") return false;
+  return !!verifiesDeliveries || ["FOREMAN", "PM", "OWNER", "DRIVER"].includes(role) || department === "ENGINEER" || department === "DRIVER";
 }
 
 /** Site roles that are a job title rather than an account type: a timekeeper, a leadman (any spelling: Lead Man, Lead-man…). */

@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 export default async function VerifyDeliveryPage({ params }: { params: { poId: string } }) {
   const user = await getSessionUser();
-  if (!user || !canVerifyDelivery(user.role, user.department)) redirect("/deliveries");
+  if (!user || !canVerifyDelivery(user.role, user.department, user.verifiesDeliveries)) redirect("/deliveries");
 
   const po = await prisma.purchaseOrder.findUnique({
     where: { id: params.poId },

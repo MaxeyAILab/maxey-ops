@@ -3,8 +3,9 @@ import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fmtDate } from "@/lib/format";
 import { Badge, Card, CardHeader, Table, Td, Th } from "@/components/ui";
-import { AccountToggleButton, InventoryLimitToggle, TallyOutApprovalToggle, PettyCashAccessToggle, OwnerPowersToggle, RequisitionAccessToggle, ResetPasswordButton } from "@/components/portal-access";
+import { AccountToggleButton, InventoryLimitToggle, TallyOutApprovalToggle, DeliveryVerifyToggle, PettyCashAccessToggle, OwnerPowersToggle, RequisitionAccessToggle, ResetPasswordButton } from "@/components/portal-access";
 import { requisitionAllowedByRole } from "@/lib/requisitions";
+import { canVerifyDelivery } from "@/lib/access";
 
 export const metadata = { title: "People" };
 export const dynamic = "force-dynamic";
@@ -78,6 +79,13 @@ export default async function PeoplePage() {
           <TallyOutApprovalToggle userId={u.id} name={u.name} allowed={u.canApproveTallyOut} />
         )}
       </Td>
+      <Td>
+        {u.role === "CLIENT" || u.role === "OWNER" ? (
+          <span className="text-xs text-ink-300">{u.role === "OWNER" ? "Yes — owner" : "—"}</span>
+        ) : (
+          <DeliveryVerifyToggle userId={u.id} name={u.name} allowed={u.verifiesDeliveries} byRole={canVerifyDelivery(u.role, u.department)} />
+        )}
+      </Td>
       {(["approve", "release", "change", "manage"] as const).map((kind) => (
         <Td key={kind}>
           {u.role === "CLIENT" || u.role === "OWNER" ? (
@@ -124,6 +132,7 @@ export default async function PeoplePage() {
       <Th>Can raise requisitions</Th>
       <Th>Inventory limited</Th>
       <Th>Approves tally-outs</Th>
+      <Th>Verifies deliveries</Th>
       <Th>Approves petty cash</Th>
       <Th>Releases petty cash</Th>
       <Th>Receives returned change</Th>
@@ -166,7 +175,7 @@ export default async function PeoplePage() {
             {clients.map(renderRow)}
             {clients.length === 0 && (
               <tr>
-                <Td colSpan={17} className="py-6 text-center text-ink-400">
+                <Td colSpan={18} className="py-6 text-center text-ink-400">
                   No client accounts yet — create one from a project&apos;s Portal Access panel.
                 </Td>
               </tr>

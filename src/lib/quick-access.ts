@@ -26,7 +26,7 @@ export async function quickAccessFor(user: SessionUser): Promise<{ access: Quick
       canProgress: mayProgress && progressProjects.length > 0,
       canUseCash: canUseCashExpense(user),
       menus,
-      canVerifyDelivery: canVerifyDelivery(user.role, user.department),
+      canVerifyDelivery: canVerifyDelivery(user.role, user.department, user.verifiesDeliveries),
     },
     progressProjects,
   };

@@ -20,6 +20,14 @@ describe("who can verify a delivery", () => {
     expect(canVerifyDelivery("ACCOUNTING", null)).toBe(false);
     expect(canVerifyDelivery("CLIENT", null)).toBe(false);
   });
+
+  it("includes anyone the Owner switched on under 'Verifies deliveries' (a timekeeper who is also the warehouse man) — but never a client", () => {
+    expect(canVerifyDelivery("OFFICE", "SITE", true)).toBe(true);
+    expect(canVerifyDelivery("OFFICE", "SITE", false)).toBe(false);
+    expect(canVerifyDelivery("OFFICE", "SITE", null)).toBe(false);
+    expect(canVerifyDelivery("OFFICE", "SITE", undefined)).toBe(false);
+    expect(canVerifyDelivery("CLIENT", null, true)).toBe(false);
+  });
 });
 
 const person = (role: Role, department: Department | null, position: string | null = null, withInventory = true) => ({

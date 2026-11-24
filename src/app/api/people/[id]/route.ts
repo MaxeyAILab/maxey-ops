@@ -7,7 +7,7 @@ import { audit } from "@/lib/audit";
 import { ApiError, handleApi, requireUser } from "@/lib/rbac";
 
 const actionSchema = z.object({
-  action: z.enum(["deactivate", "reactivate", "reset-password", "set-requisition-access", "set-requisition-scope", "set-petty-cash-access", "set-inventory-limits", "set-tally-out-approval", "set-owner-powers"]),
+  action: z.enum(["deactivate", "reactivate", "reset-password", "set-requisition-access", "set-requisition-scope", "set-petty-cash-access", "set-inventory-limits", "set-tally-out-approval", "set-delivery-verify", "set-owner-powers"]),
   allowed: z.boolean().optional(),
   kind: z.enum(["approve", "release", "manage", "change"]).optional(), // set-petty-cash-access: which switch
   area: z.enum(["inventory", "cash", "project", "costs", "payroll"]).optional(), // set-owner-powers: which area
@@ -71,6 +71,22 @@ export const PATCH = handleApi(
         actorId: user.id,
         actorName: user.name,
         action: body.allowed ? "TALLYOUT_APPROVAL_GRANTED" : "TALLYOUT_APPROVAL_REMOVED",
+        diff: { name: target.name, role: target.role },
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    if (body.action === "set-delivery-verify") {
+      if (typeof body.allowed !== "boolean") throw new ApiError(400, "Say whether they may verify deliveries");
+      if (target.role === "CLIENT") throw new ApiError(400, "A client account can't verify deliveries");
+      if (target.verifiesDeliveries === body.allowed) return NextResponse.json({ ok: true, alreadyDone: true });
+      await prisma.user.update({ where: { id: target.id }, data: { verifiesDeliveries: body.allowed } });
+      await audit({
+        entityType: "User",
+        entityId: target.id,
+        actorId: user.id,
+        actorName: user.name,
+        action: body.allowed ? "DELIVERY_VERIFY_GRANTED" : "DELIVERY_VERIFY_REMOVED",
         diff: { name: target.name, role: target.role },
       });
       return NextResponse.json({ ok: true });

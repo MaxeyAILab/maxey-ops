@@ -153,7 +153,7 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: {
   const forMe = awaiting.filter((d) => d.receiverId === user.id);
   if (!hasTab && forMe.length === 0) redirect("/attendance");
   const limited = !hasTab;
-  const canVerify = hasTab && canVerifyDelivery(user.role, user.department);
+  const canVerify = hasTab && canVerifyDelivery(user.role, user.department, user.verifiesDeliveries);
   const isOwner = user.role === "OWNER";
   const awaitingByPo = new Map(awaiting.map((d) => [d.poId, d]));
   // an earlier short delivery is made up by a later delivery of the same PO that was recorded and confirmed

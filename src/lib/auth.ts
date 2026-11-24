@@ -33,6 +33,8 @@ export interface SessionUser {
   inventoryRestricted: boolean;
   /** May approve tally-out forms (materials leaving the warehouse for a project) — switched on from the People page; the Owner always may. */
   canApproveTallyOut: boolean;
+  /** May verify deliveries although the account type doesn't already allow it (People page switch). */
+  verifiesDeliveries: boolean;
   /** The Owner has switched this person on to approve / to release petty cash (People page). */
   canApprovePettyCash: boolean;
   canReleasePettyCash: boolean;
@@ -181,6 +183,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       ownRequisitionsOnly: true,
       inventoryRestricted: true,
       canApproveTallyOut: true,
+      verifiesDeliveries: true,
       canApprovePettyCash: true,
       canReleasePettyCash: true,
       canManageCash: true,
@@ -211,6 +214,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     ownRequisitionsOnly: dbUser.ownRequisitionsOnly,
     inventoryRestricted: dbUser.inventoryRestricted,
     canApproveTallyOut: dbUser.canApproveTallyOut,
+    verifiesDeliveries: dbUser.verifiesDeliveries,
     canApprovePettyCash: dbUser.canApprovePettyCash,
     canReleasePettyCash: dbUser.canReleasePettyCash,
     canManageCash: dbUser.canManageCash,

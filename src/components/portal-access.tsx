@@ -293,6 +293,36 @@ export function TallyOutApprovalToggle({ userId, name, allowed }: { userId: stri
   );
 }
 
+/** "Verifies deliveries" switch (People page): lets a person verify deliveries whatever their account type — e.g. a timekeeper who is also the warehouse man. */
+export function DeliveryVerifyToggle({ userId, name, allowed, byRole }: { userId: string; name: string; allowed: boolean; byRole: boolean }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function change(next: boolean) {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    const res = await fetch(`/api/people/${userId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "set-delivery-verify", allowed: next }),
+    });
+    setBusy(false);
+    if (res.ok) router.refresh();
+    else setError(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? "Failed");
+  }
+
+  return (
+    <label className="inline-flex cursor-pointer flex-wrap items-center gap-1.5 text-xs text-ink-700">
+      <input type="checkbox" checked={allowed} disabled={busy} onChange={(e) => change(e.target.checked)} aria-label={`${name} can verify deliveries`} />
+      {allowed ? "Yes" : "No"}
+      {byRole && !allowed && <span className="text-[10px] text-ink-400">(already by role)</span>}
+      {error && <span className="text-red-600">{error}</span>}
+    </label>
+  );
+}
+
 /**
  * People page: give this person the Owner's own powers on the Inventory tab or in Cash Expense (both are on for the Owner).
  * Inventory: movements take effect at once, decides any request, prices movements, deletes stock items and tools, approves tally-outs.
