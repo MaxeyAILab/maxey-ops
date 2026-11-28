@@ -8,6 +8,7 @@ import { SyncStatus } from "@/components/sync-status";
 import { SignOutButton } from "@/components/signout-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CashExpenseNav } from "@/components/cash-expense-nav";
+import { seesAllPettyCash } from "@/lib/cash-expense";
 import { CurrentSection, SidebarNav, type SidebarItem } from "@/components/sidebar-nav";
 import { MobileDrawer } from "@/components/mobile-drawer";
 import { MobileBottomBar, type BarTab, type QuickAction } from "@/components/mobile-bottom-bar";
@@ -129,7 +130,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
         <SidebarNav items={sidebarItems} />
         {showTallyOuts && <TallyOutNav />}
-        {showCashExpense && <CashExpenseNav showAdvances />}
+        {showCashExpense && <CashExpenseNav showAdvances showFund={seesAllPettyCash(user)} />}
       </nav>
       <div className="border-t border-ink-100 px-4 py-3" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
         <Link href="/settings" className="block rounded-lg hover:bg-ink-100" title={t("nav.settings")}>

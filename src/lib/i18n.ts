@@ -27,6 +27,7 @@ const D = {
   "nav.pettyCash": ["Petty Cash", "Petty Cash"],
   "nav.cashAdvance": ["Cash Advance", "Cash Advance"],
   "nav.pettyCashReport": ["Petty Cash Report", "Ulat ng Petty Cash"],
+  "nav.fundReplenishments": ["Fund Replenishments", "Mga Dagdag sa Pondo"],
   "nav.notifications": ["Notifications", "Mga Abiso"],
   "nav.settings": ["My settings", "Aking settings"],
   "nav.search": ["Search", "Maghanap"],

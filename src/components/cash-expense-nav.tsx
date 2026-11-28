@@ -4,14 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useT } from "@/components/lang-provider";
 
-/** Sidebar group for Cash Expense: the parent link plus its three pages, the current one highlighted. */
-export function CashExpenseNav({ showAdvances }: { showAdvances: boolean }) {
+/** Sidebar group for Cash Expense: the parent link plus its pages, the current one highlighted. */
+export function CashExpenseNav({ showAdvances, showFund = false }: { showAdvances: boolean; showFund?: boolean }) {
   const t = useT();
   const path = usePathname() ?? "";
   const links = [
     { href: "/cash-expense/petty-cash", label: t("nav.pettyCash") },
     ...(showAdvances ? [{ href: "/cash-expense/cash-advance", label: t("nav.cashAdvance") }] : []),
     { href: "/cash-expense/report", label: t("nav.pettyCashReport") },
+    ...(showFund ? [{ href: "/cash-expense/replenishments", label: t("nav.fundReplenishments") }] : []),
   ];
   return (
     <div className="mt-3 border-t border-ink-100 pt-3">

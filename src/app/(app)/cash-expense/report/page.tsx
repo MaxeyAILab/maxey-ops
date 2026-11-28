@@ -394,6 +394,7 @@ export default async function PettyCashReportPage({ searchParams }: { searchPara
           title="Petty Cash Report"
           subtitle="Whoever received the cash reports what it was spent on; verified expenses post to their project."
           showAdvances
+          showFund={seesAllPettyCash(user)}
           action={<PrintButton label="Print / PDF" />}
         />
       </div>

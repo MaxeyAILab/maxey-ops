@@ -54,7 +54,7 @@ export default async function CashAdvancePage() {
 
   return (
     <div className="space-y-6">
-      <CashExpenseHeader tab="cash-advance" title="Cash Advance" subtitle="Emergency cash loans to workers, repaid through payroll deductions every cut-off." showAdvances />
+      <CashExpenseHeader tab="cash-advance" title="Cash Advance" subtitle="Emergency cash loans to workers, repaid through payroll deductions every cut-off." showAdvances showFund={seesAll} />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <CashStat icon={CashIcons.cash} tone="green" label={seesAll ? "Outstanding Balance" : "My Balance"} value={php(outstanding)} sub="Still to be deducted" />

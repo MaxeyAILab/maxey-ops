@@ -443,7 +443,7 @@ export function FundForm() {
       className="mt-2 space-y-2"
     >
       <input name="amount" required inputMode="decimal" placeholder="Amount (₱) — negative to take out" className={fieldCls} autoFocus />
-      <input name="note" placeholder="Note, e.g. Check #1023 encashed" className={fieldCls} />
+      <textarea name="note" required minLength={3} maxLength={300} rows={2} placeholder="Where is this cash from? e.g. Check #1023 encashed (or why you are correcting it)" aria-label="Where the cash came from (or why it is corrected)" className={`${fieldCls} resize-none`} />
       {error && <p className="text-xs text-red-700 dark:text-red-300">{error}</p>}
       <div className="flex gap-2">
         <button type="submit" disabled={busy} className={`${primaryBtn} min-h-[36px] px-3 text-xs`}>

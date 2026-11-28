@@ -5,25 +5,29 @@ const TABS = [
   { key: "petty-cash", href: "/cash-expense/petty-cash", label: "Petty Cash" },
   { key: "cash-advance", href: "/cash-expense/cash-advance", label: "Cash Advance" },
   { key: "report", href: "/cash-expense/report", label: "Petty Cash Report" },
+  { key: "replenishments", href: "/cash-expense/replenishments", label: "Fund Replenishments" },
 ] as const;
 
 export type CashExpenseTab = (typeof TABS)[number]["key"];
 
-/** Breadcrumb, title, live indicator and the three section tabs shared by every Cash Expense page. */
+/** Breadcrumb, title, live indicator and the section tabs shared by every Cash Expense page. */
 export function CashExpenseHeader({
   tab,
   title,
   subtitle,
   showAdvances,
+  showFund = false,
   action,
 }: {
   tab: CashExpenseTab;
   title: string;
   subtitle: string;
   showAdvances: boolean;
+  /** the Fund Replenishments tab: for everyone who sees the whole fund (not for people who only see their own requests) */
+  showFund?: boolean;
   action?: React.ReactNode;
 }) {
-  const tabs = TABS.filter((t) => t.key !== "cash-advance" || showAdvances);
+  const tabs = TABS.filter((t) => (t.key !== "cash-advance" || showAdvances) && (t.key !== "replenishments" || showFund));
   return (
     <div className="space-y-5">
       <nav aria-label="Breadcrumb" className="text-sm text-ink-500">

@@ -267,6 +267,7 @@ export default async function PettyCashPage({
         title="Petty Cash"
         subtitle="Requests, releases and the running balance."
         showAdvances
+        showFund={seesAll}
         action={
           <NewRequestDialog>
             <QuickRecordForm
